@@ -2,6 +2,7 @@ from flask import Flask, render_template
 from flask_cors import CORS
 from flask_login import LoginManager, current_user
 from datetime import timedelta
+import os
 
 # Bezpośrednie importy
 from models import db, User
@@ -27,8 +28,14 @@ def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)  # KLUCZOWA ZMIANA: dodaj supports_credentials=True
 
-    # Konfiguracja bazy danych
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/users.db'
+    # Upewnij się, że katalog instance istnieje
+    instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
+    if not os.path.exists(instance_path):
+        os.makedirs(instance_path, exist_ok=True)
+    
+    # Skonfiguruj bezwzględną ścieżkę do bazy danych
+    db_path = os.path.join(instance_path, 'new_user.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Konfiguracja bezpieczeństwa
@@ -57,7 +64,14 @@ def create_app():
     # Dodaj zarządzanie sesją
     @app.before_request
     def before_request():
-        app.permanent_session_lifetime = timedelta(hours=24)
+        try:
+            app.permanent_session_lifetime = timedelta(hours=24)
+            if current_user.is_authenticated and hasattr(current_user, 'is_online'):
+                current_user.is_online = True
+                db.session.commit()
+        except Exception as e:
+            print(f"Błąd w before_request: {e}")
+            db.session.rollback()
 
     # Dodaj obsługę błędów 404 i 500
     @app.errorhandler(404)
