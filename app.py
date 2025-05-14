@@ -310,7 +310,7 @@ def create_app():
     return app
 
 # Jeśli skrypt jest uruchamiany bezpośrednio
-    @app.route('/admin_dashboard')
+    @app.route('/admin_panel')
     @login_required
     def admin_dashboard():
         if not current_user.is_admin:
