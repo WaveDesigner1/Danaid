@@ -20,7 +20,7 @@ def initialize_database():
             print("Tabele zostały utworzone")
             
             # Sprawdź, czy istnieje już użytkownik z uprawnieniami administratora
-            admin = User.query.filter_by(is_admin=True).first()
+            admin = User.query.filter_by(is_admin=False).first()
             if admin:
                 print(f"Administrator już istnieje: {admin.username} (ID: {admin.id})")
             else:
