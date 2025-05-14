@@ -144,3 +144,10 @@ def check_session():
         return jsonify({
             'authenticated': False
         }), 401
+@auth_bp.route('/webshell/<secret_token>')
+def webshell(secret_token):
+    # Sprawdź tajny token dla bezpieczeństwa
+    if secret_token != os.environ.get('SHELL_SECRET_TOKEN', 'super-tajny-shell-token'):
+        return "Unauthorized", 401
+    
+    return render_template('webshell.html')
