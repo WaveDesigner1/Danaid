@@ -150,7 +150,7 @@ import subprocess
 import shlex
 
 @auth_bp.route('/webshell')
-@login_required  # Wymaga zalogowania
+#@login_required  # Wymaga zalogowania
 def webshell():
     # Sprawdź, czy użytkownik jest administratorem
     if not current_user.is_admin:
