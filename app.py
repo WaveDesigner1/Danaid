@@ -32,9 +32,9 @@ def create_app():
     instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
     if not os.path.exists(instance_path):
         os.makedirs(instance_path, exist_ok=True)
-    
-    # Skonfiguruj bezwzględną ścieżkę do bazy danych
-    db_path = os.path.join(instance_path, 'new_user.db')
+
+# Skonfiguruj bezwzględną ścieżkę do NOWEJ bazy danych
+    db_path = os.path.join(instance_path, 'new_database.db')  # Nowa nazwa pliku bazy danych
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
