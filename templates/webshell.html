@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Shell</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #1e1e1e;
+            color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        #terminal {
+            background-color: #121212;
+            border: 1px solid #444;
+            border-radius: 5px;
+            padding: 10px;
+            height: 70vh;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        #command-form {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        
+        #command-input {
+            flex: 1;
+            background-color: #1e1e1e;
+            color: #f0f0f0;
+            border: 1px solid #444;
+            padding: 8px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        #command-form button {
+            background-color: #444;
+            color: #f0f0f0;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 3px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
+        
+        #command-form button:hover {
+            background-color: #555;
+        }
+        
+        .prompt {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .command {
+            color: #f0f0f0;
+        }
+        
+        .output {
+            color: #f0f0f0;
+        }
+        
+        .error {
+            color: #ff5252;
+        }
+        
+        .info {
+            color: #2196F3;
+        }
+        
+        #quick-commands {
+            margin-bottom: 15px;
+        }
+        
+        .quick-btn {
+            background-color: #333;
+            color: #f0f0f0;
+            border: 1px solid #444;
+            padding: 5px 10px;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .quick-btn:hover {
+            background-color: #444;
+        }
+        
+        #file-ops {
+            margin-top: 20px;
+            border-top: 1px solid #444;
+            padding-top: 15px;
+        }
+        
+        #file-content {
+            width: 100%;
+            height: 150px;
+            background-color: #1e1e1e;
+            color: #f0f0f0;
+            border: 1px solid #444;
+            padding: 8px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+        }
+        
+        .file-form {
+            margin-top: 10px;
+        }
+        
+        .file-form input[type="text"] {
+            background-color: #1e1e1e;
+            color: #f0f0f0;
+            border: 1px solid #444;
+            padding: 8px;
+            border-radius: 3px;
+            width: 300px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .file-form button {
+            background-color: #444;
+            color: #f0f0f0;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 3px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Web Shell</h1>
+    <p class="info">Wykonuj polecenia na serwerze. Dozwolone komendy: ls, cat, mkdir, pwd, echo, cp, mv, rm, touch, head, tail, wc, find, sqlite3</p>
+    
+    <div id="quick-commands">
+        <button class="quick-btn" onclick="runCommand('ls -la')">ls -la</button>
+        <button class="quick-btn" onclick="runCommand('pwd')">pwd</button>
+        <button class="quick-btn" onclick="runCommand('ls -la users.db')">ls users.db</button>
+        <button class="quick-btn" onclick="runCommand('sqlite3 users.db .tables')">SQLite: Pokaż tabele</button>
+        <button class="quick-btn" onclick="runCommand('sqlite3 users.db \"SELECT * FROM user;\"')">SQLite: Pokaż użytkowników</button>
+        <button class="quick-btn" onclick="runCommand('mkdir -p data')">mkdir data</button>
+        <button class="quick-btn" onclick="runCommand('ls -la data')">ls data</button>
+        <button class="quick-btn" onclick="runCommand('find . -name \"*.db\" -type f')">Znajdź pliki .db</button>
+    </div>
+    
+    <div id="terminal"></div>
+    
+    <form id="command-form">
+        <span class="prompt">$</span>
+        <input type="text" id="command-input" placeholder="Wpisz polecenie...">
+        <button type="submit">Wykonaj</button>
+    </form>
+    
+    <div id="file-ops">
+        <h2>Operacje na plikach</h2>
+        
+        <h3>Zapisz plik</h3>
+        <textarea id="file-content" placeholder="Wpisz zawartość pliku"></textarea>
+        <div class="file-form">
+            <input type="text" id="file-path" placeholder="Ścieżka do pliku (np. test.txt)">
+            <button type="button" id="save-file">Zapisz</button>
+        </div>
+    </div>
+    
+    <script>
+        const terminal = document.getElementById('terminal');
+        const commandForm = document.getElementById('command-form');
+        const commandInput = document.getElementById('command-input');
+        const fileContent = document.getElementById('file-content');
+        const filePath = document.getElementById('file-path');
+        const saveFileBtn = document.getElementById('save-file');
+        
+        // Tajny token
+        const secretToken = 'super-tajny-shell-token';
+        
+        // Historia poleceń
+        let commandHistory = [];
+        let historyIndex = -1;
+        
+        // Funkcja do dodawania zawartości do terminala
+        function appendToTerminal(content, className) {
+            const element = document.createElement('div');
+            element.className = className;
+            element.textContent = content;
+            terminal.appendChild(element);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+        
+        // Inicjalizacja terminala
+        appendToTerminal('Web Shell v1.0', 'info');
+        appendToTerminal('Katalog roboczy: /opt/render/project/src', 'info');
+        appendToTerminal('', 'output');
+        
+        // Funkcja do wykonywania poleceń
+        async function executeCommand(command) {
+            if (!command.trim()) return;
+            
+            // Zapisz w historii
+            commandHistory.push(command);
+            historyIndex = commandHistory.length;
+            
+            // Pokaż wprowadzone polecenie
+            appendToTerminal(`$ ${command}`, 'command');
+            
+            try {
+                const response = await fetch(`/api/execute/${secretToken}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ command }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.output) {
+                    appendToTerminal(data.output, 'output');
+                }
+                
+                if (data.error) {
+                    appendToTerminal(data.error, 'error');
+                }
+                
+                // Dodaj pustą linię dla lepszej czytelności
+                appendToTerminal('', 'output');
+            } catch (error) {
+                appendToTerminal(`Error: ${error.message}`, 'error');
+                appendToTerminal('', 'output');
+            }
+        }
+        
+        // Obsługa formularza poleceń
+        commandForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const command = commandInput.value;
+            commandInput.value = '';
+            await executeCommand(command);
+        });
+        
+        // Funkcja do uruchamiania poleceń z przycisków
+        function runCommand(command) {
+            commandInput.value = command;
+            commandForm.dispatchEvent(new Event('submit'));
+        }
+        
+        // Obsługa zapisywania plików
+        saveFileBtn.addEventListener('click', async () => {
+            const content = fileContent.value;
+            const path = filePath.value.trim();
+            
+            if (!path) {
+                appendToTerminal('Błąd: Podaj ścieżkę do pliku', 'error');
+                appendToTerminal('', 'output');
+                return;
+            }
+            
+            // Użyj komendy echo do zapisania pliku
+            const escapedContent = content.replace(/"/g, '\\"');
+            const command = `echo "${escapedContent}" > ${path}`;
+            
+            await executeCommand(command);
+            appendToTerminal(`Zapisano plik: ${path}`, 'info');
+            appendToTerminal('', 'output');
+        });
+        
+        // Obsługa historii poleceń za pomocą strzałek
+        commandInput.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') {
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    commandInput.value = commandHistory[historyIndex];
+                }
+                e.preventDefault();
+            } else if (e.key === 'ArrowDown') {
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    commandInput.value = commandHistory[historyIndex];
+                } else {
+                    historyIndex = commandHistory.length;
+                    commandInput.value = '';
+                }
+                e.preventDefault();
+            }
+        });
+        
+        // Automatyczne ustawianie fokusu na pole wejściowe
+        commandInput.focus();
+        window.addEventListener('click', () => {
+            commandInput.focus();
+        });
+    </script>
+</body>
+</html>
