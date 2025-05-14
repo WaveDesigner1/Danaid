@@ -33,7 +33,7 @@ def get_users():
         'id': user.id,
         'user_id': user.user_id,
         'username': user.username,
-        'is_online': user.is_online if hasattr(user, 'is_online') else False
+        
     } for user in users]
     
     return jsonify({
