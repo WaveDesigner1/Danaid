@@ -1,9 +1,5 @@
-from app import create_app, db
-from models import User
-from werkzeug.security import generate_password_hash
+from app import create_app
 import os
-import secrets
-import time
 
 app = create_app()
 
