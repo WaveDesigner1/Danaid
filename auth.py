@@ -87,14 +87,7 @@ def api_login():
             verifier = pkcs1_15.new(public_key)
             verifier.verify(h, signature)
             
-            # Aktualizacja statusu online jeśli kolumna istnieje
-            try:
-                if hasattr(user, 'is_online'):
-                    user.is_online = True
-                    db.session.commit()
-            except Exception as e:
-                print(f"Ostrzeżenie: nie można zaktualizować statusu online: {e}")
-                db.session.rollback()
+           
             
             # Ustawienia login_user
             login_user(user, remember=True)
@@ -135,17 +128,6 @@ def logout():
         # Zapisz id użytkownika przed wylogowaniem
         user_id = current_user.id if current_user.is_authenticated else None
         
-        # Ustawienie statusu offline (jeśli kolumna istnieje)
-        if user_id:
-            try:
-                user = User.query.get(user_id)
-                if user and hasattr(user, 'is_online'):
-                    user.is_online = False
-                    db.session.commit()
-            except Exception as e:
-                print(f"Ostrzeżenie: nie można zaktualizować statusu offline: {e}")
-                db.session.rollback()
-        
         # Standardowe wylogowanie
         logout_user()
         session.clear()
@@ -164,15 +146,7 @@ def silent_logout():
         if current_user.is_authenticated:
             user_id = current_user.id
             
-            # Aktualizacja statusu offline
-            try:
-                user = User.query.get(user_id)
-                if user and hasattr(user, 'is_online'):
-                    user.is_online = False
-                    db.session.commit()
-            except Exception as e:
-                print(f"Ostrzeżenie: nie można zaktualizować statusu offline w silent-logout: {e}")
-                db.session.rollback()
+            
             
             # Wylogowanie
             logout_user()
@@ -191,7 +165,7 @@ def check_session():
                 'user_id': current_user.id,
                 'username': current_user.username,
                 'is_admin': current_user.is_admin if hasattr(current_user, 'is_admin') else False,
-                'is_online': current_user.is_online if hasattr(current_user, 'is_online') else False
+            
             }), 200
         else:
             return jsonify({
@@ -204,16 +178,6 @@ def check_session():
 @auth_bp.route('/force-logout')
 def force_logout():
     """Awaryjne wylogowanie - działa nawet gdy sesja jest uszkodzona"""
-    try:
-        # Próba standardowego wylogowania
-        if current_user.is_authenticated:
-            try:
-                if hasattr(current_user, 'is_online'):
-                    current_user.is_online = False
-                    db.session.commit()
-            except:
-                db.session.rollback()
-            logout_user()
         
         # Usuń wszystkie ciasteczka
         response = redirect(url_for('auth.index'))
@@ -316,15 +280,14 @@ def db_diagnostic():
         db_info = db.session.execute(text("PRAGMA database_list")).fetchall()
         db_files = [{"name": row[1], "file": row[2]} for row in db_info]
         
-        # Sprawdź, czy kolumna is_online istnieje
-        has_is_online = 'is_online' in [col["name"] for col in columns]
+       
         
         # Sprawdź dane zalogowanego użytkownika
         user_info = {
             "id": current_user.id,
             "username": current_user.username,
             "is_admin": current_user.is_admin,
-            "has_is_online_attr": hasattr(current_user, 'is_online')
+            
         }
         
         # Stwórz szablon HTML
@@ -332,6 +295,6 @@ def db_diagnostic():
                               columns=columns,
                               db_files=db_files,
                               user_info=user_info,
-                              has_is_online=has_is_online)
+                              
     except Exception as e:
         return f"Błąd podczas diagnostyki: {str(e)}"
