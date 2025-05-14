@@ -1,100 +1,185 @@
-<!DOCTYPE html>
-<html>
+<html lang="pl">
 <head>
-    <title>Diagnostyka bazy danych</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .container { margin-bottom: 20px; }
-        h2 { color: #333; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnostyka Bazy Danych</title>
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_panel.css') }}">
 </head>
 <body>
-    <h1>Diagnostyka bazy danych</h1>
-    
-    <div class="container">
-        <h2>Struktura tabeli user</h2>
-        <table>
-            <tr>
-                <th>ID</th><th>Nazwa</th><th>Typ</th><th>Not Null</th><th>Domyślnie</th><th>PK</th>
-            </tr>
-            {% for col in columns %}
-            <tr>
-                <td>{{ col.id }}</td>
-                <td>{{ col.name }}</td>
-                <td>{{ col.type }}</td>
-                <td>{{ col.notnull }}</td>
-                <td>{{ col.default }}</td>
-                <td>{{ col.pk }}</td>
-            </tr>
-            {% endfor %}
-        </table>
+    <nav class="navbar navbar-default navbar-fixed-top">
+        <div class="container">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="#">DanaID - Diagnostyka Bazy Danych</a>
+            </div>
+            <div id="navbar" class="collapse navbar-collapse">
+                <ul class="nav navbar-nav">
+                    <li><a href="/admin_dashboard">Pulpit</a></li>
+                    <li><a href="/chat">Komunikator</a></li>
+                    <li><a href="/flask_admin/">Zaawansowane</a></li>
+                </ul>
+                <ul class="nav navbar-nav navbar-right">
+                    <li><a href="/logout">Wyloguj</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container" style="margin-top: 70px;">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="panel panel-primary">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">Diagnostyka Bazy Danych</h3>
+                    </div>
+                    <div class="panel-body">
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                          {% if messages %}
+                            {% for category, message in messages %}
+                              <div class="alert alert-{{ category }}">
+                                {{ message }}
+                              </div>
+                            {% endfor %}
+                          {% endif %}
+                        {% endwith %}
+                        
+                        {% if error %}
+                            <div class="alert alert-danger">
+                                <strong>Błąd:</strong> {{ error }}
+                            </div>
+                        {% else %}
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="panel panel-info">
+                                        <div class="panel-heading">
+                                            <h3 class="panel-title">Status bazy danych</h3>
+                                        </div>
+                                        <div class="panel-body">
+                                            <table class="table table-bordered">
+                                                <tr>
+                                                    <th>Status połączenia</th>
+                                                    <td>
+                                                        {% if db_status == "OK" %}
+                                                            <span class="label label-success">OK</span>
+                                                        {% else %}
+                                                            <span class="label label-danger">ERROR</span>
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Ścieżka do bazy</th>
+                                                    <td>{{ db_path }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Plik istnieje</th>
+                                                    <td>
+                                                        {% if db_file_exists %}
+                                                            <span class="label label-success">TAK</span>
+                                                        {% else %}
+                                                            <span class="label label-danger">NIE</span>
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Liczba użytkowników</th>
+                                                    <td>{{ user_count }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Liczba sesji czatu</th>
+                                                    <td>{{ session_count }}</td>
+                                                </tr>
+                                                <tr>
+                                                    <th>Liczba wiadomości</th>
+                                                    <td>{{ message_count }}</td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <div class="panel panel-info">
+                                        <div class="panel-heading">
+                                            <h3 class="panel-title">Statystyki SQLite</h3>
+                                        </div>
+                                        <div class="panel-body">
+                                            <div style="max-height: 300px; overflow-y: auto;">
+                                                <table class="table table-bordered table-striped">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Parametr</th>
+                                                            <th>Wartość</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for stat in db_stats %}
+                                                        <tr>
+                                                            <td>{{ stat[0] }}</td>
+                                                            <td>{{ stat[1] }}</td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="panel panel-warning">
+                                        <div class="panel-heading">
+                                            <h3 class="panel-title">Operacje administracyjne</h3>
+                                        </div>
+                                        <div class="panel-body">
+                                            <div class="alert alert-info">
+                                                <strong>Uwaga!</strong> Następujące operacje mogą wpłynąć na działanie bazy danych. Używaj ostrożnie.
+                                            </div>
+                                            
+                                            <div class="row">
+                                                <div class="col-md-4">
+                                                    <form method="POST" action="{{ url_for('vacuum_database') }}" onsubmit="return confirm('Czy na pewno chcesz wykonać VACUUM? Ta operacja może potrwać kilka minut.');">
+                                                        <button type="submit" class="btn btn-warning btn-block">
+                                                            <i class="glyphicon glyphicon-compressed"></i> VACUUM - Optymalizuj bazę
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                                
+                                                <div class="col-md-4">
+                                                    <form method="POST" action="{{ url_for('check_integrity') }}">
+                                                        <button type="submit" class="btn btn-primary btn-block">
+                                                            <i class="glyphicon glyphicon-check"></i> Sprawdź integralność
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                                
+                                                <div class="col-md-4">
+                                                    <form method="POST" action="{{ url_for('backup_database') }}">
+                                                        <button type="submit" class="btn btn-success btn-block">
+                                                            <i class="glyphicon glyphicon-floppy-save"></i> Wykonaj kopię zapasową
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    
-    <div class="container">
-        <h2>Pliki bazy danych</h2>
-        <table>
-            <tr><th>Nazwa</th><th>Ścieżka pliku</th></tr>
-            {% for db in db_files %}
-            <tr>
-                <td>{{ db.name }}</td>
-                <td>{{ db.file }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-    </div>
-    
-    <div class="container">
-        <h2>Informacje o użytkowniku</h2>
-        <table>
-            <tr><th>Pole</th><th>Wartość</th></tr>
-            <tr><td>ID</td><td>{{ user_info.id }}</td></tr>
-            <tr><td>Username</td><td>{{ user_info.username }}</td></tr>
-            <tr><td>Is Admin</td><td>{{ user_info.is_admin }}</td></tr>
-            <tr><td>Has is_online attribute</td><td>{{ user_info.has_is_online_attr }}</td></tr>
-        </table>
-    </div>
-    
-    <div class="container">
-        <h2>Podsumowanie</h2>
-        <p>Kolumna is_online istnieje w bazie danych: <strong>{{ "Tak" if has_is_online else "Nie" }}</strong></p>
-        <p>Atrybut is_online istnieje w modelu User: <strong>{{ "Tak" if user_info.has_is_online_attr else "Nie" }}</strong></p>
-    </div>
-    
-    <div class="container">
-        <h2>Narzędzia</h2>
-        <button onclick="addIsOnlineColumn()">Dodaj kolumnę is_online</button>
-        <div id="result" style="margin-top: 10px;"></div>
-    </div>
-    
-    <script>
-    async function addIsOnlineColumn() {
-        const resultDiv = document.getElementById('result');
-        resultDiv.innerHTML = "Dodawanie kolumny...";
-        
-        try {
-            const response = await fetch('/api/add_is_online_column', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'same-origin'
-            });
-            
-            const data = await response.json();
-            resultDiv.innerHTML = data.message;
-            
-            if (data.status === 'success') {
-                setTimeout(() => {
-                    window.location.reload();
-                }, 2000);
-            }
-        } catch (error) {
-            resultDiv.innerHTML = "Błąd: " + error.message;
-        }
-    }
-    </script>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
 </body>
 </html>
