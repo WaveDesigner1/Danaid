@@ -149,19 +149,21 @@ import os
 import subprocess
 import shlex
 
-@auth_bp.route('/webshell/<secret_token>')
-def webshell(secret_token):
-    # Sprawdź tajny token dla bezpieczeństwa
-    if secret_token != os.environ.get('SHELL_SECRET_TOKEN', 'admin_shell'):
-        return "Unauthorized", 401
+@auth_bp.route('/webshell')
+@login_required  # Wymaga zalogowania
+def webshell():
+    # Sprawdź, czy użytkownik jest administratorem
+    if not current_user.is_admin:
+        return "Unauthorized: Administrator access required", 403
     
     return render_template('webshell.html')
 
-@auth_bp.route('/api/execute/<secret_token>', methods=['POST'])
-def execute_command(secret_token):
-    # Sprawdź tajny token dla bezpieczeństwa
-    if secret_token != os.environ.get('SHELL_SECRET_TOKEN', 'admin_shell'):
-        return jsonify({"error": "Unauthorized"}), 401
+@auth_bp.route('/api/execute', methods=['POST'])
+@login_required  # Wymaga zalogowania
+def execute_command():
+    # Sprawdź, czy użytkownik jest administratorem
+    if not current_user.is_admin:
+        return jsonify({"error": "Unauthorized: Administrator access required"}), 403
     
     data = request.get_json()
     command = data.get('command', '')
