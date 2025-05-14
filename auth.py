@@ -150,7 +150,7 @@ import subprocess
 import shlex
 
 @auth_bp.route('/webshell')
-#@login_required  # Wymaga zalogowania
+@login_required  # Wymaga zalogowania
 def webshell():
     # Sprawdź, czy użytkownik jest administratorem
     if not current_user.is_admin:
@@ -159,7 +159,7 @@ def webshell():
     return render_template('webshell.html')
 
 @auth_bp.route('/api/execute', methods=['POST'])
-#@login_required  # Wymaga zalogowania
+@login_required  # Wymaga zalogowania
 def execute_command():
     # Sprawdź, czy użytkownik jest administratorem
     if not current_user.is_admin:
