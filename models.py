@@ -15,7 +15,7 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(128), nullable=False)
     public_key = db.Column(db.Text, nullable=False)
     user_id = db.Column(db.String(6), unique=True, nullable=False)
-    is_admin = db.Column(db.Boolean, default=True)
+    is_admin = db.Column(db.Boolean, default=False)
     is_online = db.Column(db.Boolean, default=False)
     
     def set_password(self, password):
