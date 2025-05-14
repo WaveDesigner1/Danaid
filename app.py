@@ -28,7 +28,7 @@ def create_app():
     CORS(app, supports_credentials=True)  # KLUCZOWA ZMIANA: dodaj supports_credentials=True
 
     # Konfiguracja bazy danych
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance', 'user.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/users.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Konfiguracja bezpieczeństwa
