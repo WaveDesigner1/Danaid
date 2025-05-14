@@ -89,26 +89,45 @@ with app.app_context():
             db.create_all()
             
             # Tworzenie domyślnego administratora przy pierwszym uruchomieniu
-            if User.query.count() == 0:
-                admin = User(username="admin", is_admin=True)
-                admin.set_password("TymczasoweHasloAdmina123!")  # Pamiętaj zmienić po pierwszym logowaniu
-                admin.public_key = "TEMPORARY_ADMIN_KEY"
-                admin.generate_user_id()
-                db.session.add(admin)
-                db.session.commit()
-                print("Utworzono domyślne konto administratora")
-        else:
-            print(f"Znaleziono istniejące tabele: {existing_tables}")
-            
-            # Sprawdź, czy wszystkie modele mają odpowiadające tabele
-            models = db.Model.__subclasses__()
-            model_tables = [model.__tablename__ for model in models]
-            
-            missing_tables = [table for table in model_tables if table not in existing_tables]
-            if missing_tables:
-                print(f"Brakujące tabele: {missing_tables}")
-                db.create_all()  # Utworzy tylko brakujące tabele
-                print("Dodano brakujące tabele")
+if User.query.count() == 0:
+    # Generuj parę kluczy RSA
+    try:
+        from Crypto.PublicKey import RSA
+        
+        # Generuj nową parę kluczy
+        key = RSA.generate(2048)
+        private_key = key.export_key().decode('utf-8')
+        public_key = key.publickey().export_key().decode('utf-8')
+        
+        # Utwórz nowego administratora
+        admin = User(username="admin", is_admin=True)
+        admin.set_password("TymczasoweHasloAdmina123!")  # Pamiętaj zmienić po pierwszym logowaniu
+        admin.public_key = public_key
+        admin.generate_user_id()
+        db.session.add(admin)
+        db.session.commit()
+        
+        print("\n\n==================================================")
+        print("UWAGA! UTWORZONO DOMYŚLNE KONTO ADMINISTRATORA:")
+        print("Login: admin")
+        print("Hasło: TymczasoweHasloAdmina123!")
+        print("\nPRYWATNY KLUCZ RSA (SKOPIUJ I ZACHOWAJ BEZPIECZNIE):")
+        print(private_key)
+        print("==================================================\n\n")
+        
+    except ImportError:
+        print("Nie można wygenerować pary kluczy - brak pakietu Crypto.PublicKey")
+        # Alternatywne rozwiązanie z tymczasowym kluczem
+        admin = User(username="admin", is_admin=True)
+        admin.set_password("TymczasoweHasloAdmina123!")
+        admin.public_key = "TEMPORARY_ADMIN_KEY"  # Specjalny klucz, który pozwala na logowanie bez weryfikacji
+        admin.generate_user_id()
+        db.session.add(admin)
+        db.session.commit()
+        print("Utworzono domyślne konto administratora z tymczasowym kluczem")
+    except Exception as e:
+        print(f"Błąd podczas tworzenia administratora: {e}")
+        db.session.rollback()
         
     except Exception as e:
         print(f"Błąd podczas inicjalizacji bazy danych: {e}")
