@@ -8,7 +8,7 @@ from models import db, User
 from admin import init_admin
 from auth import auth_bp
 from chat import chat_bp
-
+from chat_api import chat_api
 # Inicjalizacja login managera
 login_manager = LoginManager()
 
@@ -53,7 +53,7 @@ def create_app():
     # Rejestracja blueprintów
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)
-
+    app.register_blueprint(chat_api)
     # Inicjalizacja panelu admina
     init_admin(app)
 
