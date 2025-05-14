@@ -33,12 +33,42 @@ def get_users():
         'id': user.id,
         'user_id': user.user_id,
         'username': user.username,
+        'is_online': user.is_online if hasattr(user, 'is_online') else False
     } for user in users]
     
     return jsonify({
         'status': 'success',
         'users': user_list
     })
+
+@chat_api.route('/api/online_users', methods=['GET'])
+@login_required
+def get_online_users():
+    """Pobiera listę użytkowników online"""
+    try:
+        # Sprawdź czy kolumna is_online istnieje w modelu
+        if hasattr(User, 'is_online'):
+            online_users = User.query.filter(User.is_online == True, User.id != current_user.id).all()
+            
+            user_list = [{
+                'id': user.id,
+                'user_id': user.user_id,
+                'username': user.username,
+            } for user in online_users]
+            
+            return jsonify({
+                'status': 'success',
+                'online_users': user_list
+            })
+        else:
+            # Jeśli kolumna nie istnieje, zwróć pustą listę
+            return jsonify({
+                'status': 'success',
+                'online_users': [],
+                'message': 'Funkcja statusu online nie jest dostępna'
+            })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @chat_api.route('/api/session/init', methods=['POST'])
 @login_required
