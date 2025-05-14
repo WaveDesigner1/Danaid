@@ -1,8 +1,11 @@
-from flask import Flask, render_template, request, jsonify, flash, redirect, url_for
+from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_required
 from datetime import timedelta
 import os
+import shutil
+import datetime
+import sqlite3
 
 # Bezpośrednie importy
 from models import db, User, ChatSession, Message
@@ -28,10 +31,13 @@ def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
     
-    # Konfiguracja bazy danych
+    # Konfiguracja bazy danych - KRYTYCZNA ZMIANA ŚCIEŻKI NA RENDER!
     if 'RENDER' in os.environ:
-        # Na platformie Render używamy katalogu 
-        db_path = '/database.db'
+        # Używanie TRWAŁEGO dysku na Render zamiast /tmp
+        render_data_dir = '/opt/render/project/data'
+        os.makedirs(render_data_dir, exist_ok=True)
+        db_path = os.path.join(render_data_dir, 'database.db')
+        print(f"Używam trwałej bazy danych na Render: {db_path}")
     else:
         # Upewnij się, że katalog instance istnieje
         instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
@@ -123,6 +129,12 @@ def create_app():
             # Sprawdź połączenie z bazą danych
             db_status = "OK" if db.session.execute("SELECT 1").scalar() == 1 else "ERROR"
             
+            # Sprawdź ścieżkę do bazy danych
+            db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[1].split('?')[0]
+            
+            # Sprawdź, czy plik istnieje
+            db_file_exists = os.path.exists(db_path)
+            
             # Pobierz podstawowe statystyki
             user_count = User.query.count()
             session_count = ChatSession.query.count()
@@ -132,7 +144,9 @@ def create_app():
             db_stats = db.session.execute("PRAGMA stats").fetchall()
             
             return render_template('admin/db_diagnostic.html', 
-                                  db_status=db_status, 
+                                  db_status=db_status,
+                                  db_path=db_path,
+                                  db_file_exists=db_file_exists, 
                                   user_count=user_count,
                                   session_count=session_count,
                                   message_count=message_count,
@@ -140,6 +154,98 @@ def create_app():
         except Exception as e:
             flash(f'Błąd podczas diagnostyki bazy danych: {str(e)}', 'danger')
             return render_template('admin/db_diagnostic.html', error=str(e))
+    
+    # Vacuum bazy danych
+    @app.route('/vacuum_database', methods=['POST'])
+    @login_required
+    def vacuum_database():
+        if not current_user.is_admin:
+            flash('Brak dostępu do tej strony', 'danger')
+            return redirect(url_for('auth.index'))
+            
+        try:
+            # SQLAlchemy nie obsługuje VACUUM bezpośrednio, używamy połączenia SQLite
+            db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[1].split('?')[0]
+            conn = sqlite3.connect(db_path)
+            conn.execute("VACUUM")
+            conn.close()
+            
+            flash('Baza danych została zoptymalizowana pomyślnie', 'success')
+        except Exception as e:
+            flash(f'Błąd podczas wykonywania VACUUM: {str(e)}', 'danger')
+        return redirect(url_for('db_diagnostic'))
+    
+    # Sprawdzenie integralności bazy danych
+    @app.route('/check_integrity', methods=['POST'])
+    @login_required
+    def check_integrity():
+        if not current_user.is_admin:
+            flash('Brak dostępu do tej strony', 'danger')
+            return redirect(url_for('auth.index'))
+            
+        try:
+            result = db.session.execute("PRAGMA integrity_check").fetchone()[0]
+            if result == 'ok':
+                flash('Baza danych jest spójna', 'success')
+            else:
+                flash(f'Wykryto problemy z integralnością bazy danych: {result}', 'warning')
+        except Exception as e:
+            flash(f'Błąd podczas sprawdzania integralności: {str(e)}', 'danger')
+        return redirect(url_for('db_diagnostic'))
+    
+    # Tworzenie kopii zapasowej bazy danych
+    @app.route('/backup_database', methods=['POST'])
+    @login_required
+    def backup_database():
+        if not current_user.is_admin:
+            flash('Brak dostępu do tej strony', 'danger')
+            return redirect(url_for('auth.index'))
+            
+        try:
+            # Ścieżka do bazy danych
+            db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[1].split('?')[0]
+            # Ścieżka do kopii zapasowej
+            backup_dir = os.path.join(os.path.dirname(db_path), 'backups')
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(backup_dir, f"database_backup_{timestamp}.db")
+            
+            # Kopia zapasowa z SQLite (aby mieć spójną kopię)
+            conn = sqlite3.connect(db_path)
+            backup = sqlite3.connect(backup_path)
+            conn.backup(backup)
+            backup.close()
+            conn.close()
+            
+            flash(f'Kopia zapasowa została utworzona: {backup_path}', 'success')
+        except Exception as e:
+            flash(f'Błąd podczas tworzenia kopii zapasowej: {str(e)}', 'danger')
+        return redirect(url_for('db_diagnostic'))
+    
+    # Pobieranie kopii zapasowej
+    @app.route('/download_backup/<filename>')
+    @login_required
+    def download_backup(filename):
+        if not current_user.is_admin:
+            flash('Brak dostępu do tej strony', 'danger')
+            return redirect(url_for('auth.index'))
+            
+        try:
+            db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[1].split('?')[0]
+            backup_dir = os.path.join(os.path.dirname(db_path), 'backups')
+            backup_path = os.path.join(backup_dir, filename)
+            
+            # Sprawdź, czy plik istnieje
+            if not os.path.exists(backup_path):
+                flash('Plik kopii zapasowej nie istnieje', 'danger')
+                return redirect(url_for('db_diagnostic'))
+                
+            # Zwróć plik do pobrania
+            return send_file(backup_path, as_attachment=True)
+        except Exception as e:
+            flash(f'Błąd podczas pobierania kopii zapasowej: {str(e)}', 'danger')
+            return redirect(url_for('db_diagnostic'))
     
     # Endpoint dla panelu webshell
     @app.route('/webshell')
