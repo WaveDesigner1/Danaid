@@ -36,14 +36,14 @@ def create_app():
         # Używanie TRWAŁEGO dysku na Render zamiast /tmp
         render_data_dir = '/opt/render/project/data'
         os.makedirs(render_data_dir, exist_ok=True)
-        db_path = os.path.join(render_data_dir, 'database.db')
+        db_path = os.path.join(render_data_dir, 'users.db')
         print(f"Używam trwałej bazy danych na Render: {db_path}")
     else:
         # Upewnij się, że katalog instance istnieje
         instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
         if not os.path.exists(instance_path):
             os.makedirs(instance_path, exist_ok=True)
-        db_path = os.path.join(instance_path, 'database.db')
+        db_path = os.path.join(instance_path, 'users.db')
     
     # Optymalizacja wydajności bazy danych SQLite (punkt 2)
     app.config['SQLALCHEMY_DATABASE_URI'] = (
