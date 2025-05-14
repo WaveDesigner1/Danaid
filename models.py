@@ -6,6 +6,7 @@ import string
 import datetime
 import hashlib
 import uuid
+import time
 
 db = SQLAlchemy()
 
@@ -17,8 +18,13 @@ class User(db.Model, UserMixin):
     user_id = db.Column(db.String(6), unique=True, nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     is_online = db.Column(db.Boolean, default=False)
+    last_active = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     
     def set_password(self, password):
+        # Uproszczona walidacja hasła
+        if len(password) < 8:
+            raise ValueError("Hasło musi mieć co najmniej 8 znaków")
+            
         self.password_hash = generate_password_hash(password)
         
     def check_password(self, password):
@@ -31,11 +37,26 @@ class User(db.Model, UserMixin):
             return
             
         # Generuj ID, dopóki nie będzie unikalny
-        while True:
+        attempts = 0
+        max_attempts = 100  # Zabezpieczenie przed nieskończoną pętlą
+        
+        while attempts < max_attempts:
             user_id = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
             if User.query.filter_by(user_id=user_id).first() is None:
                 self.user_id = user_id
                 return
+            attempts += 1
+            
+        # Jeśli dojdziemy tutaj, oznacza to, że nie udało się wygenerować unikalnego ID
+        # w sensownej liczbie prób - dodajemy timestamp na końcu
+        timestamp = str(int(time.time()))[-3:]
+        user_id = ''.join([str(secrets.randbelow(10)) for _ in range(3)]) + timestamp
+        self.user_id = user_id
+        
+    def update_last_active(self):
+        """Aktualizuje czas ostatniej aktywności użytkownika"""
+        self.last_active = datetime.datetime.utcnow()
+        db.session.commit()
 
 class ChatSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -89,6 +110,17 @@ class ChatSession(db.Model):
         db.session.commit()
         
         return session
+    
+    @classmethod
+    def get_active_sessions(cls, user_id):
+        """Pobiera wszystkie aktywne sesje dla użytkownika"""
+        now = datetime.datetime.utcnow()
+        
+        return cls.query.filter(
+            ((cls.initiator_id == user_id) | (cls.recipient_id == user_id)) &
+            (cls.is_active == True) &
+            (cls.expires_at > now)
+        ).all()
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -100,3 +132,26 @@ class Message(db.Model):
     read = db.Column(db.Boolean, default=False)
     
     sender = db.relationship('User')
+    
+    @classmethod
+    def get_unread_count(cls, user_id):
+        """Pobiera liczbę nieprzeczytanych wiadomości dla użytkownika"""
+        # Znajdź wszystkie aktywne sesje, w których użytkownik jest odbiorcą
+        sessions = ChatSession.query.filter(
+            (ChatSession.recipient_id == user_id) &
+            (ChatSession.is_active == True) &
+            (ChatSession.expires_at > datetime.datetime.utcnow())
+        ).all()
+        
+        session_ids = [session.id for session in sessions]
+        
+        # Jeśli nie ma aktywnych sesji, zwróć 0
+        if not session_ids:
+            return 0
+            
+        # Policz nieprzeczytane wiadomości w tych sesjach
+        return cls.query.filter(
+            (cls.session_id.in_(session_ids)) &
+            (cls.sender_id != user_id) &
+            (cls.read == False)
+        ).count()
