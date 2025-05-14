@@ -6,6 +6,7 @@ import os
 import shutil
 import datetime
 import sqlite3
+import time
 
 # Bezpośrednie importy
 from models import db, User, ChatSession, Message
@@ -80,6 +81,21 @@ def create_app():
         try:
             db.create_all()
             print("Baza danych została utworzona/zweryfikowana pomyślnie")
+            
+            # Sprawdź, czy kolumna is_online istnieje
+            try:
+                result = db.session.execute("PRAGMA table_info(user)").fetchall()
+                columns = [row[1] for row in result]
+                
+                if 'is_online' not in columns:
+                    print("Kolumna is_online nie istnieje - dodawanie...")
+                    db.session.execute("ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE")
+                    db.session.commit()
+                    print("Kolumna is_online dodana pomyślnie")
+            except Exception as e:
+                print(f"Ostrzeżenie: nie można zweryfikować/dodać kolumny is_online: {e}")
+                db.session.rollback()
+                
         except Exception as e:
             print(f"Błąd podczas inicjalizacji bazy danych: {e}")
             import traceback
@@ -96,11 +112,22 @@ def create_app():
     # Dodaj zarządzanie sesją
     @app.before_request
     def before_request():
+        """Zarządzanie sesją przed każdym żądaniem"""
         try:
+            # Ustawienie czasu życia sesji
             app.permanent_session_lifetime = timedelta(hours=24)
+            
+            # Optymalizacja aktualizacji statusu online
             if current_user.is_authenticated and hasattr(current_user, 'is_online'):
-                current_user.is_online = True
-                db.session.commit()
+                # Aktualizuj status tylko raz na 5 minut zamiast przy każdym żądaniu
+                last_update_key = f'last_online_update_{current_user.id}'
+                last_update = session.get(last_update_key, 0)
+                now = int(time.time())
+                
+                if now - last_update > 300:  # 5 minut = 300 sekund
+                    current_user.is_online = True
+                    db.session.commit()
+                    session[last_update_key] = now
         except Exception as e:
             print(f"Błąd w before_request: {e}")
             db.session.rollback()
@@ -135,6 +162,13 @@ def create_app():
             # Sprawdź, czy plik istnieje
             db_file_exists = os.path.exists(db_path)
             
+            # Rozmiar pliku i uprawnienia
+            db_file_size = os.path.getsize(db_path) if db_file_exists else 0
+            try:
+                db_file_permissions = oct(os.stat(db_path).st_mode)[-3:] if db_file_exists else None
+            except:
+                db_file_permissions = None
+            
             # Pobierz podstawowe statystyki
             user_count = User.query.count()
             session_count = ChatSession.query.count()
@@ -147,6 +181,8 @@ def create_app():
                                   db_status=db_status,
                                   db_path=db_path,
                                   db_file_exists=db_file_exists, 
+                                  db_file_size=db_file_size,
+                                  db_file_permissions=db_file_permissions,
                                   user_count=user_count,
                                   session_count=session_count,
                                   message_count=message_count,
@@ -247,16 +283,6 @@ def create_app():
             flash(f'Błąd podczas pobierania kopii zapasowej: {str(e)}', 'danger')
             return redirect(url_for('db_diagnostic'))
     
-    # Endpoint dla panelu webshell
-    @app.route('/webshell')
-    @login_required
-    def webshell():
-        # Bezpieczeństwo - tylko dla administratorów (punkt 8)
-        if not current_user.is_admin:
-            flash('Brak dostępu do tej strony', 'danger')
-            return redirect(url_for('auth.index'))
-        return render_template('admin/webshell.html')
-    
     # API dla uzyskania listy użytkowników - zmieniono nazwę na admin_get_users
     @app.route('/api/admin/users')
     @login_required
@@ -273,7 +299,7 @@ def create_app():
                     'username': user.username,
                     'user_id': user.user_id,
                     'is_admin': user.is_admin,
-                    'is_online': user.is_online
+                    'is_online': getattr(user, 'is_online', False)  # Bezpieczny dostęp do atrybutu
                 } for user in users
             ]
             return jsonify({'status': 'success', 'users': users_list})
@@ -307,9 +333,6 @@ def create_app():
             db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
     
-    return app
-
-# Jeśli skrypt jest uruchamiany bezpośrednio
     # Endpoint do panelu administracyjnego
     @app.route('/admin_panel')
     @login_required
@@ -323,18 +346,25 @@ def create_app():
             user_count = User.query.count()
             session_count = ChatSession.query.count()
             message_count = Message.query.count()
-            online_users = User.query.filter_by(is_online=True).count()
+            
+            # Pobierz liczbę użytkowników online - z bezpieczną obsługą braku kolumny
+            try:
+                online_users = User.query.filter_by(is_online=True).count()
+            except Exception as e:
+                print(f"Nie można pobrać statusu online użytkowników: {e}")
+                online_users = 0
         
             return render_template('admin/admin_panel.html', 
-                              user_count=user_count,
-                              session_count=session_count, 
-                              message_count=message_count,
-                              online_users=online_users)
+                                user_count=user_count,
+                                session_count=session_count, 
+                                message_count=message_count,
+                                online_users=online_users)
         except Exception as e:
             flash(f'Błąd podczas generowania panelu: {str(e)}', 'danger')
             return render_template('admin/admin_panel.html', error=str(e))
 
     return app
+
 if __name__ == '__main__':
     app = create_app()
     app.run(debug=True, host='0.0.0.0')
