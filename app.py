@@ -30,8 +30,8 @@ def create_app():
     
     # Konfiguracja bazy danych
     if 'RENDER' in os.environ:
-        # Na platformie Render używamy katalogu /tmp
-        db_path = '/tmp/database.db'
+        # Na platformie Render używamy katalogu 
+        db_path = '/database.db'
     else:
         # Upewnij się, że katalog instance istnieje
         instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
