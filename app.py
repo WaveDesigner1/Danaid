@@ -146,7 +146,7 @@ def create_app():
             }), 500
 
         @app.route('/diagnostics', methods=['GET'])
-def diagnostics():
+        def diagnostics():
     """Endpoint diagnostyczny do sprawdzenia stanu bazy danych"""
     try:
         result = {
