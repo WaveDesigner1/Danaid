@@ -8,13 +8,13 @@ from models import db, User
 from admin import init_admin
 from auth import auth_bp
 from chat import chat_bp
+# Import nowego blueprintu chat_api
 from chat_api import chat_api
+
 # Inicjalizacja login managera
 login_manager = LoginManager()
 
-
 # Ładowanie użytkownika
-@login_manager.user_loader
 @login_manager.user_loader
 def load_user(user_id):
     # KLUCZOWA ZMIANA: dodaj przechwytywanie i logowanie błędów
@@ -23,7 +23,6 @@ def load_user(user_id):
     except Exception as e:
         print(f"Błąd ładowania użytkownika: {e}")
         return None
-
 
 # Główna funkcja tworząca aplikację
 def create_app():
@@ -53,7 +52,8 @@ def create_app():
     # Rejestracja blueprintów
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)
-    app.register_blueprint(chat_api)
+    app.register_blueprint(chat_api)  # Rejestracja blueprintu chat_api
+
     # Inicjalizacja panelu admina
     init_admin(app)
 
