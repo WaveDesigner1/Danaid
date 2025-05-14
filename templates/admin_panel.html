@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Panel Administratora</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/user_style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_panel.css') }}">
+</head>
+<body>
+    <!-- Skrypt sprawdzania sesji -->
+    <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+        // Przed kontynuacją, sprawdź sesję na serwerze
+        if (window.sessionManager) {
+            const isLoggedIn = await window.sessionManager.checkServerSession();
+            
+            // Jeśli nie jesteśmy zalogowani a powinniśmy być, przekieruj na stronę logowania
+            const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
+            if (!isLoggedIn && !isLoginPage) {
+                window.location.href = '/?next=' + encodeURIComponent(window.location.pathname);
+            }
+        }
+    });
+    </script>
+
+    <header class="admin-header">
+        <div class="admin-logo">Panel Administratora</div>
+        <nav class="admin-nav">
+            <a href="{{ url_for('chat.chat') }}">Czat</a>
+            <a href="{{ url_for('auth.logout') }}">Wyloguj</a>
+        </nav>
+    </header>
+
+    <div class="admin-container">
+        <aside class="admin-sidebar">
+            <nav class="admin-menu">
+                <ul>
+                    <li class="active"><a href="#users-section" data-section="users">Użytkownicy</a></li>
+                    <li><a href="#system-section" data-section="system">System</a></li>
+                    <li><a href="#logs-section" data-section="logs">Logi</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <main class="admin-content">
+            <section id="users-section" class="admin-section active">
+                <h2>Zarządzanie Użytkownikami</h2>
+                <div class="admin-card">
+                    <div class="card-header">
+                        <h3>Lista Użytkowników</h3>
+                        <div class="card-actions">
+                            <input type="text" id="user-search" placeholder="Szukaj użytkownika...">
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nazwa użytkownika</th>
+                                    <th>ID użytkownika</th>
+                                    <th>Status</th>
+                                    <th>Akcje</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                                <tr>
+                                    <td colspan="5" class="text-center">Ładowanie danych...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="system-section" class="admin-section">
+                <h2>Ustawienia Systemu</h2>
+                <div class="admin-card">
+                    <div class="card-header">
+                        <h3>Konfiguracja Aplikacji</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="admin-info-box">
+                            <p><strong>Stan bazy danych:</strong> <span class="badge success">Aktywna</span></p>
+                            <p><strong>Wersja aplikacji:</strong> 1.0.0</p>
+                            <p><strong>Liczba użytkowników:</strong> <span id="user-count">...</span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="logs-section" class="admin-section">
+                <h2>Logi Systemowe</h2>
+                <div class="admin-card">
+                    <div class="card-header">
+                        <h3>Ostatnie Działania</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="logs-container">
+                            <pre id="logs-display">Brak dostępnych logów</pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal do zarządzania uprawnieniami -->
+    <div id="admin-modal" class="admin-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Zarządzanie Uprawnieniami</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Użytkownik: <strong id="modal-username"></strong></p>
+                <p>Obecny status: <span id="modal-status" class="badge"></span></p>
+                
+                <div class="confirm-box">
+                    <p>Czy na pewno chcesz zmienić uprawnienia tego użytkownika?</p>
+                    <div class="confirm-actions">
+                        <button id="confirm-admin" class="btn primary">Potwierdź</button>
+                        <button id="cancel-admin" class="btn secondary">Anuluj</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Zmienne globalne
+            let currentUserId = null;
+            let users = [];
+            
+            // Elementy DOM
+            const userTableBody = document.getElementById('users-table-body');
+            const userSearch = document.getElementById('user-search');
+            const userCount = document.getElementById('user-count');
+            const modal = document.getElementById('admin-modal');
+            const modalUsername = document.getElementById('modal-username');
+            const modalStatus = document.getElementById('modal-status');
+            const confirmAdmin = document.getElementById('confirm-admin');
+            const cancelAdmin = document.getElementById('cancel-admin');
+            const closeModal = document.querySelector('.close-modal');
+            const menuItems = document.querySelectorAll('.admin-menu li a');
+            const sections = document.querySelectorAll('.admin-section');
+            
+            // Obsługa menu
+            menuItems.forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    
+                    // Dezaktywacja wszystkich menu
+                    menuItems.forEach(mi => {
+                        mi.parentElement.classList.remove('active');
+                    });
+                    
+                    // Aktywacja klikniętego menu
+                    this.parentElement.classList.add('active');
+                    
+                    // Ukrycie wszystkich sekcji
+                    sections.forEach(section => {
+                        section.classList.remove('active');
+                    });
+                    
+                    // Pokazanie wybranej sekcji
+                    const targetSection = this.getAttribute('data-section');
+                    document.getElementById(targetSection + '-section').classList.add('active');
+                });
+            });
+            
+            // Ładowanie użytkowników
+            async function loadUsers() {
+                try {
+                    const response = await fetch('/api/users', {
+                        credentials: 'same-origin' // Ważne: wysyłanie ciasteczek sesji
+                    });
+                    if (!response.ok) throw new Error('Błąd pobierania użytkowników');
+                    
+                    users = await response.json();
+                    userCount.textContent = users.length;
+                    renderUsers(users);
+                } catch (error) {
+                    userTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="text-center error">Błąd ładowania danych</td>
+                        </tr>
+                    `;
+                }
+            }
+            
+            // Renderowanie tabeli użytkowników
+            function renderUsers(usersToRender) {
+                if (usersToRender.length === 0) {
+                    userTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="text-center">Brak użytkowników</td>
+                        </tr>
+                    `;
+                    return;
+                }
+                
+                userTableBody.innerHTML = '';
+                
+                usersToRender.forEach(user => {
+                    const row = document.createElement('tr');
+                    
+                    row.innerHTML = `
+                        <td>${user.id}</td>
+                        <td>${user.username}</td>
+                        <td>${user.user_id}</td>
+                        <td><span class="badge ${user.is_admin ? 'primary' : 'secondary'}">${user.is_admin ? 'Admin' : 'Użytkownik'}</span></td>
+                        <td>
+                            <button class="btn ${user.is_admin ? 'warning' : 'success'} btn-sm toggle-admin" data-id="${user.id}" data-username="${user.username}" data-admin="${user.is_admin}">
+                                ${user.is_admin ? 'Usuń admina' : 'Nadaj admina'}
+                            </button>
+                        </td>
+                    `;
+                    
+                    userTableBody.appendChild(row);
+                });
+                
+                // Dodanie obsługi przycisków
+                document.querySelectorAll('.toggle-admin').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const userId = this.getAttribute('data-id');
+                        const username = this.getAttribute('data-username');
+                        const isAdmin = this.getAttribute('data-admin') === 'true';
+                        
+                        currentUserId = userId;
+                        modalUsername.textContent = username;
+                        modalStatus.textContent = isAdmin ? 'Administrator' : 'Użytkownik';
+                        modalStatus.className = `badge ${isAdmin ? 'primary' : 'secondary'}`;
+                        confirmAdmin.textContent = isAdmin ? 'Usuń uprawnienia admina' : 'Nadaj uprawnienia admina';
+                        confirmAdmin.className = `btn ${isAdmin ? 'warning' : 'success'}`;
+                        
+                        modal.style.display = 'block';
+                    });
+                });
+            }
+            
+            // Obsługa wyszukiwania
+            userSearch.addEventListener('input', function() {
+                const query = this.value.toLowerCase();
+                
+                if (!query) {
+                    renderUsers(users);
+                    return;
+                }
+                
+                const filtered = users.filter(user => 
+                    user.username.toLowerCase().includes(query) || 
+                    user.user_id.includes(query)
+                );
+                
+                renderUsers(filtered);
+            });
+            
+            // Obsługa modalu
+            confirmAdmin.addEventListener('click', async function() {
+                if (!currentUserId) return;
+                
+                const user = users.find(u => u.id == currentUserId);
+                if (!user) return;
+                
+                try {
+                    const response = await fetch(`/api/users/${currentUserId}/toggle_admin`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'same-origin' // Ważne: wysyłanie ciasteczek sesji
+                    });
+                    
+                    if (!response.ok) throw new Error('Błąd zmiany uprawnień');
+                    
+                    // Odświeżenie danych
+                    await loadUsers();
+                    modal.style.display = 'none';
+                } catch (error) {
+                    alert('Wystąpił błąd podczas zmiany uprawnień');
+                }
+            });
+            
+            // Zamykanie modalu
+            function closeModalFunc() {
+                modal.style.display = 'none';
+                currentUserId = null;
+            }
+            
+            cancelAdmin.addEventListener('click', closeModalFunc);
+            closeModal.addEventListener('click', closeModalFunc);
+            window.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    closeModalFunc();
+                }
+            });
+            
+            // Inicjalizacja
+            loadUsers();
+        });
+    </script>
+</body>
+</html>

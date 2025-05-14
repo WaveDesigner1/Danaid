@@ -1,0 +1,394 @@
+/* === ZMIENNE === */
+:root {
+    --admin-primary: #FF9800;
+    --admin-primary-dark: #F57C00;
+    --admin-secondary: #607D8B;
+    --admin-secondary-dark: #455A64;
+    --admin-bg-dark: #333333;
+    --admin-bg-medium: #424242;
+    --admin-bg-light: #515151;
+    --admin-text: #FFFFFF;
+    --admin-success: #4CAF50;
+    --admin-warning: #FFC107;
+    --admin-danger: #F44336;
+}
+
+/* === UKŁAD === */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--admin-bg-dark);
+    color: var(--admin-text);
+}
+
+.admin-header {
+    background-color: var(--admin-bg-medium);
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.admin-logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--admin-primary);
+}
+
+.admin-nav a {
+    color: var(--admin-text);
+    text-decoration: none;
+    margin-left: 20px;
+    padding: 5px 10px;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+.admin-nav a:hover {
+    background-color: var(--admin-bg-light);
+}
+
+.admin-container {
+    display: flex;
+    height: calc(100vh - 65px); /* Wysokość - header */
+}
+
+.admin-sidebar {
+    width: 220px;
+    background-color: var(--admin-bg-medium);
+    padding: 20px 0;
+    overflow-y: auto;
+}
+
+.admin-menu ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.admin-menu li {
+    margin-bottom: 5px;
+}
+
+.admin-menu li a {
+    display: block;
+    padding: 12px 20px;
+    color: var(--admin-text);
+    text-decoration: none;
+    transition: all 0.3s;
+    border-left: 3px solid transparent;
+}
+
+.admin-menu li a:hover {
+    background-color: var(--admin-bg-light);
+    border-left-color: var(--admin-primary);
+}
+
+.admin-menu li.active a {
+    background-color: var(--admin-bg-light);
+    border-left-color: var(--admin-primary);
+    font-weight: bold;
+}
+
+.admin-content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+/* === SEKCJE === */
+.admin-section {
+    display: none;
+}
+
+.admin-section.active {
+    display: block;
+}
+
+.admin-section h2 {
+    color: var(--admin-primary);
+    margin-top: 0;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--admin-primary);
+}
+
+/* === KARTY === */
+.admin-card {
+    background-color: var(--admin-bg-medium);
+    border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.card-header {
+    padding: 15px 20px;
+    background-color: var(--admin-bg-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card-header h3 {
+    margin: 0;
+    color: var(--admin-primary);
+}
+
+.card-body {
+    padding: 20px;
+}
+
+/* === TABELE === */
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.admin-table th,
+.admin-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--admin-bg-light);
+}
+
+.admin-table th {
+    background-color: var(--admin-bg-light);
+    color: var(--admin-primary);
+    font-weight: bold;
+}
+
+.admin-table tr:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.text-center {
+    text-align: center;
+}
+
+/* === FORMULARZE === */
+input[type="text"],
+input[type="password"],
+select {
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid var(--admin-bg-light);
+    background-color: var(--admin-bg-dark);
+    color: var(--admin-text);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* === PRZYCISKI === */
+.btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+}
+
+.btn.primary {
+    background-color: var(--admin-primary);
+    color: var(--admin-bg-dark);
+}
+
+.btn.primary:hover {
+    background-color: var(--admin-primary-dark);
+}
+
+.btn.secondary {
+    background-color: var(--admin-secondary);
+    color: var(--admin-text);
+}
+
+.btn.secondary:hover {
+    background-color: var(--admin-secondary-dark);
+}
+
+.btn.success {
+    background-color: var(--admin-success);
+    color: white;
+}
+
+.btn.warning {
+    background-color: var(--admin-warning);
+    color: var(--admin-bg-dark);
+}
+
+.btn.danger {
+    background-color: var(--admin-danger);
+    color: white;
+}
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 0.9rem;
+}
+
+/* === BADGE === */
+.badge {
+    padding: 3px 8px;
+    border-radius: 30px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    display: inline-block;
+}
+
+.badge.primary {
+    background-color: var(--admin-primary);
+    color: var(--admin-bg-dark);
+}
+
+.badge.secondary {
+    background-color: var(--admin-secondary);
+    color: white;
+}
+
+.badge.success {
+    background-color: var(--admin-success);
+    color: white;
+}
+
+.badge.warning {
+    background-color: var(--admin-warning);
+    color: var(--admin-bg-dark);
+}
+
+.badge.danger {
+    background-color: var(--admin-danger);
+    color: white;
+}
+
+/* === INFO BOX === */
+.admin-info-box {
+    background-color: var(--admin-bg-light);
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.admin-info-box p {
+    margin: 10px 0;
+}
+
+/* === LOGS === */
+.logs-container {
+    background-color: var(--admin-bg-dark);
+    padding: 15px;
+    border-radius: 4px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+#logs-display {
+    margin: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+/* === MODAL === */
+.admin-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+    background-color: var(--admin-bg-medium);
+    margin: 10% auto;
+    padding: 0;
+    border-radius: 6px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    animation: modalOpen 0.3s ease-out;
+}
+
+@keyframes modalOpen {
+    from {opacity: 0; transform: translateY(-20px);}
+    to {opacity: 1; transform: translateY(0);}
+}
+
+.modal-header {
+    padding: 15px 20px;
+    background-color: var(--admin-bg-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    color: var(--admin-primary);
+    font-size: 1.2rem;
+}
+
+.close-modal {
+    color: var(--admin-text);
+    font-size: 1.5rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.confirm-box {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: var(--admin-bg-light);
+    border-radius: 4px;
+}
+
+.confirm-actions {
+    margin-top: 15px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* === RESPONSYWNOŚĆ === */
+@media (max-width: 768px) {
+    .admin-container {
+        flex-direction: column;
+        height: auto;
+    }
+    
+    .admin-sidebar {
+        width: 100%;
+        padding: 10px 0;
+    }
+    
+    .admin-menu li a {
+        padding: 10px 15px;
+    }
+    
+    .card-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .card-actions {
+        margin-top: 10px;
+        width: 100%;
+    }
+}

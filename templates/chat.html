@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Czat szyfrowany</title>
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/chat_style.css') }}">
+    <script src="{{ url_for('static', filename='js/session_manager.js') }}"></script>
+</head>
+<body>
+    <!-- Skrypt sprawdzania sesji -->
+    <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+        // Przed kontynuacją, sprawdź sesję na serwerze
+        if (window.sessionManager) {
+            const isLoggedIn = await window.sessionManager.checkServerSession();
+            
+            // Jeśli nie jesteśmy zalogowani a powinniśmy być, przekieruj na stronę logowania
+            const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
+            if (!isLoggedIn && !isLoginPage) {
+                console.log('Brak aktywnej sesji, przekierowanie na stronę logowania');
+                window.location.href = '/?next=' + encodeURIComponent(window.location.pathname);
+            }
+        }
+    });
+    </script>
+    
+    <!-- Panel użytkownika -->
+    <div id="user-panel">
+        <div id="user-info">
+            <span id="username">{{ current_user.username }}</span>
+        </div>
+        <div id="user-actions">
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('admin_panel') }}" class="action-btn">Panel Admina</a>
+                {% endif %}
+                <button class="action-btn" id="settings-btn">Ustawienia</button>
+                <a href="{{ url_for('auth.logout') }}" class="action-btn" id="logout-btn">Wyloguj</a>
+        </div>
+    </div>
+    
+    <!-- Główny kontener -->
+    <div id="main-container">
+        <div id="friends">
+            <h3>Znajomi</h3>
+            <ul id="friend-list">
+                <!-- tutaj będą znajomi -->
+            </ul>
+        </div>
+
+        <div id="chat">
+            <div id="messages">
+                <!-- wiadomości będą się tu pojawiać -->
+            </div>
+            <div id="input-area">
+                <input type="text" id="message-input" placeholder="Wpisz wiadomość...">
+                <button id="send-button">Wyślij</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Wyświetlenie nazwy użytkownika
+            const usernameElement = document.getElementById('username');
+            
+            // Obsługa wysyłania wiadomości
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            const messagesContainer = document.getElementById('messages');
+            
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                if (message) {
+                    // Tutaj będzie logika szyfrowania wiadomości
+                    
+                    // Dodanie wiadomości do czatu (tylko interfejs)
+                    const messageElement = document.createElement('div');
+                    messageElement.classList.add('message', 'sent');
+                    messageElement.textContent = message;
+                    messagesContainer.appendChild(messageElement);
+                    
+                    // Przewinięcie na dół
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                    
+                    // Wyczyszczenie pola
+                    messageInput.value = '';
+                }
+            }
+            
+            // Nasłuchiwanie kliknięcia przycisku wysyłania
+            sendButton.addEventListener('click', sendMessage);
+            
+            // Nasłuchiwanie klawisza Enter
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Przycisk ustawień
+            const settingsButton = document.getElementById('settings-btn');
+            settingsButton.addEventListener('click', function() {
+                alert('Panel ustawień będzie dostępny wkrótce');
+            });
+        });
+    </script>
+</body>
+</html>
