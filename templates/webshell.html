@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Web Shell</title>
+    <title>Web Shell - Panel Administratora</title>
     <style>
         body {
             font-family: 'Courier New', monospace;
@@ -134,10 +134,23 @@
             margin-left: 10px;
             cursor: pointer;
         }
+        
+        .user-info {
+            background-color: #333;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border-left: 5px solid #4CAF50;
+        }
     </style>
 </head>
 <body>
-    <h1>Web Shell</h1>
+    <h1>Web Shell - Panel Administratora</h1>
+    
+    <div class="user-info">
+        <p>Zalogowany jako: <strong>{{ current_user.username }}</strong> (Administrator)</p>
+    </div>
+    
     <p class="info">Wykonuj polecenia na serwerze. Dozwolone komendy: ls, cat, mkdir, pwd, echo, cp, mv, rm, touch, head, tail, wc, find, sqlite3</p>
     
     <div id="quick-commands">
@@ -178,9 +191,6 @@
         const filePath = document.getElementById('file-path');
         const saveFileBtn = document.getElementById('save-file');
         
-        // Tajny token
-        const secretToken = 'admin_shell';
-        
         // Historia poleceń
         let commandHistory = [];
         let historyIndex = -1;
@@ -197,6 +207,7 @@
         // Inicjalizacja terminala
         appendToTerminal('Web Shell v1.0', 'info');
         appendToTerminal('Katalog roboczy: /opt/render/project/src', 'info');
+        appendToTerminal('Tryb: Administrator', 'info');
         appendToTerminal('', 'output');
         
         // Funkcja do wykonywania poleceń
@@ -211,12 +222,13 @@
             appendToTerminal(`$ ${command}`, 'command');
             
             try {
-                const response = await fetch(`/api/execute/${secretToken}`, {
+                const response = await fetch(`/api/execute`, {  // Zmieniony URL - usunięty token
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ command }),
+                    credentials: 'same-origin'  // Dodane, aby wysyłać ciasteczka sesji
                 });
                 
                 const data = await response.json();
