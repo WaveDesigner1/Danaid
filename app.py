@@ -151,10 +151,10 @@ def create_app():
             return redirect(url_for('auth.index'))
         return render_template('admin/webshell.html')
     
-    # API dla uzyskania listy użytkowników
-    @app.route('/api/users')
+    # API dla uzyskania listy użytkowników - zmieniono nazwę na admin_get_users
+    @app.route('/api/admin/users')
     @login_required
-    def get_users():
+    def admin_get_users():
         # Bezpieczeństwo - tylko dla administratorów (punkt 8)
         if not current_user.is_admin:
             return jsonify({'status': 'error', 'message': 'Brak uprawnień'}), 403
@@ -175,7 +175,7 @@ def create_app():
             return jsonify({'status': 'error', 'message': str(e)}), 500
     
     # API do nadawania uprawnień administratora
-    @app.route('/api/promote_to_admin', methods=['POST'])
+    @app.route('/api/admin/promote_to_admin', methods=['POST'])
     @login_required
     def promote_to_admin():
         # Bezpieczeństwo - tylko dla administratorów (punkt 8)
