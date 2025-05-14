@@ -35,9 +35,13 @@ def clear_old_databases():
                     
     except Exception as e:
         print(f"Błąd podczas usuwania starych baz danych: {e}")
+
 def initialize_database():
     """Inicjalizuje bazę danych i tworzy administratora"""
     print("=== INICJALIZACJA BAZY DANYCH ===")
+    
+    # Najpierw usuń stare bazy danych
+    clear_old_databases()
     
     try:
         with app.app_context():
