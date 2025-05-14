@@ -8,7 +8,8 @@ import datetime
 import sqlite3
 import time
 from sqlalchemy import text
-
+from sqlalchemy import inspect, text
+import traceback
 # Bezpośrednie importy
 from models import db, User, ChatSession, Message
 from admin import init_admin
