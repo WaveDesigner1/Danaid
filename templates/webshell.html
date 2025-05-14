@@ -222,7 +222,7 @@
             appendToTerminal(`$ ${command}`, 'command');
             
             try {
-                const response = await fetch(`/api/execute`, {  // Zmieniony URL - usunięty token
+                const response = await fetch(`/api/execute_direct`, {  // Zmieniony URL - usunięty token
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
