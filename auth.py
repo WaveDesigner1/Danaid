@@ -327,16 +327,11 @@ def db_diagnostic():
             "has_is_online_attr": hasattr(current_user, 'is_online')
         }
         
-        # Utwórz HTML z diagnostyką
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Diagnostyka bazy danych</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; padding: 20px; }}
-                table {{ border-collapse: collapse; width: 100%; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; }}
-                .container {{ margin-bottom: 20px; }}
-                h2 {{ color:
+        # Stwórz szablon HTML
+        return render_template('db_diagnostic.html', 
+                              columns=columns,
+                              db_files=db_files,
+                              user_info=user_info,
+                              has_is_online=has_is_online)
+    except Exception as e:
+        return f"Błąd podczas diagnostyki: {str(e)}"
