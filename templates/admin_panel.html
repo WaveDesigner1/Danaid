@@ -85,7 +85,7 @@
         $(document).ready(function() {
             // Ładowanie listy użytkowników
             $.ajax({
-                url: '/api/users',
+                url: '/api/admin/users',
                 method: 'GET',
                 success: function(response) {
                     if (response.status === 'success') {
@@ -133,7 +133,7 @@
             
             function promoteToAdmin(username) {
                 $.ajax({
-                    url: '/api/promote_to_admin',
+                    url: '/api/admin/promote_to_admin',
                     method: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify({ username: username }),
