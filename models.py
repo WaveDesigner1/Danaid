@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
 import datetime
+
 # Inicjalizacja bazy danych
 db = SQLAlchemy()
 
@@ -15,6 +16,23 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     user_id = db.Column(db.String(6), nullable=True, unique=True)
+    is_online = db.Column(db.Boolean, default=False)
+
+    # Relacje z wyraźnym określeniem kluczy obcych
+    initiated_sessions = db.relationship('ChatSession', 
+                                       foreign_keys='ChatSession.initiator_id',
+                                       backref='initiator', 
+                                       lazy='dynamic')
+    
+    received_sessions = db.relationship('ChatSession', 
+                                       foreign_keys='ChatSession.recipient_id',
+                                       backref='recipient', 
+                                       lazy='dynamic')
+    
+    messages = db.relationship('Message', 
+                              foreign_keys='Message.sender_id',
+                              backref='sender', 
+                              lazy='dynamic')
 
     def __repr__(self):
         return f'<User {self.username}>'
@@ -37,19 +55,7 @@ def generate_unique_user_id():
         if User.query.filter_by(user_id=user_id).first() is None:
             return user_id
 
-from sqlalchemy.ext.hybrid import hybrid_property
 
-# Istniejący model User możemy rozszerzyć o relacje
-class User(db.Model, UserMixin):
-    # Istniejące pola...
-    
-    # Dodajemy relacje do nowych modeli
-    sent_messages = db.relationship('Message', foreign_keys='Message.sender_id', backref='sender', lazy='dynamic')
-    received_messages = db.relationship('Message', foreign_keys='Message.recipient_id', backref='recipient', lazy='dynamic')
-    chat_sessions = db.relationship('ChatSession', backref='initiator', lazy='dynamic')
-    
-
-# Nowe modele do obsługi czatu
 class ChatSession(db.Model):
     __tablename__ = 'chat_session'
     
@@ -62,24 +68,26 @@ class ChatSession(db.Model):
     last_activity = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True)
     
+    # Relacja do wiadomości
+    messages = db.relationship('Message', backref='session', lazy='dynamic')
+    
     # Metoda do sprawdzania czy sesja jest aktywna
-    @hybrid_property
+    @property
     def is_valid(self):
         return self.is_active and self.expires_at > datetime.datetime.utcnow()
-    
-    # Metoda do automatycznego generowania tokenu sesji
-    @staticmethod
-    def generate_session_token():
-        import secrets
-        return secrets.token_urlsafe(32)
     
     # Metoda do tworzenia nowej sesji
     @classmethod
     def create_session(cls, initiator_id, recipient_id, duration_hours=24):
+        # Generuj token
+        import secrets
+        token = secrets.token_urlsafe(32)
+        
+        # Utwórz sesję
         session = cls(
             initiator_id=initiator_id,
             recipient_id=recipient_id,
-            session_token=cls.generate_session_token(),
+            session_token=token,
             expires_at=datetime.datetime.utcnow() + datetime.timedelta(hours=duration_hours)
         )
         db.session.add(session)
@@ -102,28 +110,18 @@ class Message(db.Model):
     __tablename__ = 'message'
     
     id = db.Column(db.Integer, primary_key=True)
-    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     session_id = db.Column(db.Integer, db.ForeignKey('chat_session.id'), nullable=False)
-    
-    # Zaszyfrowane dane wiadomości - tylko metadane, treść nie jest przechowywana na serwerze
-    encrypted_metadata = db.Column(db.Text, nullable=False)  # Zaszyfrowane metadane
-    message_hash = db.Column(db.String(64), nullable=False)  # Hash weryfikujący integralność
-    
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    encrypted_data = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
-    is_delivered = db.Column(db.Boolean, default=False)  # Czy wiadomość została dostarczona
-    delivery_timestamp = db.Column(db.DateTime, nullable=True)  # Kiedy dostarczono
-    
-    session = db.relationship('ChatSession', backref='messages')
+    is_delivered = db.Column(db.Boolean, default=False)
     
     @classmethod
-    def create_message(cls, sender_id, recipient_id, session_id, encrypted_metadata, message_hash):
+    def create(cls, session_id, sender_id, encrypted_data):
         message = cls(
-            sender_id=sender_id,
-            recipient_id=recipient_id,
             session_id=session_id,
-            encrypted_metadata=encrypted_metadata,
-            message_hash=message_hash
+            sender_id=sender_id,
+            encrypted_data=encrypted_data
         )
         db.session.add(message)
         db.session.commit()
@@ -131,5 +129,4 @@ class Message(db.Model):
     
     def mark_as_delivered(self):
         self.is_delivered = True
-        self.delivery_timestamp = datetime.datetime.utcnow()
         db.session.commit()
