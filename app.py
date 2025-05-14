@@ -3,7 +3,6 @@ from flask_cors import CORS
 from flask_login import LoginManager, current_user
 from datetime import timedelta
 import os
-
 # Bezpośrednie importy
 from models import db, User
 from admin import init_admin
@@ -16,7 +15,6 @@ login_manager = LoginManager()
 # Ładowanie użytkownika
 @login_manager.user_loader
 def load_user(user_id):
-    # KLUCZOWA ZMIANA: dodaj przechwytywanie i logowanie błędów
     try:
         return User.query.get(int(user_id))
     except Exception as e:
@@ -26,38 +24,58 @@ def load_user(user_id):
 # Główna funkcja tworząca aplikację
 def create_app():
     app = Flask(__name__)
-    CORS(app, supports_credentials=True)  # KLUCZOWA ZMIANA: dodaj supports_credentials=True
-
-    # Upewnij się, że katalog instance istnieje
-    instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
-    if not os.path.exists(instance_path):
-        os.makedirs(instance_path, exist_ok=True)
-
-# Skonfiguruj bezwzględną ścieżkę do NOWEJ bazy danych
-    db_path = os.path.join(instance_path, 'new_database.db')  # Nowa nazwa pliku bazy danych
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    CORS(app, supports_credentials=True)
+    
+    # Konfiguracja bazy danych
+    if 'RENDER' in os.environ:
+        # Na platformie Render używamy katalogu /tmp
+        db_path = '/tmp/database.db'
+    else:
+        # Upewnij się, że katalog instance istnieje
+        instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
+        if not os.path.exists(instance_path):
+            os.makedirs(instance_path, exist_ok=True)
+        db_path = os.path.join(instance_path, 'database.db')
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}?isolation_level=READ_UNCOMMITTED'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+        'pool_size': 5,
+        'max_overflow': 10
+    }
     
     # Konfiguracja bezpieczeństwa
     app.config['SECRET_KEY'] = 'your_secret_key'
     
-    # KLUCZOWA ZMIANA: Popraw konfigurację sesji
+    # Konfiguracja sesji
     app.config['REMEMBER_COOKIE_DURATION'] = timedelta(hours=24)
     app.config['REMEMBER_COOKIE_SECURE'] = False
     app.config['REMEMBER_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_PROTECTION'] = 'basic'  # KLUCZOWA ZMIANA: zmień z 'strong' na 'basic'
+    app.config['SESSION_PROTECTION'] = 'basic'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
     app.config['SESSION_COOKIE_SECURE'] = False
-
+    
     # Inicjalizacja
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.index'
-
+    
+    # Inicjalizacja bazy danych
+    with app.app_context():
+        try:
+            db.create_all()
+            print("Baza danych została utworzona/zweryfikowana pomyślnie")
+        except Exception as e:
+            print(f"Błąd podczas inicjalizacji bazy danych: {e}")
+            import traceback
+            traceback.print_exc()
+    
     # Rejestracja blueprintów
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)
-
+    
     # Inicjalizacja panelu admina
     init_admin(app)
     
@@ -72,14 +90,14 @@ def create_app():
         except Exception as e:
             print(f"Błąd w before_request: {e}")
             db.session.rollback()
-
+    
     # Dodaj obsługę błędów 404 i 500
     @app.errorhandler(404)
     def page_not_found(e):
         return render_template('errors/404.html'), 404
-
+    
     @app.errorhandler(500)
     def internal_server_error(e):
         return render_template('errors/500.html'), 500
-
+    
     return app
