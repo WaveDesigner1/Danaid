@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Diagnostyka bazy danych</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .container { margin-bottom: 20px; }
+        h2 { color: #333; }
+    </style>
+</head>
+<body>
+    <h1>Diagnostyka bazy danych</h1>
+    
+    <div class="container">
+        <h2>Struktura tabeli user</h2>
+        <table>
+            <tr>
+                <th>ID</th><th>Nazwa</th><th>Typ</th><th>Not Null</th><th>Domyślnie</th><th>PK</th>
+            </tr>
+            {% for col in columns %}
+            <tr>
+                <td>{{ col.id }}</td>
+                <td>{{ col.name }}</td>
+                <td>{{ col.type }}</td>
+                <td>{{ col.notnull }}</td>
+                <td>{{ col.default }}</td>
+                <td>{{ col.pk }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    
+    <div class="container">
+        <h2>Pliki bazy danych</h2>
+        <table>
+            <tr><th>Nazwa</th><th>Ścieżka pliku</th></tr>
+            {% for db in db_files %}
+            <tr>
+                <td>{{ db.name }}</td>
+                <td>{{ db.file }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    
+    <div class="container">
+        <h2>Informacje o użytkowniku</h2>
+        <table>
+            <tr><th>Pole</th><th>Wartość</th></tr>
+            <tr><td>ID</td><td>{{ user_info.id }}</td></tr>
+            <tr><td>Username</td><td>{{ user_info.username }}</td></tr>
+            <tr><td>Is Admin</td><td>{{ user_info.is_admin }}</td></tr>
+            <tr><td>Has is_online attribute</td><td>{{ user_info.has_is_online_attr }}</td></tr>
+        </table>
+    </div>
+    
+    <div class="container">
+        <h2>Podsumowanie</h2>
+        <p>Kolumna is_online istnieje w bazie danych: <strong>{{ "Tak" if has_is_online else "Nie" }}</strong></p>
+        <p>Atrybut is_online istnieje w modelu User: <strong>{{ "Tak" if user_info.has_is_online_attr else "Nie" }}</strong></p>
+    </div>
+    
+    <div class="container">
+        <h2>Narzędzia</h2>
+        <button onclick="addIsOnlineColumn()">Dodaj kolumnę is_online</button>
+        <div id="result" style="margin-top: 10px;"></div>
+    </div>
+    
+    <script>
+    async function addIsOnlineColumn() {
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = "Dodawanie kolumny...";
+        
+        try {
+            const response = await fetch('/api/add_is_online_column', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'same-origin'
+            });
+            
+            const data = await response.json();
+            resultDiv.innerHTML = data.message;
+            
+            if (data.status === 'success') {
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            }
+        } catch (error) {
+            resultDiv.innerHTML = "Błąd: " + error.message;
+        }
+    }
+    </script>
+</body>
+</html>
