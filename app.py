@@ -7,6 +7,7 @@ import shutil
 import datetime
 import sqlite3
 import time
+from sqlalchemy import text
 
 # Bezpośrednie importy
 from models import db, User, ChatSession, Message
@@ -84,12 +85,12 @@ def create_app():
             
             # Sprawdź, czy kolumna is_online istnieje
             try:
-                result = db.session.execute("PRAGMA table_info(user)").fetchall()
+                result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
                 columns = [row[1] for row in result]
                 
                 if 'is_online' not in columns:
                     print("Kolumna is_online nie istnieje - dodawanie...")
-                    db.session.execute("ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE")
+                    db.session.execute(text("ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE"))
                     db.session.commit()
                     print("Kolumna is_online dodana pomyślnie")
             except Exception as e:
@@ -121,13 +122,18 @@ def create_app():
             if current_user.is_authenticated and hasattr(current_user, 'is_online'):
                 # Aktualizuj status tylko raz na 5 minut zamiast przy każdym żądaniu
                 last_update_key = f'last_online_update_{current_user.id}'
-                last_update = session.get(last_update_key, 0)
+                last_update = request.cookies.get(last_update_key, 0)
+                try:
+                    last_update = int(last_update)
+                except (TypeError, ValueError):
+                    last_update = 0
+                    
                 now = int(time.time())
                 
                 if now - last_update > 300:  # 5 minut = 300 sekund
                     current_user.is_online = True
                     db.session.commit()
-                    session[last_update_key] = now
+                    # Cookies do zarządzania czasem ostatniej aktualizacji są obsługiwane w odpowiedzi
         except Exception as e:
             print(f"Błąd w before_request: {e}")
             db.session.rollback()
@@ -154,7 +160,7 @@ def create_app():
             
         try:
             # Sprawdź połączenie z bazą danych
-            db_status = "OK" if db.session.execute("SELECT 1").scalar() == 1 else "ERROR"
+            db_status = "OK" if db.session.execute(text("SELECT 1")).scalar() == 1 else "ERROR"
             
             # Sprawdź ścieżkę do bazy danych
             db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[1].split('?')[0]
@@ -175,7 +181,7 @@ def create_app():
             message_count = Message.query.count()
             
             # Pobierz statystyki wydajności SQLite
-            db_stats = db.session.execute("PRAGMA stats").fetchall()
+            db_stats = db.session.execute(text("PRAGMA stats")).fetchall()
             
             return render_template('admin/db_diagnostic.html', 
                                   db_status=db_status,
@@ -220,7 +226,7 @@ def create_app():
             return redirect(url_for('auth.index'))
             
         try:
-            result = db.session.execute("PRAGMA integrity_check").fetchone()[0]
+            result = db.session.execute(text("PRAGMA integrity_check")).fetchone()[0]
             if result == 'ok':
                 flash('Baza danych jest spójna', 'success')
             else:
@@ -333,10 +339,10 @@ def create_app():
             db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
     
-    # Endpoint do panelu administracyjnego
-    @app.route('/admin_panel')
+    # Endpoint do panelu administracyjnego z poprawionym nazwą funkcji
+    @app.route('/dashboard')
     @login_required
-    def admin_panel():
+    def admin_dashboard():
         if not current_user.is_admin:
             flash('Brak dostępu do tej strony', 'danger')
             return redirect(url_for('auth.index'))
