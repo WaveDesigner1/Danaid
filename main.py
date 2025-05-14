@@ -28,11 +28,11 @@ def initialize_database():
             # 2. Sprawdź, czy tabela chat_session istnieje, jeśli nie, utwórz ją
             try:
                 # Sprawdź czy tabela istnieje
-                db.session.execute("SELECT 1 FROM chat_session LIMIT 1")
+                db.session.execute(text("SELECT 1 FROM chat_session LIMIT 1"))
                 print("Tabela chat_session już istnieje")
             except:
                 print("Tworzenie tabeli chat_session...")
-                db.session.execute("""
+                db.session.execute(text("""
                 CREATE TABLE IF NOT EXISTS chat_session (
                     id INTEGER PRIMARY KEY,
                     initiator_id INTEGER NOT NULL,
@@ -45,16 +45,16 @@ def initialize_database():
                     FOREIGN KEY (initiator_id) REFERENCES user (id),
                     FOREIGN KEY (recipient_id) REFERENCES user (id)
                 );
-                """)
+                """))
                 db.session.commit()
             
             # 3. Sprawdź, czy tabela message istnieje, jeśli nie, utwórz ją
             try:
-                db.session.execute("SELECT 1 FROM message LIMIT 1")
+                db.session.execute(text("SELECT 1 FROM message LIMIT 1"))
                 print("Tabela message już istnieje")
             except:
                 print("Tworzenie tabeli message...")
-                db.session.execute("""
+                db.session.execute(text("""
                 CREATE TABLE IF NOT EXISTS message (
                     id INTEGER PRIMARY KEY,
                     session_id INTEGER NOT NULL,
@@ -65,16 +65,16 @@ def initialize_database():
                     FOREIGN KEY (session_id) REFERENCES chat_session (id),
                     FOREIGN KEY (sender_id) REFERENCES user (id)
                 );
-                """)
+                """))
                 db.session.commit()
             
             # 4. Dodaj indeksy dla wydajności
             try:
                 print("Tworzenie indeksów...")
-                db.session.execute("CREATE INDEX IF NOT EXISTS idx_session_token ON chat_session(session_token);")
-                db.session.execute("CREATE INDEX IF NOT EXISTS idx_session_users ON chat_session(initiator_id, recipient_id);")
-                db.session.execute("CREATE INDEX IF NOT EXISTS idx_message_session ON message(session_id);")
-                db.session.execute("CREATE INDEX IF NOT EXISTS idx_message_sender ON message(sender_id);")
+                db.session.execute(text("CREATE INDEX IF NOT EXISTS idx_session_token ON chat_session(session_token);"))
+                db.session.execute(text("CREATE INDEX IF NOT EXISTS idx_session_users ON chat_session(initiator_id, recipient_id);"))
+                db.session.execute(text("CREATE INDEX IF NOT EXISTS idx_message_session ON message(session_id);"))
+                db.session.execute(text("CREATE INDEX IF NOT EXISTS idx_message_sender ON message(sender_id);"))
                 db.session.commit()
             except Exception as e:
                 print(f"Błąd podczas tworzenia indeksów: {e}")
@@ -95,7 +95,6 @@ def initialize_database():
                 
     except Exception as e:
         print(f"!!! BŁĄD PODCZAS INICJALIZACJI BAZY DANYCH: {e}")
-
 def create_admin_if_not_exists():
     """Tworzy konto administratora, jeśli nie istnieje"""
     try:
