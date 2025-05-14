@@ -178,7 +178,7 @@ def check_session():
 @auth_bp.route('/force-logout')
 def force_logout():
     """Awaryjne wylogowanie - działa nawet gdy sesja jest uszkodzona"""
-        
+    try:
         # Usuń wszystkie ciasteczka
         response = redirect(url_for('auth.index'))
         for cookie in request.cookies:
