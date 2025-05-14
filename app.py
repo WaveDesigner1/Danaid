@@ -310,6 +310,28 @@ def create_app():
     return app
 
 # Jeśli skrypt jest uruchamiany bezpośrednio
+    @app.route('/admin_dashboard')
+    @login_required
+    def admin_dashboard():
+        if not current_user.is_admin:
+            flash('Brak dostępu do tej strony', 'danger')
+            return redirect(url_for('auth.index'))
+        
+        try:
+            # Pobierz statystyki dla dashboardu
+            user_count = User.query.count()
+            session_count = ChatSession.query.count()
+            message_count = Message.query.count()
+            online_users = User.query.filter_by(is_online=True).count()
+        
+            return render_template('admin/dashboard.html', 
+                              user_count=user_count,
+                              session_count=session_count, 
+                              message_count=message_count,
+                              online_users=online_users)
+         except Exception as e:
+            flash(f'Błąd podczas generowania dashboardu: {str(e)}', 'danger')
+            return render_template('admin/dashboard.html', error=str(e))
 if __name__ == '__main__':
     app = create_app()
     app.run(debug=True, host='0.0.0.0')
