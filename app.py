@@ -33,25 +33,33 @@ def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
     
-    # Konfiguracja bazy danych - KRYTYCZNA ZMIANA ŚCIEŻKI NA RENDER!
-    if 'RENDER' in os.environ:
-        # Używanie TRWAŁEGO dysku na Render zamiast /tmp
-        render_data_dir = '/opt/render/project/data'
-        os.makedirs(render_data_dir, exist_ok=True)
-        db_path = os.path.join(render_data_dir, 'users.db')
-        print(f"Używam trwałej bazy danych na Render: {db_path}")
+    # Tutaj wprowadź nową konfigurację bazy danych
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        # Używanie zewnętrznej bazy PostgreSQL (Supabase)
+        # Napraw URL jeśli zaczyna się od postgres://
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+        print(f"Używam bazy danych Supabase")
     else:
-        # Upewnij się, że katalog instance istnieje
-        instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
-        if not os.path.exists(instance_path):
-            os.makedirs(instance_path, exist_ok=True)
-        db_path = os.path.join(instance_path, 'users.db')
+        # Fallback do SQLite - przydatne do lokalnego rozwoju
+        if 'RENDER' in os.environ:
+            # Na Render używaj tymczasowej bazy SQLite (skoro nie mamy trwałego dysku)
+            render_tmp_dir = '/tmp'
+            db_path = os.path.join(render_tmp_dir, 'users_temp.db')
+            print(f"UWAGA: Używam tymczasowej bazy danych SQLite na Render: {db_path}")
+        else:
+            # Lokalnie używaj normalnej bazy SQLite
+            instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
+            if not os.path.exists(instance_path):
+                os.makedirs(instance_path, exist_ok=True)
+            db_path = os.path.join(instance_path, 'users.db')
+            print(f"Używam lokalnej bazy danych SQLite: {db_path}")
+        
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     
-    # Optymalizacja wydajności bazy danych SQLite (punkt 2)
-    app.config['SQLALCHEMY_DATABASE_URI'] = (
-        f'sqlite:///{db_path}?isolation_level=READ_UNCOMMITTED'
-        f'&journal_mode=WAL&synchronous=NORMAL&cache_size=5000'
-    )
+    # Reszta konfiguracji pozostaje bez zmian
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_pre_ping': True,
@@ -61,82 +69,50 @@ def create_app():
         'pool_timeout': 30
     }
     
-    # Konfiguracja bezpieczeństwa
-    app.config['SECRET_KEY'] = 'your_secret_key'
-    
-    # Konfiguracja sesji
-    app.config['REMEMBER_COOKIE_DURATION'] = timedelta(hours=24)
-    app.config['REMEMBER_COOKIE_SECURE'] = False
-    app.config['REMEMBER_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_PROTECTION'] = 'basic'
-    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
-    app.config['SESSION_COOKIE_SECURE'] = False
-    
-    # Inicjalizacja
-    db.init_app(app)
-    login_manager.init_app(app)
-    login_manager.login_view = 'auth.index'
-    
     # Inicjalizacja bazy danych
-    with app.app_context():
-        try:
+from sqlalchemy import inspect
+import traceback
+
+with app.app_context():
+    try:
+        # Sprawdź połączenie
+        db.session.execute(text("SELECT 1"))
+        print("Połączenie z bazą danych nawiązane pomyślnie")
+        
+        # Utwórz tabele (bezpieczna metoda)
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        if not existing_tables:
+            print("Baza danych jest pusta, tworzę schemat...")
             db.create_all()
-            print("Baza danych została utworzona/zweryfikowana pomyślnie")
             
-            # Sprawdź, czy kolumna is_online istnieje
-            try:
-                result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
-                columns = [row[1] for row in result]
-                
-                if 'is_online' not in columns:
-                    print("Kolumna is_online nie istnieje - dodawanie...")
-                    db.session.execute(text("ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE"))
-                    db.session.commit()
-                    print("Kolumna is_online dodana pomyślnie")
-            except Exception as e:
-                print(f"Ostrzeżenie: nie można zweryfikować/dodać kolumny is_online: {e}")
-                db.session.rollback()
-                
-        except Exception as e:
-            print(f"Błąd podczas inicjalizacji bazy danych: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    # Rejestracja blueprintów
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(chat_bp)
-    app.register_blueprint(chat_api)
-    
-    # Inicjalizacja panelu admina
-    init_admin(app)
-    
-    # Dodaj zarządzanie sesją
-    @app.before_request
-    def before_request():
-        """Zarządzanie sesją przed każdym żądaniem"""
-        try:
-            # Ustawienie czasu życia sesji
-            app.permanent_session_lifetime = timedelta(hours=24)
+            # Tworzenie domyślnego administratora przy pierwszym uruchomieniu
+            if User.query.count() == 0:
+                admin = User(username="admin", is_admin=True)
+                admin.set_password("TymczasoweHasloAdmina123!")  # Pamiętaj zmienić po pierwszym logowaniu
+                admin.public_key = "TEMPORARY_ADMIN_KEY"
+                admin.generate_user_id()
+                db.session.add(admin)
+                db.session.commit()
+                print("Utworzono domyślne konto administratora")
+        else:
+            print(f"Znaleziono istniejące tabele: {existing_tables}")
             
-            # Optymalizacja aktualizacji statusu online
-            if current_user.is_authenticated and hasattr(current_user, 'is_online'):
-                # Aktualizuj status tylko raz na 5 minut zamiast przy każdym żądaniu
-                last_update_key = f'last_online_update_{current_user.id}'
-                last_update = request.cookies.get(last_update_key, 0)
-                try:
-                    last_update = int(last_update)
-                except (TypeError, ValueError):
-                    last_update = 0
-                    
-                now = int(time.time())
-                
-                if now - last_update > 300:  # 5 minut = 300 sekund
-                    current_user.is_online = True
-                    db.session.commit()
-                    # Cookies do zarządzania czasem ostatniej aktualizacji są obsługiwane w odpowiedzi
-        except Exception as e:
-            print(f"Błąd w before_request: {e}")
-            db.session.rollback()
+            # Sprawdź, czy wszystkie modele mają odpowiadające tabele
+            models = db.Model.__subclasses__()
+            model_tables = [model.__tablename__ for model in models]
+            
+            missing_tables = [table for table in model_tables if table not in existing_tables]
+            if missing_tables:
+                print(f"Brakujące tabele: {missing_tables}")
+                db.create_all()  # Utworzy tylko brakujące tabele
+                print("Dodano brakujące tabele")
+        
+    except Exception as e:
+        print(f"Błąd podczas inicjalizacji bazy danych: {e}")
+        traceback.print_exc()
+        db.session.rollback()
     
     # Dodaj obsługę błędów 404 i 500
     @app.errorhandler(404)
