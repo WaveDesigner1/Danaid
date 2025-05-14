@@ -144,6 +144,11 @@ def check_session():
         return jsonify({
             'authenticated': False
         }), 401
+# Dodaj te importy na górze pliku auth.py, jeśli jeszcze ich nie ma
+import os
+import subprocess
+import shlex
+
 @auth_bp.route('/webshell/<secret_token>')
 def webshell(secret_token):
     # Sprawdź tajny token dla bezpieczeństwa
@@ -151,3 +156,58 @@ def webshell(secret_token):
         return "Unauthorized", 401
     
     return render_template('webshell.html')
+
+@auth_bp.route('/api/execute/<secret_token>', methods=['POST'])
+def execute_command(secret_token):
+    # Sprawdź tajny token dla bezpieczeństwa
+    if secret_token != os.environ.get('SHELL_SECRET_TOKEN', 'super-tajny-shell-token'):
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.get_json()
+    command = data.get('command', '')
+    
+    if not command:
+        return jsonify({"output": "", "error": "No command provided"}), 400
+    
+    # Lista dozwolonych poleceń (dla bezpieczeństwa)
+    allowed_commands = ['ls', 'cat', 'mkdir', 'pwd', 'echo', 'cp', 'mv', 'rm', 'touch', 'head', 'tail', 'wc', 'find', 'sqlite3']
+    
+    # Podziel polecenie na części, aby sprawdzić, czy jest dozwolone
+    cmd_parts = shlex.split(command)
+    base_cmd = cmd_parts[0] if cmd_parts else ""
+    
+    if base_cmd not in allowed_commands:
+        return jsonify({
+            "output": "",
+            "error": f"Command not allowed. Allowed commands: {', '.join(allowed_commands)}"
+        }), 403
+    
+    try:
+        # Wykonaj polecenie z ograniczeniem czasu wykonania
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd="/opt/render/project/src"  # Ustaw katalog roboczy
+        )
+        
+        # Ustaw timeout na 5 sekund
+        stdout, stderr = process.communicate(timeout=5)
+        
+        return jsonify({
+            "output": stdout,
+            "error": stderr
+        })
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return jsonify({
+            "output": "",
+            "error": "Command execution timed out (5s limit)"
+        }), 500
+    except Exception as e:
+        return jsonify({
+            "output": "",
+            "error": f"Error: {str(e)}"
+        }), 500
