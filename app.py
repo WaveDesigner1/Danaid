@@ -58,12 +58,6 @@ def create_app():
     @app.before_request
     def before_request():
         app.permanent_session_lifetime = timedelta(hours=24)
-        if current_user.is_authenticated and hasattr(current_user, 'is_online'):
-            try:
-                current_user.is_online = True
-                db.session.commit()
-            except:
-                db.session.rollback()
 
     # Dodaj obsługę błędów 404 i 500
     @app.errorhandler(404)
