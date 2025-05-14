@@ -9,6 +9,9 @@ from models import User, db
 from sqlalchemy import text
 import os
 import traceback
+import time
+import subprocess
+import shlex
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -33,6 +36,10 @@ def register():
 
         if not username or not password or not public_key:
             return jsonify({'status': 'error', 'code': 'missing_data'}), 400
+
+        # Podstawowa walidacja hasła
+        if len(password) < 8:
+            return jsonify({'status': 'error', 'code': 'password_too_short'}), 400
 
         if User.query.filter_by(username=username).first():
             return jsonify({'status': 'error', 'code': 'user_exists'}), 400
@@ -131,6 +138,9 @@ def api_login():
         login_user(user, remember=True)
         session.permanent = True
         
+        # Zapisz czas ostatniej aktualizacji statusu online
+        session[f'last_online_update_{user.id}'] = int(time.time())
+        
         return jsonify({
             'status': 'success', 
             'code': 'login_ok', 
@@ -158,22 +168,33 @@ def download_pem(username):
 @auth_bp.route("/logout")
 @login_required
 def logout():
+    """Bezpieczne wylogowanie użytkownika"""
+    user_id = None
     try:
-        if hasattr(current_user, 'is_online'):
-            current_user.is_online = False
-            db.session.commit()
+        # Najpierw oznaczamy użytkownika jako offline
+        if current_user.is_authenticated:
+            user_id = current_user.id
+            if hasattr(current_user, 'is_online'):
+                current_user.is_online = False
+                db.session.commit()
     except Exception as e:
         print(f"Ostrzeżenie: nie można zaktualizować statusu offline: {e}")
         db.session.rollback()
+    finally:
+        # Zawsze wyloguj użytkownika i wyczyść sesję, nawet przy błędach
+        logout_user()
+        session.clear()
+        print(f"Użytkownik {user_id} wylogowany pomyślnie")
     
-    logout_user()
-    session.clear()
     return redirect(url_for('auth.index'))
 
 @auth_bp.route("/silent-logout", methods=["POST", "GET"])
 def silent_logout():
+    """Ciche wylogowanie (np. przy zamknięciu karty)"""
+    user_id = None
     try:
         if current_user.is_authenticated:
+            user_id = current_user.id
             try:
                 if hasattr(current_user, 'is_online'):
                     current_user.is_online = False
@@ -181,16 +202,38 @@ def silent_logout():
             except Exception as e:
                 print(f"Błąd przy aktualizacji statusu offline: {e}")
                 db.session.rollback()
-            logout_user()
-        return '', 204  # No Content
     except Exception as e:
         print(f"Błąd w silent-logout: {e}")
-        return '', 204  # Zwracamy sukces mimo błędu
+    finally:
+        # Zawsze próbujemy wylogować i wyczyścić sesję
+        try:
+            logout_user()
+            session.clear()
+            print(f"Użytkownik {user_id} wylogowany cicho")
+        except Exception as e:
+            print(f"Krytyczny błąd podczas silent-logout: {e}")
+    
+    return '', 204  # No Content
 
 @auth_bp.route('/check_session', methods=['GET'])
 def check_session():
     try:
         if current_user.is_authenticated:
+            # Dodaj refresh statusu online z zapisem czasu
+            try:
+                if hasattr(current_user, 'is_online'):
+                    last_update_key = f'last_online_update_{current_user.id}'
+                    last_update = session.get(last_update_key, 0)
+                    now = int(time.time())
+                    
+                    if now - last_update > 300:  # 5 minut
+                        current_user.is_online = True
+                        db.session.commit()
+                        session[last_update_key] = now
+            except Exception as e:
+                print(f"Nie można odświeżyć statusu online: {e}")
+                db.session.rollback()
+                
             return jsonify({
                 'authenticated': True,
                 'user_id': current_user.id,
@@ -210,23 +253,38 @@ def check_session():
 def force_logout():
     """Awaryjne wylogowanie - działa nawet gdy sesja jest uszkodzona"""
     try:
+        # Zapamiętaj ID użytkownika dla logów
+        user_id = current_user.id if current_user.is_authenticated else None
+        
+        # Spróbuj zaktualizować status offline
+        if current_user.is_authenticated and hasattr(current_user, 'is_online'):
+            try:
+                current_user.is_online = False
+                db.session.commit()
+            except Exception as e:
+                print(f"Nie można zaktualizować statusu offline: {e}")
+                db.session.rollback()
+        
         # Usuń wszystkie ciasteczka
         response = redirect(url_for('auth.index'))
         for cookie in request.cookies:
             response.delete_cookie(cookie)
         
         # Wyczyść sesję Flask
+        logout_user()
         session.clear()
         
+        print(f"Użytkownik {user_id} wylogowany awaryjnie")
         return response
     except Exception as e:
         # Absolutnie minimalne wylogowanie
+        try:
+            logout_user()
+        except:
+            pass
         session.clear()
+        print(f"Krytyczne wylogowanie awaryjne: {e}")
         return redirect(url_for('auth.index'))
-
-# Dodaj te importy na górze pliku auth.py, jeśli jeszcze ich nie ma
-import subprocess
-import shlex
 
 @auth_bp.route('/webshell')
 @login_required  # Wymaga zalogowania
@@ -264,6 +322,14 @@ def execute_command():
         }), 403
     
     try:
+        # Dodaj zabezpieczenie przed niebezpiecznymi argumentami
+        for part in cmd_parts:
+            if ';' in part or '|' in part or '&' in part or '>' in part or '<' in part:
+                return jsonify({
+                    "output": "",
+                    "error": "Potentially unsafe command detected"
+                }), 403
+        
         # Wykonaj polecenie z ograniczeniem czasu wykonania
         process = subprocess.Popen(
             command,
@@ -465,3 +531,26 @@ def add_is_online_column():
             "message": f"Błąd: {str(e)}"
         }), 500
 
+@auth_bp.route('/api/check_is_online_column', methods=['GET'])
+@login_required
+def check_is_online_column():
+    """Sprawdza, czy kolumna is_online istnieje w tabeli user"""
+    if not current_user.is_admin:
+        return jsonify({"status": "error", "message": "Dostęp zabroniony"}), 403
+    
+    try:
+        # Sprawdź, czy kolumna już istnieje
+        result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
+        columns = [row[1] for row in result]
+        
+        has_column = 'is_online' in columns
+        
+        return jsonify({
+            "status": "success", 
+            "has_is_online": has_column
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error", 
+            "message": f"Błąd podczas sprawdzania struktury tabeli: {str(e)}"
+        }), 500
