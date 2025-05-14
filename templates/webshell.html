@@ -1,313 +1,246 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Web Shell - Panel Administratora</title>
+    <title>Webshell Admin</title>
     <style>
         body {
-            font-family: 'Courier New', monospace;
+            font-family: Arial, sans-serif;
             background-color: #1e1e1e;
-            color: #f0f0f0;
+            color: #ddd;
             margin: 0;
             padding: 20px;
         }
-        
-        #terminal {
+        h1 {
+            color: #61dafb;
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .terminal {
             background-color: #121212;
-            border: 1px solid #444;
             border-radius: 5px;
-            padding: 10px;
-            height: 70vh;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            height: 400px;
+        }
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+        .terminal-title {
+            font-weight: bold;
+            color: #61dafb;
+        }
+        .terminal-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .terminal-button {
+            background-color: #333;
+            color: #fff;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .terminal-button:hover {
+            background-color: #444;
+        }
+        .terminal-output {
+            flex-grow: 1;
             overflow-y: auto;
             margin-bottom: 10px;
+            font-family: 'Courier New', monospace;
             white-space: pre-wrap;
-            word-wrap: break-word;
+            line-height: 1.5;
         }
-        
-        #command-form {
+        .command-input {
             display: flex;
-            margin-bottom: 10px;
+            gap: 10px;
         }
-        
-        #command-input {
-            flex: 1;
-            background-color: #1e1e1e;
-            color: #f0f0f0;
-            border: 1px solid #444;
-            padding: 8px;
+        input {
+            flex-grow: 1;
+            background-color: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 8px 12px;
             border-radius: 3px;
             font-family: 'Courier New', monospace;
         }
-        
-        #command-form button {
-            background-color: #444;
-            color: #f0f0f0;
+        button {
+            background-color: #61dafb;
+            color: #000;
             border: none;
             padding: 8px 15px;
             border-radius: 3px;
-            margin-left: 10px;
             cursor: pointer;
-        }
-        
-        #command-form button:hover {
-            background-color: #555;
-        }
-        
-        .prompt {
-            color: #4CAF50;
             font-weight: bold;
         }
-        
-        .command {
-            color: #f0f0f0;
+        button:hover {
+            background-color: #4db5da;
         }
-        
-        .output {
-            color: #f0f0f0;
-        }
-        
-        .error {
-            color: #ff5252;
-        }
-        
-        .info {
-            color: #2196F3;
-        }
-        
-        #quick-commands {
-            margin-bottom: 15px;
-        }
-        
-        .quick-btn {
-            background-color: #333;
-            color: #f0f0f0;
-            border: 1px solid #444;
-            padding: 5px 10px;
-            margin-right: 5px;
+        .command-line {
+            color: #61dafb;
             margin-bottom: 5px;
+        }
+        .error-output {
+            color: #f55;
+        }
+        .toolbar {
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .command-suggestion {
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            padding: 8px 12px;
             border-radius: 3px;
             cursor: pointer;
-        }
-        
-        .quick-btn:hover {
-            background-color: #444;
-        }
-        
-        #file-ops {
-            margin-top: 20px;
-            border-top: 1px solid #444;
-            padding-top: 15px;
-        }
-        
-        #file-content {
-            width: 100%;
-            height: 150px;
-            background-color: #1e1e1e;
-            color: #f0f0f0;
-            border: 1px solid #444;
-            padding: 8px;
-            border-radius: 3px;
             font-family: 'Courier New', monospace;
-            resize: vertical;
+            font-size: 0.9em;
         }
-        
-        .file-form {
-            margin-top: 10px;
-        }
-        
-        .file-form input[type="text"] {
-            background-color: #1e1e1e;
-            color: #f0f0f0;
-            border: 1px solid #444;
-            padding: 8px;
-            border-radius: 3px;
-            width: 300px;
-            font-family: 'Courier New', monospace;
-        }
-        
-        .file-form button {
-            background-color: #444;
-            color: #f0f0f0;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 3px;
-            margin-left: 10px;
-            cursor: pointer;
-        }
-        
-        .user-info {
+        .command-suggestion:hover {
             background-color: #333;
-            padding: 10px;
-            margin-bottom: 15px;
-            border-radius: 5px;
-            border-left: 5px solid #4CAF50;
+            border-color: #555;
+        }
+        .nav-links {
+            margin-top: 20px;
+            display: flex;
+            gap: 15px;
+        }
+        .nav-link {
+            color: #61dafb;
+            text-decoration: none;
+        }
+        .nav-link:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
 <body>
-    <h1>Web Shell - Panel Administratora</h1>
-    
-    <div class="user-info">
-        <p>Zalogowany jako: <strong>{{ current_user.username }}</strong> (Administrator)</p>
-    </div>
-    
-    <p class="info">Wykonuj polecenia na serwerze. Dozwolone komendy: ls, cat, mkdir, pwd, echo, cp, mv, rm, touch, head, tail, wc, find, sqlite3</p>
-    
-    <div id="quick-commands">
-        <button class="quick-btn" onclick="runCommand('ls -la')">ls -la</button>
-        <button class="quick-btn" onclick="runCommand('pwd')">pwd</button>
-        <button class="quick-btn" onclick="runCommand('ls -la users.db')">ls users.db</button>
-        <button class="quick-btn" onclick="runCommand('sqlite3 users.db .tables')">SQLite: Pokaż tabele</button>
-        <button class="quick-btn" onclick="runCommand('sqlite3 users.db \"SELECT * FROM user;\"')">SQLite: Pokaż użytkowników</button>
-        <button class="quick-btn" onclick="runCommand('mkdir -p data')">mkdir data</button>
-        <button class="quick-btn" onclick="runCommand('ls -la data')">ls data</button>
-        <button class="quick-btn" onclick="runCommand('find . -name \"*.db\" -type f')">Znajdź pliki .db</button>
-    </div>
-    
-    <div id="terminal"></div>
-    
-    <form id="command-form">
-        <span class="prompt">$</span>
-        <input type="text" id="command-input" placeholder="Wpisz polecenie...">
-        <button type="submit">Wykonaj</button>
-    </form>
-    
-    <div id="file-ops">
-        <h2>Operacje na plikach</h2>
+    <div class="container">
+        <h1>Admin Webshell</h1>
         
-        <h3>Zapisz plik</h3>
-        <textarea id="file-content" placeholder="Wpisz zawartość pliku"></textarea>
-        <div class="file-form">
-            <input type="text" id="file-path" placeholder="Ścieżka do pliku (np. test.txt)">
-            <button type="button" id="save-file">Zapisz</button>
+        <div class="toolbar">
+            <div class="command-suggestion" onclick="insertCommand('ls -la')">ls -la</div>
+            <div class="command-suggestion" onclick="insertCommand('find . -name \"*.db\"')">find . -name "*.db"</div>
+            <div class="command-suggestion" onclick="insertCommand('sqlite3 ./instance/user.db \".schema user\"')">sqlite3 schema</div>
+            <div class="command-suggestion" onclick="insertCommand('sqlite3 ./instance/user.db \"ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE\"')">Add is_online</div>
+            <div class="command-suggestion" onclick="insertCommand('sqlite3 ./instance/user.db \"SELECT * FROM user\"')">List users</div>
+            <div class="command-suggestion" onclick="insertCommand('cat ./models.py')">View models.py</div>
+        </div>
+        
+        <div class="terminal">
+            <div class="terminal-header">
+                <div class="terminal-title">Terminal</div>
+                <div class="terminal-buttons">
+                    <button class="terminal-button" onclick="clearTerminal()">Clear</button>
+                    <button class="terminal-button" onclick="copyOutput()">Copy</button>
+                </div>
+            </div>
+            <div id="terminal-output" class="terminal-output"></div>
+            <div class="command-input">
+                <input type="text" id="command-input" placeholder="Enter command..." onkeydown="if(event.key==='Enter') executeCommand()">
+                <button onclick="executeCommand()">Execute</button>
+            </div>
+        </div>
+        
+        <div class="nav-links">
+            <a href="/" class="nav-link">Home</a>
+            <a href="/admin_dashboard" class="nav-link">Admin Dashboard</a>
+            <a href="/flask_admin/db_admin/" class="nav-link">Database Management</a>
+            <a href="/logout" class="nav-link">Logout</a>
         </div>
     </div>
     
     <script>
-        const terminal = document.getElementById('terminal');
-        const commandForm = document.getElementById('command-form');
+        const terminalOutput = document.getElementById('terminal-output');
         const commandInput = document.getElementById('command-input');
-        const fileContent = document.getElementById('file-content');
-        const filePath = document.getElementById('file-path');
-        const saveFileBtn = document.getElementById('save-file');
         
-        // Historia poleceń
-        let commandHistory = [];
-        let historyIndex = -1;
-        
-        // Funkcja do dodawania zawartości do terminala
-        function appendToTerminal(content, className) {
-            const element = document.createElement('div');
-            element.className = className;
-            element.textContent = content;
-            terminal.appendChild(element);
-            terminal.scrollTop = terminal.scrollHeight;
-        }
-        
-        // Inicjalizacja terminala
-        appendToTerminal('Web Shell v1.0', 'info');
-        appendToTerminal('Katalog roboczy: /opt/render/project/src', 'info');
-        appendToTerminal('Tryb: Administrator', 'info');
-        appendToTerminal('', 'output');
-        
-        // Funkcja do wykonywania poleceń
-        async function executeCommand(command) {
-            if (!command.trim()) return;
+        async function executeCommand() {
+            const command = commandInput.value.trim();
+            if (!command) return;
             
-            // Zapisz w historii
-            commandHistory.push(command);
-            historyIndex = commandHistory.length;
+            // Add command to terminal output
+            terminalOutput.innerHTML += `<div class="command-line">$ ${command}</div>`;
+            commandInput.value = '';
             
-            // Pokaż wprowadzone polecenie
-            appendToTerminal(`$ ${command}`, 'command');
+            // Scroll to bottom
+            terminalOutput.scrollTop = terminalOutput.scrollHeight;
             
             try {
-                const response = await fetch(`/api/execute`, {  // Zmieniony URL - usunięty token
+                const response = await fetch('/api/execute', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ command }),
-                    credentials: 'same-origin'  // Dodane, aby wysyłać ciasteczka sesji
+                    body: JSON.stringify({ command })
                 });
                 
-                const data = await response.json();
+                const result = await response.json();
                 
-                if (data.output) {
-                    appendToTerminal(data.output, 'output');
+                // Add output and error to terminal
+                if (result.output) {
+                    terminalOutput.innerHTML += `<div>${escapeHtml(result.output)}</div>`;
                 }
                 
-                if (data.error) {
-                    appendToTerminal(data.error, 'error');
+                if (result.error) {
+                    terminalOutput.innerHTML += `<div class="error-output">${escapeHtml(result.error)}</div>`;
                 }
                 
-                // Dodaj pustą linię dla lepszej czytelności
-                appendToTerminal('', 'output');
+                // Scroll to bottom
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
             } catch (error) {
-                appendToTerminal(`Error: ${error.message}`, 'error');
-                appendToTerminal('', 'output');
+                terminalOutput.innerHTML += `<div class="error-output">Error: ${error.message}</div>`;
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
             }
         }
         
-        // Obsługa formularza poleceń
-        commandForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const command = commandInput.value;
-            commandInput.value = '';
-            await executeCommand(command);
-        });
+        function clearTerminal() {
+            terminalOutput.innerHTML = '';
+        }
         
-        // Funkcja do uruchamiania poleceń z przycisków
-        function runCommand(command) {
+        function copyOutput() {
+            const textToCopy = terminalOutput.innerText;
+            navigator.clipboard.writeText(textToCopy)
+                .then(() => {
+                    alert('Terminal output copied to clipboard');
+                })
+                .catch(err => {
+                    console.error('Could not copy text: ', err);
+                });
+        }
+        
+        function insertCommand(command) {
             commandInput.value = command;
-            commandForm.dispatchEvent(new Event('submit'));
+            commandInput.focus();
         }
         
-        // Obsługa zapisywania plików
-        saveFileBtn.addEventListener('click', async () => {
-            const content = fileContent.value;
-            const path = filePath.value.trim();
-            
-            if (!path) {
-                appendToTerminal('Błąd: Podaj ścieżkę do pliku', 'error');
-                appendToTerminal('', 'output');
-                return;
-            }
-            
-            // Użyj komendy echo do zapisania pliku
-            const escapedContent = content.replace(/"/g, '\\"');
-            const command = `echo "${escapedContent}" > ${path}`;
-            
-            await executeCommand(command);
-            appendToTerminal(`Zapisano plik: ${path}`, 'info');
-            appendToTerminal('', 'output');
-        });
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
         
-        // Obsługa historii poleceń za pomocą strzałek
-        commandInput.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowUp') {
-                if (historyIndex > 0) {
-                    historyIndex--;
-                    commandInput.value = commandHistory[historyIndex];
-                }
-                e.preventDefault();
-            } else if (e.key === 'ArrowDown') {
-                if (historyIndex < commandHistory.length - 1) {
-                    historyIndex++;
-                    commandInput.value = commandHistory[historyIndex];
-                } else {
-                    historyIndex = commandHistory.length;
-                    commandInput.value = '';
-                }
-                e.preventDefault();
-            }
-        });
-        
-        // Automatyczne ustawianie fokusu na pole wejściowe
-        commandInput.focus();
-        window.addEventListener('click', () => {
+        // Focus on command input when page loads
+        window.onload = function() {
             commandInput.focus();
-        });
+        };
     </script>
 </body>
 </html>
