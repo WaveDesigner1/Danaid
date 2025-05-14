@@ -8,6 +8,7 @@ import io
 from models import User, db
 from sqlalchemy import text
 import os
+import traceback
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -28,6 +29,8 @@ def register():
         password = data.get('password')
         public_key = data.get('public_key')
 
+        print(f"Próba rejestracji użytkownika: {username}")
+
         if not username or not password or not public_key:
             return jsonify({'status': 'error', 'code': 'missing_data'}), 400
 
@@ -36,7 +39,8 @@ def register():
 
         try:
             RSA.import_key(public_key)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
+            print(f"Błąd formatu klucza: {e}")
             return jsonify({'status': 'error', 'code': 'invalid_key_format'}), 400
 
         try:
@@ -44,14 +48,21 @@ def register():
             new_user.set_password(password)
             new_user.generate_user_id()
             
+            print(f"Utworzono obiekt użytkownika: {new_user.username}")
             db.session.add(new_user)
+            print(f"Dodano użytkownika do sesji")
             db.session.commit()
+            print(f"Zatwierdzono transakcję - użytkownik zarejestrowany")
             
             return jsonify({'status': 'success', 'code': 'registration_ok', 'user_id': new_user.user_id}), 200
         except Exception as e:
+            print(f"Błąd bazy danych podczas rejestracji: {e}")
             db.session.rollback()
+            traceback.print_exc()
             return jsonify({'status': 'error', 'code': 'db_error', 'message': str(e)}), 500
     except Exception as e:
+        print(f"Ogólny błąd serwera podczas rejestracji: {e}")
+        traceback.print_exc()
         return jsonify({'status': 'error', 'code': 'server_error', 'message': str(e)}), 500
 
 
@@ -214,7 +225,6 @@ def force_logout():
         return redirect(url_for('auth.index'))
 
 # Dodaj te importy na górze pliku auth.py, jeśli jeszcze ich nie ma
-import os
 import subprocess
 import shlex
 
@@ -286,7 +296,6 @@ def execute_command():
 @auth_bp.route('/debug/db-info')
 def db_info():
     """Zwraca informacje o bazie danych"""
-    import os
     import sqlite3
     
     app_dir = os.path.abspath(os.path.dirname(__file__))
@@ -345,7 +354,6 @@ def clean_database():
     
     try:
         # Sprawdź katalog instance
-        import os
         instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
         
         if not os.path.exists(instance_path):
@@ -353,7 +361,7 @@ def clean_database():
         
         # Znajdź wszystkie pliki .db
         removed_files = []
-        current_db = os.path.basename(current_app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', ''))
+        current_db = os.path.basename(current_app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '').split('?')[0])
         
         for file in os.listdir(instance_path):
             if file.endswith('.db') and file != current_db:
@@ -449,6 +457,55 @@ def add_is_online_column():
         return jsonify({
             "status": "success", 
             "message": "Kolumna is_online została pomyślnie dodana do tabeli user"
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "status": "error", 
+            "message": f"Błąd: {str(e)}"
+        }), 500
+
+@auth_bp.route('/api/initialize_admin', methods=['POST'])
+def initialize_admin():
+    """Inicjalizuje konto administratora jeśli nie istnieje"""
+    from werkzeug.security import generate_password_hash
+    import secrets
+    
+    try:
+        # Sprawdź, czy istnieje już użytkownik z uprawnieniami administratora
+        admin = User.query.filter_by(is_admin=True).first()
+        if admin:
+            return jsonify({
+                "status": "info", 
+                "message": f"Administrator już istnieje: {admin.username} (ID: {admin.id})"
+            })
+        
+        # Tworzenie konta administratora
+        username = 'admin'
+        password = 'Admin123!'  # Domyślne hasło - zmień po zalogowaniu!
+        admin_id = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+        
+        # Klucz publiczny placeholder - będzie można zaktualizować po zalogowaniu
+        public_key = "TEMPORARY_ADMIN_KEY"
+        
+        # Tworzenie użytkownika
+        new_admin = User(
+            username=username,
+            password_hash=generate_password_hash(password),
+            public_key=public_key,
+            is_admin=True,
+            user_id=admin_id
+        )
+        
+        db.session.add(new_admin)
+        db.session.commit()
+        
+        return jsonify({
+            "status": "success", 
+            "message": "Utworzono konto administratora",
+            "username": username,
+            "password": password,
+            "user_id": admin_id
         })
     except Exception as e:
         db.session.rollback()
