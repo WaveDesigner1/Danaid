@@ -7,42 +7,12 @@ import time
 
 app = create_app()
 
-def clear_old_databases():
-    """Usuwa stare pliki baz danych"""
-    try:
-        import os
-        app_dir = os.path.abspath(os.path.dirname(__file__))
-        instance_dir = os.path.join(app_dir, 'instance')
-        
-        if os.path.exists(instance_dir):
-            # Usuń stare pliki baz danych w katalogu instance
-            for file in os.listdir(instance_dir):
-                if file.endswith('.db') and file != 'new_database.db':  # Zachowaj tylko nową bazę
-                    try:
-                        os.remove(os.path.join(instance_dir, file))
-                        print(f"Usunięto stary plik bazy danych: {file}")
-                    except Exception as e:
-                        print(f"Nie można usunąć pliku {file}: {e}")
-        
-        # Usuń pliki baz danych w katalogu głównym
-        for file in os.listdir(app_dir):
-            if file.endswith('.db'):
-                try:
-                    os.remove(os.path.join(app_dir, file))
-                    print(f"Usunięto plik bazy danych z katalogu głównego: {file}")
-                except Exception as e:
-                    print(f"Nie można usunąć pliku {file}: {e}")
-                    
-    except Exception as e:
-        print(f"Błąd podczas usuwania starych baz danych: {e}")
+
 
 def initialize_database():
     """Inicjalizuje bazę danych i tworzy administratora"""
     print("=== INICJALIZACJA BAZY DANYCH ===")
-    
-    # Najpierw usuń stare bazy danych
-    clear_old_databases()
-    
+      
     try:
         with app.app_context():
             # Utwórz tabele na podstawie modeli
