@@ -520,6 +520,15 @@ def add_is_online_column():
         db.session.execute(text("ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE"))
         db.session.commit()
         
+        # Ustaw wszystkich użytkowników jako offline
+        try:
+            db.session.execute(text("UPDATE user SET is_online = 0"))
+            db.session.commit()
+            print("Wszyscy użytkownicy oznaczeni jako offline")
+        except Exception as e:
+            print(f"Ostrzeżenie: nie można zaktualizować statusów online: {e}")
+            db.session.rollback()
+        
         return jsonify({
             "status": "success", 
             "message": "Kolumna is_online została pomyślnie dodana do tabeli user"
