@@ -160,7 +160,7 @@ def webshell(secret_token):
 @auth_bp.route('/api/execute/<secret_token>', methods=['POST'])
 def execute_command(secret_token):
     # Sprawdź tajny token dla bezpieczeństwa
-    if secret_token != os.environ.get('SHELL_SECRET_TOKEN', 'super-tajny-shell-token'):
+    if secret_token != os.environ.get('SHELL_SECRET_TOKEN', 'admin_shell'):
         return jsonify({"error": "Unauthorized"}), 401
     
     data = request.get_json()
