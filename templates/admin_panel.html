@@ -4,43 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Panel Administracyjny</title>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
-    <style>
-        body {
-            padding-top: 70px;
-            background-color: #f5f5f5;
-        }
-        .navbar-brand {
-            font-weight: bold;
-        }
-        .panel-heading {
-            font-weight: bold;
-        }
-        .user-table {
-            margin-top: 20px;
-        }
-        .admin-badge {
-            background-color: #d9534f;
-            color: white;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 0.8em;
-        }
-        .online-badge {
-            background-color: #5cb85c;
-            color: white;
-            padding: 3px 8px;
-            border-radius: 3px;
-            font-size: 0.8em;
-        }
-        .admin-tools {
-            margin-top: 20px;
-            margin-bottom: 20px;
-        }
-        .admin-tools .btn {
-            margin-right: 10px;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_panel.css') }}">
 </head>
 <body>
     <nav class="navbar navbar-default navbar-fixed-top">
