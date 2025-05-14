@@ -152,7 +152,7 @@ import shlex
 @auth_bp.route('/webshell/<secret_token>')
 def webshell(secret_token):
     # Sprawdź tajny token dla bezpieczeństwa
-    if secret_token != os.environ.get('SHELL_SECRET_TOKEN', 'super-tajny-shell-token'):
+    if secret_token != os.environ.get('SHELL_SECRET_TOKEN', 'admin_shell'):
         return "Unauthorized", 401
     
     return render_template('webshell.html')
