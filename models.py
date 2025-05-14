@@ -16,7 +16,7 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     user_id = db.Column(db.String(6), nullable=True, unique=True)
-  
+    is_online = db.Column(db.Boolean, default=False)  # Dodana kolumna
 
     # Relacje z wyraźnym określeniem kluczy obcych
     initiated_sessions = db.relationship('ChatSession', 
