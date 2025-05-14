@@ -294,7 +294,7 @@ def db_diagnostic():
         return render_template('db_diagnostic.html', 
                               columns=columns,
                               db_files=db_files,
-                              user_info=user_info,
+                              user_info=user_info)
                               
     except Exception as e:
         return f"Błąd podczas diagnostyki: {str(e)}"
