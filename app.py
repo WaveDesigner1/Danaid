@@ -1,6 +1,6 @@
-from flask import Flask
+from flask import Flask, render_template
 from flask_cors import CORS
-from flask_login import LoginManager
+from flask_login import LoginManager, current_user
 from datetime import timedelta
 
 # Bezpośrednie importy
@@ -28,7 +28,7 @@ def create_app():
     CORS(app, supports_credentials=True)  # KLUCZOWA ZMIANA: dodaj supports_credentials=True
 
     # Konfiguracja bazy danych
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/user.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Konfiguracja bezpieczeństwa
@@ -53,5 +53,25 @@ def create_app():
 
     # Inicjalizacja panelu admina
     init_admin(app)
+    
+    # Dodaj zarządzanie sesją
+    @app.before_request
+    def before_request():
+        app.permanent_session_lifetime = timedelta(hours=24)
+        if current_user.is_authenticated and hasattr(current_user, 'is_online'):
+            try:
+                current_user.is_online = True
+                db.session.commit()
+            except:
+                db.session.rollback()
+
+    # Dodaj obsługę błędów 404 i 500
+    @app.errorhandler(404)
+    def page_not_found(e):
+        return render_template('errors/404.html'), 404
+
+    @app.errorhandler(500)
+    def internal_server_error(e):
+        return render_template('errors/500.html'), 500
 
     return app
