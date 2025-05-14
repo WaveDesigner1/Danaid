@@ -1,3 +1,5 @@
+/* admin_panel.css */
+
 /* === ZMIENNE === */
 :root {
     --admin-primary: #FF9800;
@@ -14,12 +16,13 @@
 }
 
 /* === UKŁAD === */
-body {
+body.admin-panel {
     margin: 0;
     padding: 0;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: var(--admin-bg-dark);
     color: var(--admin-text);
+    padding-top: 60px;
 }
 
 .admin-header {
@@ -55,7 +58,7 @@ body {
 
 .admin-container {
     display: flex;
-    height: calc(100vh - 65px); /* Wysokość - header */
+    min-height: calc(100vh - 65px); /* Wysokość - header */
 }
 
 .admin-sidebar {
@@ -127,7 +130,7 @@ body {
     overflow: hidden;
 }
 
-.card-header {
+.admin-card-header {
     padding: 15px 20px;
     background-color: var(--admin-bg-light);
     display: flex;
@@ -135,12 +138,12 @@ body {
     align-items: center;
 }
 
-.card-header h3 {
+.admin-card-header h3 {
     margin: 0;
     color: var(--admin-primary);
 }
 
-.card-body {
+.admin-card-body {
     padding: 20px;
 }
 
@@ -167,14 +170,10 @@ body {
     background-color: rgba(255, 255, 255, 0.05);
 }
 
-.text-center {
-    text-align: center;
-}
-
 /* === FORMULARZE === */
-input[type="text"],
-input[type="password"],
-select {
+.admin-form input[type="text"],
+.admin-form input[type="password"],
+.admin-form select {
     padding: 10px;
     border-radius: 4px;
     border: 1px solid var(--admin-bg-light);
@@ -185,7 +184,7 @@ select {
 }
 
 /* === PRZYCISKI === */
-.btn {
+.admin-btn {
     padding: 8px 16px;
     border-radius: 4px;
     border: none;
@@ -194,50 +193,50 @@ select {
     transition: background-color 0.3s, transform 0.2s;
 }
 
-.btn:hover {
+.admin-btn:hover {
     transform: translateY(-2px);
 }
 
-.btn.primary {
+.admin-btn.primary {
     background-color: var(--admin-primary);
     color: var(--admin-bg-dark);
 }
 
-.btn.primary:hover {
+.admin-btn.primary:hover {
     background-color: var(--admin-primary-dark);
 }
 
-.btn.secondary {
+.admin-btn.secondary {
     background-color: var(--admin-secondary);
     color: var(--admin-text);
 }
 
-.btn.secondary:hover {
+.admin-btn.secondary:hover {
     background-color: var(--admin-secondary-dark);
 }
 
-.btn.success {
+.admin-btn.success {
     background-color: var(--admin-success);
     color: white;
 }
 
-.btn.warning {
+.admin-btn.warning {
     background-color: var(--admin-warning);
     color: var(--admin-bg-dark);
 }
 
-.btn.danger {
+.admin-btn.danger {
     background-color: var(--admin-danger);
     color: white;
 }
 
-.btn-sm {
+.admin-btn-sm {
     padding: 5px 10px;
     font-size: 0.9rem;
 }
 
 /* === BADGE === */
-.badge {
+.admin-badge {
     padding: 3px 8px;
     border-radius: 30px;
     font-size: 0.8rem;
@@ -245,27 +244,27 @@ select {
     display: inline-block;
 }
 
-.badge.primary {
+.admin-badge.primary {
     background-color: var(--admin-primary);
     color: var(--admin-bg-dark);
 }
 
-.badge.secondary {
+.admin-badge.secondary {
     background-color: var(--admin-secondary);
     color: white;
 }
 
-.badge.success {
+.admin-badge.success {
     background-color: var(--admin-success);
     color: white;
 }
 
-.badge.warning {
+.admin-badge.warning {
     background-color: var(--admin-warning);
     color: var(--admin-bg-dark);
 }
 
-.badge.danger {
+.admin-badge.danger {
     background-color: var(--admin-danger);
     color: white;
 }
@@ -283,7 +282,7 @@ select {
 }
 
 /* === LOGS === */
-.logs-container {
+.admin-logs-container {
     background-color: var(--admin-bg-dark);
     padding: 15px;
     border-radius: 4px;
@@ -291,7 +290,7 @@ select {
     overflow-y: auto;
 }
 
-#logs-display {
+.admin-logs-display {
     margin: 0;
     font-family: 'Courier New', monospace;
     font-size: 0.9rem;
@@ -309,7 +308,7 @@ select {
     background-color: rgba(0, 0, 0, 0.5);
 }
 
-.modal-content {
+.admin-modal-content {
     background-color: var(--admin-bg-medium);
     margin: 10% auto;
     padding: 0;
@@ -325,7 +324,7 @@ select {
     to {opacity: 1; transform: translateY(0);}
 }
 
-.modal-header {
+.admin-modal-header {
     padding: 15px 20px;
     background-color: var(--admin-bg-light);
     display: flex;
@@ -335,42 +334,180 @@ select {
     border-top-right-radius: 6px;
 }
 
-.modal-header h2 {
+.admin-modal-header h2 {
     margin: 0;
     color: var(--admin-primary);
     font-size: 1.2rem;
 }
 
-.close-modal {
+.admin-close-modal {
     color: var(--admin-text);
     font-size: 1.5rem;
     font-weight: bold;
     cursor: pointer;
 }
 
-.modal-body {
+.admin-modal-body {
     padding: 20px;
 }
 
-.confirm-box {
+.admin-confirm-box {
     margin-top: 20px;
     padding: 15px;
     background-color: var(--admin-bg-light);
     border-radius: 4px;
 }
 
-.confirm-actions {
+.admin-confirm-actions {
     margin-top: 15px;
     display: flex;
     justify-content: flex-end;
     gap: 10px;
 }
 
+/* === STATYSTYKI === */
+.admin-stats-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.admin-stat-card {
+    flex: 1;
+    min-width: 200px;
+    background-color: var(--admin-bg-medium);
+    border-radius: 6px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    text-align: center;
+}
+
+.admin-stat-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+    color: var(--admin-primary);
+}
+
+.admin-stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    margin: 5px 0;
+}
+
+.admin-stat-label {
+    font-size: 0.9rem;
+    color: #aaa;
+    text-transform: uppercase;
+}
+
+/* === BOOTSTRAP OVERRIDES === */
+.admin-panel .navbar-default {
+    background-color: var(--admin-bg-medium);
+    border-color: var(--admin-bg-light);
+}
+
+.admin-panel .navbar-default .navbar-brand,
+.admin-panel .navbar-default .navbar-nav > li > a {
+    color: var(--admin-text);
+}
+
+.admin-panel .navbar-default .navbar-nav > .active > a,
+.admin-panel .navbar-default .navbar-nav > .active > a:focus,
+.admin-panel .navbar-default .navbar-nav > .active > a:hover {
+    background-color: var(--admin-primary);
+    color: var(--admin-bg-dark);
+}
+
+.admin-panel .panel {
+    background-color: var(--admin-bg-medium);
+    border-color: var(--admin-bg-light);
+}
+
+.admin-panel .panel-primary {
+    border-color: var(--admin-primary);
+}
+
+.admin-panel .panel-primary > .panel-heading {
+    background-color: var(--admin-primary);
+    border-color: var(--admin-primary-dark);
+    color: var(--admin-bg-dark);
+}
+
+.admin-panel .panel-info {
+    border-color: var(--admin-secondary);
+}
+
+.admin-panel .panel-info > .panel-heading {
+    background-color: var(--admin-secondary);
+    border-color: var(--admin-secondary-dark);
+    color: white;
+}
+
+.admin-panel .panel-warning > .panel-heading {
+    background-color: var(--admin-warning);
+    color: var(--admin-bg-dark);
+}
+
+.admin-panel .table {
+    color: var(--admin-text);
+}
+
+.admin-panel .table-striped > tbody > tr:nth-of-type(odd) {
+    background-color: var(--admin-bg-light);
+}
+
+.admin-panel .table-hover > tbody > tr:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.admin-panel .btn-primary {
+    background-color: var(--admin-primary);
+    border-color: var(--admin-primary-dark);
+    color: var(--admin-bg-dark);
+}
+
+.admin-panel .btn-primary:hover,
+.admin-panel .btn-primary:focus,
+.admin-panel .btn-primary:active {
+    background-color: var(--admin-primary-dark);
+    border-color: var(--admin-primary-dark);
+}
+
+.admin-panel .btn-info {
+    background-color: var(--admin-secondary);
+    border-color: var(--admin-secondary-dark);
+}
+
+.admin-panel .btn-info:hover,
+.admin-panel .btn-info:focus,
+.admin-panel .btn-info:active {
+    background-color: var(--admin-secondary-dark);
+    border-color: var(--admin-secondary-dark);
+}
+
+.admin-panel .alert-success {
+    background-color: var(--admin-success);
+    color: white;
+    border-color: transparent;
+}
+
+.admin-panel .alert-warning {
+    background-color: var(--admin-warning);
+    color: var(--admin-bg-dark);
+    border-color: transparent;
+}
+
+.admin-panel .alert-danger {
+    background-color: var(--admin-danger);
+    color: white;
+    border-color: transparent;
+}
+
 /* === RESPONSYWNOŚĆ === */
 @media (max-width: 768px) {
     .admin-container {
         flex-direction: column;
-        height: auto;
     }
     
     .admin-sidebar {
@@ -382,13 +519,16 @@ select {
         padding: 10px 15px;
     }
     
-    .card-header {
+    .admin-card-header {
         flex-direction: column;
         align-items: flex-start;
     }
     
-    .card-actions {
-        margin-top: 10px;
+    .admin-stats-container {
+        flex-direction: column;
+    }
+    
+    .admin-stat-card {
         width: 100%;
     }
 }
