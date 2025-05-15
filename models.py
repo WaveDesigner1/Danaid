@@ -67,60 +67,14 @@ class ChatSession(db.Model):
     last_activity = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
+    # Nowe pole do przechowywania zaszyfrowanego klucza sesji
+    encrypted_session_key = db.Column(db.Text, nullable=True)
+    # Pole określające, czy odbiorca potwierdził odebranie klucza
+    key_acknowledged = db.Column(db.Boolean, default=False)
     
     initiator = db.relationship('User', foreign_keys=[initiator_id])
     recipient = db.relationship('User', foreign_keys=[recipient_id])
     messages = db.relationship('Message', backref='session', lazy='dynamic')
-    
-    @property
-    def is_valid(self):
-        """Sprawdza, czy sesja jest ważna (aktywna i nie wygasła)"""
-        return self.is_active and self.expires_at > datetime.datetime.utcnow()
-    
-    def refresh_session(self):
-        """Odświeża sesję, przedłużając jej ważność"""
-        self.last_activity = datetime.datetime.utcnow()
-        # Ustaw nowy czas wygaśnięcia (np. +24h od teraz)
-        self.expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-        db.session.commit()
-    
-    def invalidate(self):
-        """Unieważnia sesję"""
-        self.is_active = False
-        db.session.commit()
-    
-    @classmethod
-    def create_session(cls, initiator_id, recipient_id):
-        """Tworzy nową sesję czatu między dwoma użytkownikami"""
-        # Generuj unikalny token sesji
-        token = hashlib.sha256(str(uuid.uuid4()).encode()).hexdigest()
-        
-        # Ustaw czas wygaśnięcia (np. +24h)
-        expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-        
-        # Utwórz nową sesję
-        session = cls(
-            session_token=token,
-            initiator_id=initiator_id,
-            recipient_id=recipient_id,
-            expires_at=expires_at
-        )
-        
-        db.session.add(session)
-        db.session.commit()
-        
-        return session
-    
-    @classmethod
-    def get_active_sessions(cls, user_id):
-        """Pobiera wszystkie aktywne sesje dla użytkownika"""
-        now = datetime.datetime.utcnow()
-        
-        return cls.query.filter(
-            ((cls.initiator_id == user_id) | (cls.recipient_id == user_id)) &
-            (cls.is_active == True) &
-            (cls.expires_at > now)
-        ).all()
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
