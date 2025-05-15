@@ -1,7 +1,7 @@
 import os
 
 # Pobierz URL bazy danych ze zmiennych środowiskowych
-database_url = os.environ.get('DATABASE_URL', 'postgresql://danaid_database_owner:npg_u5RNUlCmqrz7@ep-winter-wildflower-a4fu4o91-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require')
+database_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@postgres.railway.internal:5432/railway')
 
 # Popraw URL jeśli zaczyna się od "postgres://"
 if database_url.startswith('postgres://'):
