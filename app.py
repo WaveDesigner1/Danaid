@@ -33,7 +33,7 @@ def load_user(user_id):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
-    #os.environ['DATABASE_URL'] = 'postgresql://postgres:MxepqyBo0tfXkJCC@db.ueasoqqrfpmhvwrovxlr.supabase.co:5432/postgres'
+    os.environ['DATABASE_URL'] = 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require'
     
     # Konfiguracja bazy danych
     database_url = os.environ.get('DATABASE_URL')
@@ -43,7 +43,7 @@ def create_app():
         if database_url.startswith('postgres://'):
             database_url = database_url.replace('postgres://', 'postgresql://', 1)
         app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-        print(f"Używam bazy danych Supabase")
+        print(f"Używam bazy danych Neon")
     else:
         # Fallback do SQLite - przydatne do lokalnego rozwoju
         if 'RENDER' in os.environ:
