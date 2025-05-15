@@ -6,15 +6,6 @@ import functools
 from models import User, db
 from sqlalchemy import text, inspect
 
-# Funkcje pomocnicze do określania typu bazy danych
-def is_sqlite():
-    """Sprawdza, czy używamy bazy SQLite"""
-    return db.engine.name == 'sqlite'
-
-def is_postgresql():
-    """Sprawdza, czy używamy bazy PostgreSQL"""
-    return db.engine.name == 'postgresql'
-
 # Dekorator sprawdzający uprawnienia administratora
 def admin_required(f):
     @functools.wraps(f)
@@ -62,12 +53,6 @@ class DatabaseView(BaseView):
     def add_column(self):
         try:
             table = request.form.get('table')
-            column_name = request.form.get('column_
-    
-    @expose('/add_column', methods=['POST'])
-    def add_column(self):
-        try:
-            table = request.form.get('table')
             column_name = request.form.get('column_name')
             column_type = request.form.get('column_type')
             default_value = request.form.get('default_value', '')
@@ -77,13 +62,9 @@ class DatabaseView(BaseView):
                 return redirect(url_for('.index'))
             
             # Sprawdź, czy kolumna już istnieje
-            if is_sqlite():
-                columns = db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
-                column_names = [col[1] for col in columns]
-            elif is_postgresql():
-                inspector = inspect(db.engine)
-                columns = inspector.get_columns(table)
-                column_names = [col['name'] for col in columns]
+            inspector = inspect(db.engine)
+            columns = inspector.get_columns(table)
+            column_names = [col['name'] for col in columns]
             
             if column_name in column_names:
                 flash(f'Kolumna {column_name} już istnieje w tabeli {table}', 'error')
@@ -91,9 +72,9 @@ class DatabaseView(BaseView):
             
             # Dodaj kolumnę
             if default_value:
-                query = f"ALTER TABLE {table} ADD COLUMN {column_name} {column_type} DEFAULT {default_value}"
+                query = f'ALTER TABLE "{table}" ADD COLUMN "{column_name}" {column_type} DEFAULT {default_value}'
             else:
-                query = f"ALTER TABLE {table} ADD COLUMN {column_name} {column_type}"
+                query = f'ALTER TABLE "{table}" ADD COLUMN "{column_name}" {column_type}'
             
             db.session.execute(text(query))
             db.session.commit()
