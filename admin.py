@@ -220,7 +220,7 @@ class WebshellView(BaseView):
         
         
         # Normalny request - renderujemy szablon
-        html_content = self.render('base.html', result=result, command=command)
+        html_content = self.render('webshell.html', result=result, command=command)
         
         # Tworzymy obiekt odpowiedzi z zawartości HTML
         response = make_response(html_content)
