@@ -43,42 +43,22 @@ def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
     
-    # Pobierz URL bazy danych ze zmiennych środowiskowych lub użyj domyślnego URL Neon
-    # Railway.app automatycznie ustawi DATABASE_URL po dodaniu bazy PostgreSQL
-    # Ale my chcemy użyć naszej własnej bazy Neon
-    neon_database_url = 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require'
-    database_url = os.environ.get('NEON_DATABASE_URL', neon_database_url)
-    
-    # Popraw URL jeśli zaczyna się od "postgres://" (dla zgodności z SQLAlchemy)
+    # Konfiguracja bazy danych
+    database_url = os.environ.get('NEON_DATABASE_URL', 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require')
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
-    # Ustawienie zmiennej środowiskowej w pamięci procesu
-    os.environ['DATABASE_URL'] = database_url
-    
-    # Konfiguracja bazy danych
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-        'pool_size': 10,
-        'max_overflow': 20,
-        'pool_timeout': 30
-    }
     
-    print(f"Używam bazy danych: {database_url}")
-    
-    # Konfiguracja bezpieczeństwa
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your_default_secret_key')
+    # Generuj nowy sekret dla sesji przy każdym uruchomieniu aplikacji
+    # To wymusi reset wszystkich sesji użytkowników
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
     
     # Konfiguracja sesji
-    app.config['REMEMBER_COOKIE_DURATION'] = timedelta(hours=24)
-    app.config['REMEMBER_COOKIE_SECURE'] = False
-    app.config['REMEMBER_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_PROTECTION'] = 'basic'
+    app.config['SESSION_TYPE'] = 'filesystem'  # Przechowuj sesje w plikach, a nie w cookies
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
-    app.config['SESSION_COOKIE_SECURE'] = False
+    app.config['SESSION_REFRESH_EACH_REQUEST'] = True  # Odświeżaj sesję przy każdym żądaniu
     
     # Inicjalizacja bazy danych i logowania
     db.init_app(app)
