@@ -1,4 +1,4 @@
-from flask import redirect, url_for, render_template, abort, request, jsonify, flash
+from flask import redirect, url_for, render_template, abort, request, jsonify, flash, Response
 from flask_login import current_user, login_required
 from flask_admin import Admin, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
@@ -8,6 +8,8 @@ from sqlalchemy import text, inspect
 import sys
 import subprocess
 import time
+import flask
+import werkzeug
 
 # Dekorator sprawdzający uprawnienia administratora
 def admin_required(f):
@@ -44,11 +46,30 @@ class DatabaseView(BaseView):
             tables = inspector.get_table_names()
             
             table_structure = {}
+            record_counts = {}
+            
             for table in tables:
                 columns = inspector.get_columns(table)
                 table_structure[table] = columns
+                
+                # Pobierz liczbę rekordów w tabeli
+                try:
+                    count = db.session.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
+                    record_counts[table] = count
+                except Exception as e:
+                    record_counts[table] = f"Błąd: {str(e)}"
             
-            return self.render('admin/database.html', tables=tables, structure=table_structure)
+            response = self.render('admin/database.html', 
+                             tables=tables, 
+                             structure=table_structure,
+                             record_counts=record_counts)
+            
+            # Dodaj nagłówki no-cache
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            
+            return response
         except Exception as e:
             return self.render('admin/database.html', error=str(e))
     
@@ -100,9 +121,6 @@ class DiagnosticsView(BaseView):
     def index(self):
         """Rozbudowana diagnostyka aplikacji dla administratora"""
         try:
-            import flask
-            import werkzeug
-            
             diagnostics = {
                 'app_info': {
                     'flask_version': flask.__version__,
@@ -144,7 +162,14 @@ class DiagnosticsView(BaseView):
             except Exception as db_err:
                 diagnostics['db_status']['connection'] = f"Błąd: {str(db_err)}"
             
-            return self.render('admin/diagnostics.html', diagnostics=diagnostics)
+            response = self.render('admin/diagnostics.html', diagnostics=diagnostics)
+            
+            # Dodaj nagłówki no-cache
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            
+            return response
         except Exception as e:
             return self.render('admin/diagnostics.html', error=str(e))
 
@@ -184,7 +209,23 @@ class WebshellView(BaseView):
                 else:
                     result = "Niedozwolona komenda. Dozwolone są tylko: " + ", ".join(allowed_commands)
         
-        return self.render('admin/webshell.html', result=result, command=command)
+        # Sprawdź czy to AJAX request
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        if is_ajax:
+            return jsonify({
+                'result': result,
+                'command': command
+            })
+        
+        # Normalny request - zwracamy cały szablon
+        response = self.render('admin/webshell.html', result=result, command=command)
+        
+        # Dodaj nagłówki no-cache
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        return response
 
 # Inicjalizacja panelu admina
 def init_admin(app):
@@ -290,3 +331,33 @@ def init_admin(app):
         except Exception as e:
             db.session.rollback()
             return jsonify({'status': 'error', 'message': f'Błąd podczas usuwania użytkownika: {str(e)}'}), 500
+    
+    # Endpoint do sprawdzenia sesji
+    @app.route('/check_session')
+    def check_session():
+        """Endpoint do sprawdzenia stanu sesji"""
+        if current_user.is_authenticated:
+            return jsonify({
+                'authenticated': True,
+                'user_id': current_user.user_id,
+                'username': current_user.username,
+                'is_admin': current_user.is_admin
+            })
+        else:
+            return jsonify({
+                'authenticated': False
+            })
+    
+    # Endpoint do cichego wylogowania (bez przekierowania)
+    @app.route('/silent-logout', methods=['POST'])
+    def silent_logout():
+        """Wylogowanie bez przekierowania"""
+        if current_user.is_authenticated:
+            try:
+                # Aktualizacja statusu online
+                current_user.is_online = False
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        
+        return jsonify({'status': 'success'})
