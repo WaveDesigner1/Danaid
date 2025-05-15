@@ -43,22 +43,6 @@ def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
     
-    # Wymuszenie użycia Neon, niezależnie od istniejących zmiennych środowiskowych
-    neon_url = 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require'
-    
-    app.config['SQLALCHEMY_DATABASE_URI'] = neon_url
-    print(f"Używam bazy danych Neon: {neon_url}")
-    
-    # Optymalizacja wydajności bazy danych
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-        'pool_size': 10,
-        'max_overflow': 20,
-        'pool_timeout': 30
-    }
-    
     # Konfiguracja bezpieczeństwa
     app.config['SECRET_KEY'] = 'your_secret_key'
     
