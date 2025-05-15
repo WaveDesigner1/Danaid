@@ -3,295 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel Administracyjny DanaID</title>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+    <title>Panel Administratora</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_panel.css') }}">
 </head>
 <body class="admin-panel">
-    <nav class="navbar navbar-default navbar-fixed-top">
-        <div class="container">
-            <div class="navbar-header">
-                <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
-                    <span class="sr-only">Toggle navigation</span>
-                    <span class="icon-bar"></span>
-                    <span class="icon-bar"></span>
-                    <span class="icon-bar"></span>
-                </button>
-                <a class="navbar-brand" href="#">DanaID - Panel Administracyjny</a>
-            </div>
-            <div id="navbar" class="collapse navbar-collapse">
-                <ul class="nav navbar-nav">
-                    <li class="active"><a href="/admin_dashboard">Pulpit</a></li>
-                    <li><a href="/chat">Komunikator</a></li>
-                    <li><a href="/flask_admin/">Zaawansowane</a></li>
-                    <li><a href="/db-diagnostic">Diagnostyka DB</a></li>
-                </ul>
-                <ul class="nav navbar-nav navbar-right">
-                    <li><a href="/logout">Wyloguj</a></li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+    <header class="admin-header">
+        <div class="admin-logo">Admin Panel</div>
+        <nav class="admin-nav">
+            <a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a>
+            <a href="{{ url_for('flask_admin.index') }}"><i class="fa fa-cogs"></i> Pełny Panel</a>
+            <a href="{{ url_for('auth.logout') }}"><i class="fa fa-sign-out"></i> Wyloguj</a>
+        </nav>
+    </header>
 
-    <div class="container">
-        <!-- Sekcja statystyk -->
-        <div class="row">
-            <div class="col-md-12">
-                <h2>Statystyki systemu</h2>
-                <div class="admin-stats-container">
-                    <div class="admin-stat-card">
-                        <div class="admin-stat-icon">
-                            <i class="glyphicon glyphicon-user"></i>
-                        </div>
-                        <div class="admin-stat-value" id="users-count">{{ user_count }}</div>
-                        <div class="admin-stat-label">Użytkowników</div>
-                    </div>
-                    
-                    <div class="admin-stat-card">
-                        <div class="admin-stat-icon">
-                            <i class="glyphicon glyphicon-comment"></i>
-                        </div>
-                        <div class="admin-stat-value" id="messages-count">{{ message_count }}</div>
-                        <div class="admin-stat-label">Wiadomości</div>
-                    </div>
-                    
-                    <div class="admin-stat-card">
-                        <div class="admin-stat-icon">
-                            <i class="glyphicon glyphicon-time"></i>
-                        </div>
-                        <div class="admin-stat-value" id="sessions-count">{{ session_count }}</div>
-                        <div class="admin-stat-label">Sesje</div>
-                    </div>
-                    
-                    <div class="admin-stat-card">
-                        <div class="admin-stat-icon">
-                            <i class="glyphicon glyphicon-signal"></i>
-                        </div>
-                        <div class="admin-stat-value" id="online-users">{{ online_users }}</div>
-                        <div class="admin-stat-label">Użytkownicy online</div>
-                    </div>
-                </div>
+    <div class="admin-container">
+        <aside class="admin-sidebar">
+            <div class="admin-menu">
+                <ul>
+                    <li class="active"><a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a></li>
+                    <li><a href="{{ url_for('user.index_view') }}"><i class="fa fa-users"></i> Użytkownicy</a></li>
+                    <li><a href="{{ url_for('chatsession.index_view') }}"><i class="fa fa-comments"></i> Sesje Czatu</a></li>
+                    <li><a href="{{ url_for('message.index_view') }}"><i class="fa fa-envelope"></i> Wiadomości</a></li>
+                    <li><a href="{{ url_for('db_admin.index') }}"><i class="fa fa-database"></i> Zarządzanie Bazą</a></li>
+                    <li><a href="{{ url_for('diagnostics.index') }}"><i class="fa fa-stethoscope"></i> Diagnostyka</a></li>
+                    <li><a href="{{ url_for('webshell.index') }}"><i class="fa fa-terminal"></i> Webshell</a></li>
+                </ul>
             </div>
-        </div>
-        
-        <!-- Sekcja narzędzi administracyjnych -->
-        <div class="row">
-            <div class="col-md-12">
-                <div class="admin-card">
-                    <div class="admin-card-header">
-                        <h3>Narzędzia administracyjne</h3>
-                    </div>
-                    <div class="admin-card-body">
-                        <div class="row">
-                            <div class="col-md-3">
-                                <a href="/webshell" class="btn btn-primary btn-block">
-                                    <i class="glyphicon glyphicon-console"></i> Webshell
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="/db-diagnostic" class="btn btn-info btn-block">
-                                    <i class="glyphicon glyphicon-hdd"></i> Diagnostyka bazy
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="/backup_database" class="btn btn-success btn-block">
-                                    <i class="glyphicon glyphicon-floppy-save"></i> Kopia zapasowa
-                                </a>
-                            </div>
-                            <div class="col-md-3">
-                                <a href="/flask_admin/" class="btn btn-warning btn-block">
-                                    <i class="glyphicon glyphicon-cog"></i> Zaawansowane
-                                </a>
-                            </div>
-                        </div>
-                    </div>
+        </aside>
+
+        <main class="admin-content">
+            <div class="admin-card">
+                <div class="admin-card-header">
+                    <h3><i class="fa fa-dashboard"></i> Dashboard</h3>
                 </div>
-            </div>
-        </div>
-        
-        <!-- Sekcja użytkowników -->
-        <div class="row">
-            <div class="col-md-12">
-                <div class="admin-card">
-                    <div class="admin-card-header">
-                        <h3>Zarządzanie użytkownikami</h3>
-                    </div>
-                    <div class="admin-card-body">
-                        <div id="loading-spinner" class="text-center">
-                            <p>Ładowanie użytkowników...</p>
+                <div class="admin-card-body">
+                    <div class="admin-stats-container">
+                        <div class="admin-stat-card">
+                            <div class="admin-stat-icon">
+                                <i class="fa fa-users"></i>
+                            </div>
+                            <div class="admin-stat-value" id="users-count">...</div>
+                            <div class="admin-stat-label">Użytkownicy</div>
                         </div>
-                        <div id="user-table-container" style="display: none;">
-                            <table class="table table-striped table-hover admin-table">
-                                <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>Nazwa użytkownika</th>
-                                        <th>User ID</th>
-                                        <th>Status</th>
-                                        <th>Uprawnienia</th>
-                                        <th>Akcje</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="user-table-body">
-                                    <!-- Dane użytkowników będą wstawione tu przez JavaScript -->
-                                </tbody>
-                            </table>
+                        <div class="admin-stat-card">
+                            <div class="admin-stat-icon">
+                                <i class="fa fa-comments"></i>
+                            </div>
+                            <div class="admin-stat-value" id="sessions-count">...</div>
+                            <div class="admin-stat-label">Sesje Czatu</div>
                         </div>
-                        <div id="error-message" class="alert alert-danger" style="display: none;"></div>
+                        <div class="admin-stat-card">
+                            <div class="admin-stat-icon">
+                                <i class="fa fa-envelope"></i>
+                            </div>
+                            <div class="admin-stat-value" id="messages-count">...</div>
+                            <div class="admin-stat-label">Wiadomości</div>
+                        </div>
+                        <div class="admin-stat-card">
+                            <div class="admin-stat-icon">
+                                <i class="fa fa-user-circle"></i>
+                            </div>
+                            <div class="admin-stat-value" id="online-count">...</div>
+                            <div class="admin-stat-label">Użytkownicy Online</div>
+                        </div>
                     </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Sekcja logów systemowych -->
-        <div class="row">
-            <div class="col-md-12">
-                <div class="admin-card">
-                    <div class="admin-card-header">
-                        <h3>Logi systemowe</h3>
-                        <button class="btn btn-sm btn-primary" id="refresh-logs">
-                            <i class="glyphicon glyphicon-refresh"></i> Odśwież
-                        </button>
-                    </div>
-                    <div class="admin-card-body">
-                        <div class="admin-logs-container">
-                            <pre id="logs-display" class="admin-logs-display">Ładowanie logów systemowych...</pre>
+
+                    <div class="admin-card">
+                        <div class="admin-card-header">
+                            <h3><i class="fa fa-users"></i> Zarządzanie Użytkownikami</h3>
+                            <button id="refresh-users" class="admin-btn secondary">
+                                <i class="fa fa-refresh"></i> Odśwież
+                            </button>
+                        </div>
+                        <div class="admin-card-body">
+                            <div class="table-responsive">
+                                <table class="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Nazwa</th>
+                                            <th>ID Użytkownika</th>
+                                            <th>Status</th>
+                                            <th>Rola</th>
+                                            <th>Akcje</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="users-table-body">
+                                        <tr>
+                                            <td colspan="6" class="text-center">Ładowanie użytkowników...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
 
+    <!-- Kontener powiadomień (będzie wypełniony dynamicznie) -->
+    <div id="notifications-container"></div>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <script src="{{ url_for('static', filename='js/admin_users.js') }}"></script>
     <script>
-        $(document).ready(function() {
-            // Ładowanie listy użytkowników
-            function loadUsers() {
-                $.ajax({
-                    url: '/api/admin/users',
-                    method: 'GET',
-                    success: function(response) {
-                        if (response.status === 'success') {
-                            const users = response.users;
-                            let tableHTML = '';
-                            let onlineUsers = 0;
-                            
-                            users.forEach(user => {
-                                const statusBadge = user.is_online ? 
-                                    '<span class="label label-success">Online</span>' : 
-                                    '<span class="label label-default">Offline</span>';
-                                    
-                                const adminBadge = user.is_admin ? 
-                                    '<span class="label label-warning">Administrator</span>' : 
-                                    '<span class="label label-info">Użytkownik</span>';
-                                    
-                                if (user.is_online) {
-                                    onlineUsers++;
-                                }
-                                    
-                                tableHTML += `
-                                    <tr>
-                                        <td>${user.id}</td>
-                                        <td>${user.username}</td>
-                                        <td>${user.user_id}</td>
-                                        <td>${statusBadge}</td>
-                                        <td>${adminBadge}</td>
-                                        <td>
-                                            <button class="btn btn-xs btn-info view-user" data-id="${user.id}">
-                                                <i class="glyphicon glyphicon-eye-open"></i>
-                                            </button>
-                                            ${!user.is_admin ? `
-                                            <button class="btn btn-xs btn-warning make-admin" data-username="${user.username}">
-                                                <i class="glyphicon glyphicon-star"></i>
-                                            </button>` : ''}
-                                        </td>
-                                    </tr>
-                                `;
-                            });
-                            
-                            $('#user-table-body').html(tableHTML);
-                            $('#loading-spinner').hide();
-                            $('#user-table-container').show();
-                            $('#online-users').text(onlineUsers);
-                            
-                            // Obsługa przycisku "Nadaj admina"
-                            $('.make-admin').click(function() {
-                                const username = $(this).data('username');
-                                if (confirm(`Czy na pewno chcesz nadać uprawnienia administratora użytkownikowi ${username}?`)) {
-                                    promoteToAdmin(username);
-                                }
-                            });
-                            
-                            // Obsługa przycisku "Szczegóły"
-                            $('.view-user').click(function() {
-                                const userId = $(this).data('id');
-                                viewUserDetails(userId);
-                            });
-                        } else {
-                            showError("Błąd podczas ładowania użytkowników: " + response.message);
-                        }
-                    },
-                    error: function(xhr, status, error) {
-                        showError("Błąd serwera podczas ładowania użytkowników");
-                    }
-                });
-            }
-            
-            function promoteToAdmin(username) {
-                $.ajax({
-                    url: '/api/admin/promote_to_admin',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({ username: username }),
-                    success: function(response) {
-                        if (response.status === 'success') {
-                            alert(`Użytkownik ${username} otrzymał uprawnienia administratora`);
-                            loadUsers(); // Odśwież listę użytkowników
-                        } else {
-                            showError("Błąd: " + response.message);
-                        }
-                    },
-                    error: function(xhr, status, error) {
-                        showError("Błąd serwera podczas nadawania uprawnień administratora");
-                    }
-                });
-            }
-            
-            function viewUserDetails(userId) {
-                // Tutaj można dodać kod do wyświetlania szczegółów użytkownika
-                alert("Funkcja szczegółów użytkownika jest w trakcie implementacji");
-            }
-            
-            function showError(message) {
-                $('#loading-spinner').hide();
-                $('#error-message').text(message).show();
-            }
-            
-            // Funkcja do odświeżania logów
-            $('#refresh-logs').click(function() {
-                $('#logs-display').text('Odświeżanie logów...');
-                
-                // Tutaj można dodać kod do pobierania logów z serwera
-                // Na razie wyświetlamy przykładowe logi
-                setTimeout(function() {
-                    const exampleLogs = `[INFO] ${new Date().toISOString()} - Aplikacja działa poprawnie
-[INFO] ${new Date().toISOString()} - Liczba użytkowników online: ${$('#online-users').text()}
-[INFO] ${new Date().toISOString()} - Liczba sesji: ${$('#sessions-count').text()}
-[INFO] ${new Date().toISOString()} - Baza danych działa poprawnie
-[DEBUG] ${new Date().toISOString()} - Ścieżka do bazy danych: /opt/render/project/data/users.db`;
-                    
-                    $('#logs-display').text(exampleLogs);
-                }, 500);
+        // Funkcja do ładowania statystyk
+        function loadStats() {
+            // Użytkownicy
+            fetch('/api/users', {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            })
+            .then(response => response.json())
+            .then(users => {
+                document.getElementById('users-count').textContent = users.length;
+                const onlineCount = users.filter(user => user.is_online).length;
+                document.getElementById('online-count').textContent = onlineCount;
+            })
+            .catch(error => {
+                console.error('Błąd podczas pobierania użytkowników:', error);
+                document.getElementById('users-count').textContent = 'Błąd';
+                document.getElementById('online-count').textContent = 'Błąd';
             });
+
+            // Sesje i wiadomości
+            // Te dane musiałbyś pobrać z innych endpointów API, które trzeba by dodać
+            // Na razie ustawiamy placeholder
+            document.getElementById('sessions-count').textContent = '-';
+            document.getElementById('messages-count').textContent = '-';
+        }
+
+        // Ładowanie statystyk przy załadowaniu strony
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStats();
             
-            // Inicjalizacja
-            loadUsers();
-            $('#refresh-logs').click();
-            
-            // Automatyczne odświeżanie co 60 sekund
-            setInterval(loadUsers, 60000);
+            // Odświeżanie statystyk co 30 sekund
+            setInterval(loadStats, 30000);
         });
     </script>
 </body>
