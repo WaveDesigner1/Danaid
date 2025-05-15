@@ -1,0 +1,130 @@
+{% extends 'admin/base.html' %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <h2>Zarządzanie Bazą Danych</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">
+                <h4>Błąd!</h4>
+                <p>{{ error }}</p>
+            </div>
+            {% endif %}
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <div class="panel panel-primary">
+                <div class="panel-heading">
+                    <h3 class="panel-title">Dodaj nową kolumnę do tabeli</h3>
+                </div>
+                <div class="panel-body">
+                    <form method="post" action="{{ url_for('db_admin.add_column') }}" class="form-horizontal">
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label">Tabela:</label>
+                            <div class="col-sm-9">
+                                <select name="table" class="form-control" required>
+                                    {% for table in tables %}
+                                    <option value="{{ table }}">{{ table }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label">Nazwa kolumny:</label>
+                            <div class="col-sm-9">
+                                <input type="text" name="column_name" class="form-control" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label">Typ danych:</label>
+                            <div class="col-sm-9">
+                                <select name="column_type" class="form-control" required>
+                                    <option value="INTEGER">INTEGER</option>
+                                    <option value="FLOAT">FLOAT</option>
+                                    <option value="TEXT">TEXT</option>
+                                    <option value="VARCHAR(255)">VARCHAR(255)</option>
+                                    <option value="BOOLEAN">BOOLEAN</option>
+                                    <option value="TIMESTAMP">TIMESTAMP</option>
+                                    <option value="DATE">DATE</option>
+                                    <option value="JSON">JSON</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="col-sm-3 control-label">Wartość domyślna (opcjonalnie):</label>
+                            <div class="col-sm-9">
+                                <input type="text" name="default_value" class="form-control">
+                                <span class="help-block">Dla tekstu użyj pojedynczych cudzysłowów, np. 'wartość'. <br>Dla typów Boolean: TRUE / FALSE. <br>Dla daty/czasu: NOW() lub '2023-01-01'.</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="col-sm-offset-3 col-sm-9">
+                                <button type="submit" class="btn btn-primary">Dodaj kolumnę</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="panel panel-info">
+                <div class="panel-heading">
+                    <h3 class="panel-title">Struktura Bazy Danych</h3>
+                </div>
+                <div class="panel-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Tabela</th>
+                                    <th>Liczba rekordów</th>
+                                    <th>Kolumny</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for table in tables %}
+                                <tr>
+                                    <td>{{ table }}</td>
+                                    <td>{{ record_counts[table] }}</td>
+                                    <td>
+                                        <table class="table table-condensed">
+                                            <thead>
+                                                <tr>
+                                                    <th>Nazwa</th>
+                                                    <th>Typ</th>
+                                                    <th>Nullable</th>
+                                                    <th>Default</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for column in structure[table] %}
+                                                <tr>
+                                                    <td>{{ column.name }}</td>
+                                                    <td>{{ column.type }}</td>
+                                                    <td>{{ 'Tak' if column.nullable else 'Nie' }}</td>
+                                                    <td>{{ column.default or '-' }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
