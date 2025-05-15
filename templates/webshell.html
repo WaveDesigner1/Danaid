@@ -1,135 +1,229 @@
-{% extends 'base.html' %}
-
-{% block content %}
-<div class="container">
-    <div class="row">
-        <div class="col-md-12">
-            <h2>Webshell</h2>
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebShell Panel</title>
+    <style>
+        /* Reset podstawowy */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8f9fa;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        h1 {
+            color: #343a40;
+            font-size: 24px;
+        }
+        
+        nav a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: #007bff;
+            font-weight: 500;
+        }
+        
+        nav a:hover {
+            text-decoration: underline;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .command-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 16px;
+        }
+        
+        .btn {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+        
+        .btn:hover {
+            background-color: #0069d9;
+        }
+        
+        .result-container {
+            margin-top: 30px;
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .result-header h2 {
+            font-size: 18px;
+            color: #495057;
+        }
+        
+        .result-content {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            overflow-x: auto;
+        }
+        
+        pre {
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #212529;
+        }
+        
+        footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+            color: #6c757d;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        /* Responsywność */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
             
-            <div class="alert alert-warning">
-                <h4>Uwaga!</h4>
-                <p>Ten moduł pozwala na wykonywanie podstawowych komend systemowych. Używaj z rozwagą!</p>
-                <p><strong>Dozwolone komendy:</strong> ls, ps, df, free, uptime, cat, grep, head, tail, find</p>
-            </div>
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
             
-            <div class="panel panel-default">
-                <div class="panel-heading">
-                    <h3 class="panel-title">Konsola</h3>
+            nav {
+                margin-top: 10px;
+            }
+            
+            nav a {
+                margin-left: 0;
+                margin-right: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>WebShell Panel</h1>
+            <nav>
+                <a href="/">Dashboard</a>
+                <a href="/admin/">Admin</a>
+                <a href="/flask_admin/">Flask Admin</a>
+            </nav>
+        </header>
+        
+        <main>
+            <form method="post" action="">
+                <div class="form-group">
+                    <label for="command">Wprowadź komendę:</label>
+                    <input type="text" id="command" name="command" class="command-input" value="{{ command or '' }}" autocomplete="off" autofocus>
                 </div>
-                <div class="panel-body">
-                    <form method="post" action="{{ url_for('webshell.index') }}" id="webshell-form">
-                        <div class="input-group">
-                            <span class="input-group-addon">$</span>
-                            <input type="text" name="command" id="command-input" class="form-control" placeholder="Wprowadź komendę" value="{{ command if command else '' }}">
-                            <span class="input-group-btn">
-                                <button class="btn btn-primary" type="submit">Wykonaj</button>
-                            </span>
-                        </div>
-                    </form>
-                    
-                    {% if result %}
-                    <div class="well" id="result-container" style="margin-top: 20px; background-color: #000; color: #ccc; font-family: monospace; white-space: pre-wrap;">{{ result }}</div>
-                    {% else %}
-                    <div class="well" id="result-container" style="margin-top: 20px; background-color: #000; color: #ccc; font-family: monospace; white-space: pre-wrap; display: none;"></div>
-                    {% endif %}
+                <button type="submit" class="btn">Wykonaj</button>
+            </form>
+            
+            {% if result %}
+            <div class="result-container">
+                <div class="result-header">
+                    <h2>Wynik wykonania:</h2>
+                    <span>Komenda: <code>{{ command }}</code></span>
+                </div>
+                <div class="result-content">
+                    <pre>{{ result }}</pre>
                 </div>
             </div>
-        </div>
+            {% endif %}
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 Panel Administracyjny | Wersja 1.0</p>
+        </footer>
     </div>
-</div>
-
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const commandInput = document.getElementById('command-input');
-        const webshellForm = document.getElementById('webshell-form');
-        const resultContainer = document.getElementById('result-container');
-        
-        // Automatycznie ustaw focus na polu wejściowym
-        commandInput.focus();
-        
-        // Historia komend
-        let commandHistory = [];
-        let historyIndex = -1;
-        
-        // Obsługa klawisza Enter i strzałek
-        commandInput.addEventListener('keydown', function(e) {
-            if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                navigateHistory(-1); // w górę historii
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                navigateHistory(1);  // w dół historii
-            }
-        });
-        
-        // Obsługa formularza z AJAX
-        webshellForm.addEventListener('submit', function(e) {
-            e.preventDefault();
+    
+    <script>
+        // Podstawowy JavaScript do obsługi webshell
+        document.addEventListener('DOMContentLoaded', function() {
+            // Ustaw fokus na polu wejściowym
+            document.getElementById('command').focus();
             
-            const command = commandInput.value.trim();
-            if (!command) return;
+            // Historia komend (opcjonalnie)
+            let commandHistory = [];
+            let currentHistoryIndex = -1;
             
-            // Dodaj komendę do historii
-            commandHistory.unshift(command);
-            historyIndex = -1;
+            // Dodaj obsługę klawiszy strzałek do nawigacji po historii
+            document.getElementById('command').addEventListener('keydown', function(e) {
+                // Strzałka w górę
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (commandHistory.length > 0 && currentHistoryIndex < commandHistory.length - 1) {
+                        currentHistoryIndex++;
+                        this.value = commandHistory[currentHistoryIndex];
+                    }
+                }
+                // Strzałka w dół
+                else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (currentHistoryIndex > 0) {
+                        currentHistoryIndex--;
+                        this.value = commandHistory[currentHistoryIndex];
+                    } else if (currentHistoryIndex === 0) {
+                        currentHistoryIndex = -1;
+                        this.value = '';
+                    }
+                }
+            });
             
-            // Ogranicz historię do 20 komend
-            if (commandHistory.length > 20) {
-                commandHistory.pop();
-            }
-            
-            // Wyślij zapytanie AJAX
-            fetch('{{ url_for("webshell.index") }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                body: 'command=' + encodeURIComponent(command)
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Pokaż kontener wyniku
-                resultContainer.style.display = 'block';
-                
-                // Ustaw wynik
-                resultContainer.textContent = '$ ' + command + '\n\n' + (data.result || 'Brak wyników');
-                
-                // Wyczyść pole wejściowe i ustaw focus
-                commandInput.value = '';
-                commandInput.focus();
-            })
-            .catch(error => {
-                console.error('Błąd:', error);
-                resultContainer.style.display = 'block';
-                resultContainer.textContent = '$ ' + command + '\n\nBłąd: ' + error.message;
-                
-                // Wyczyść pole wejściowe i ustaw focus
-                commandInput.value = '';
-                commandInput.focus();
+            // Zapisz historię komend po wysłaniu formularza
+            document.querySelector('form').addEventListener('submit', function() {
+                const command = document.getElementById('command').value.trim();
+                if (command && (commandHistory.length === 0 || commandHistory[0] !== command)) {
+                    commandHistory.unshift(command);
+                    currentHistoryIndex = -1;
+                }
             });
         });
-        
-        // Funkcja do nawigacji po historii komend
-        function navigateHistory(direction) {
-            // direction: -1 = góra (starsze), 1 = dół (nowsze)
-            if (commandHistory.length === 0) return;
-            
-            // Zaktualizuj indeks
-            historyIndex = Math.max(-1, Math.min(commandHistory.length - 1, historyIndex + direction));
-            
-            // Ustaw komendę z historii lub wyczyść
-            if (historyIndex === -1) {
-                commandInput.value = '';
-            } else {
-                commandInput.value = commandHistory[historyIndex];
-            }
-            
-            // Ustaw kursor na końcu tekstu
-            setTimeout(() => {
-                commandInput.selectionStart = commandInput.selectionEnd = commandInput.value.length;
-            }, 0);
-        }
-    });
-</script>
-{% endblock %}
+    </script>
+</body>
+</html>
