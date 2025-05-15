@@ -59,7 +59,7 @@ class DatabaseView(BaseView):
                 except Exception as e:
                     record_counts[table] = f"Błąd: {str(e)}"
             
-            response = self.render('admin/database.html', 
+            response = self.render('database.html', 
                              tables=tables, 
                              structure=table_structure,
                              record_counts=record_counts)
@@ -71,7 +71,7 @@ class DatabaseView(BaseView):
             
             return response
         except Exception as e:
-            return self.render('admin/database.html', error=str(e))
+            return self.render('database.html', error=str(e))
     
     @expose('/add_column', methods=['POST'])
     def add_column(self):
@@ -162,7 +162,7 @@ class DiagnosticsView(BaseView):
             except Exception as db_err:
                 diagnostics['db_status']['connection'] = f"Błąd: {str(db_err)}"
             
-            response = self.render('admin/diagnostics.html', diagnostics=diagnostics)
+            response = self.render('diagnostics.html', diagnostics=diagnostics)
             
             # Dodaj nagłówki no-cache
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -171,7 +171,7 @@ class DiagnosticsView(BaseView):
             
             return response
         except Exception as e:
-            return self.render('admin/diagnostics.html', error=str(e))
+            return self.render('diagnostics.html', error=str(e))
 
 # Klasa widoku webshell
 class WebshellView(BaseView):
@@ -218,7 +218,7 @@ class WebshellView(BaseView):
             })
         
         # Normalny request - zwracamy cały szablon
-        response = self.render('admin/webshell.html', result=result, command=command)
+        response = self.render('webshell.html', result=result, command=command)
         
         # Dodaj nagłówki no-cache
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
