@@ -1,0 +1,38 @@
+{% extends 'admin/base.html' %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <h2>Webshell</h2>
+            
+            <div class="alert alert-warning">
+                <h4>Uwaga!</h4>
+                <p>Ten moduł pozwala na wykonywanie podstawowych komend systemowych. Używaj z rozwagą!</p>
+                <p>Dozwolone komendy: ls, ps, df, free, uptime, cat, grep, head, tail, find</p>
+            </div>
+            
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">Konsola</h3>
+                </div>
+                <div class="panel-body">
+                    <form method="post" action="{{ url_for('webshell.index') }}">
+                        <div class="input-group">
+                            <span class="input-group-addon">$</span>
+                            <input type="text" name="command" class="form-control" placeholder="Wprowadź komendę" value="{{ command if command else '' }}">
+                            <span class="input-group-btn">
+                                <button class="btn btn-primary" type="submit">Wykonaj</button>
+                            </span>
+                        </div>
+                    </form>
+                    
+                    {% if result %}
+                    <div class="well" style="margin-top: 20px; background-color: #000; color: #ccc; font-family: monospace; white-space: pre-wrap;">{{ result }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
