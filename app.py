@@ -62,7 +62,7 @@ def create_app():
     CORS(app, supports_credentials=True)
     
     # Konfiguracja bazy danych
-    database_url = os.environ.get('NEON_DATABASE_URL', 'postgresql://danaid_database_owner:npg_u5RNUlCmqrz7@ep-winter-wildflower-a4fu4o91-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require')
+    database_url = os.environ.get('NEON_DATABASE_URL', 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@postgres.railway.internal:5432/railway')
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
