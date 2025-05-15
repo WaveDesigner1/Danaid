@@ -10,6 +10,7 @@ import subprocess
 import time
 import flask
 import werkzeug
+import traceback
 
 # Dekorator sprawdzający uprawnienia administratora
 def admin_required(f):
@@ -230,18 +231,26 @@ class WebshellView(BaseView):
 # Inicjalizacja panelu admina
 def init_admin(app):
     admin = Admin(app, name='Admin Panel', template_mode='bootstrap3', url='/flask_admin')
-    admin.add_view(SecureModelView(User, db.session))
-    admin.add_view(SecureModelView(ChatSession, db.session))
-    admin.add_view(SecureModelView(Message, db.session))
+    
+    # Dodaj jawnie endpoint dla każdego widoku modelu
+    admin.add_view(SecureModelView(User, db.session, endpoint='user'))
+    admin.add_view(SecureModelView(ChatSession, db.session, endpoint='chatsession'))
+    admin.add_view(SecureModelView(Message, db.session, endpoint='message'))
+    
+    # Te widoki już mają poprawne endpointy
     admin.add_view(DatabaseView(name='Zarządzanie bazą danych', endpoint='db_admin'))
     admin.add_view(DiagnosticsView(name='Diagnostyka', endpoint='diagnostics'))
     admin.add_view(WebshellView(name='Webshell', endpoint='webshell'))
     
-    # Panel administracyjny
+    # Panel administracyjny z obsługą błędów
     @app.route('/admin_dashboard')
     @admin_required
     def admin_panel():
-        return render_template('admin_panel.html')
+        try:
+            return render_template('admin_panel.html')
+        except Exception as e:
+            error_traceback = traceback.format_exc()
+            return f"<h1>Error in admin_panel</h1><p>{str(e)}</p><pre>{error_traceback}</pre>"
     
     # API do pobierania listy użytkowników
     @app.route('/api/users')
