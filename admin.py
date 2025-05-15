@@ -4,7 +4,16 @@ from flask_admin import Admin, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 import functools
 from models import User, db
-from sqlalchemy import text
+from sqlalchemy import text, inspect
+
+# Funkcje pomocnicze do określania typu bazy danych
+def is_sqlite():
+    """Sprawdza, czy używamy bazy SQLite"""
+    return db.engine.name == 'sqlite'
+
+def is_postgresql():
+    """Sprawdza, czy używamy bazy PostgreSQL"""
+    return db.engine.name == 'postgresql'
 
 # Dekorator sprawdzający uprawnienia administratora
 def admin_required(f):
@@ -36,13 +45,25 @@ class DatabaseView(BaseView):
     def index(self):
         # Pobierz strukturę bazy danych
         try:
-            tables = db.session.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
-            tables = [table[0] for table in tables]
+            if is_sqlite():
+                # Kod dla SQLite
+                tables = db.session.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
+                tables = [table[0] for table in tables]
+                
+                table_structure = {}
+                for table in tables:
+                    columns = db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
+                    table_structure[table] = columns
             
-            table_structure = {}
-            for table in tables:
-                columns = db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
-                table_structure[table] = columns
+            elif is_postgresql():
+                # Kod dla PostgreSQL
+                inspector = inspect(db.engine)
+                tables = inspector.get_table_names()
+                
+                table_structure = {}
+                for table in tables:
+                    columns = inspector.get_columns(table)
+                    table_structure[table] = columns
             
             return self.render('admin/database.html', tables=tables, structure=table_structure)
         except Exception as e:
@@ -61,8 +82,13 @@ class DatabaseView(BaseView):
                 return redirect(url_for('.index'))
             
             # Sprawdź, czy kolumna już istnieje
-            columns = db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
-            column_names = [col[1] for col in columns]
+            if is_sqlite():
+                columns = db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
+                column_names = [col[1] for col in columns]
+            elif is_postgresql():
+                inspector = inspect(db.engine)
+                columns = inspector.get_columns(table)
+                column_names = [col['name'] for col in columns]
             
             if column_name in column_names:
                 flash(f'Kolumna {column_name} już istnieje w tabeli {table}', 'error')
