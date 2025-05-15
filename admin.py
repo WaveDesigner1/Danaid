@@ -1,4 +1,4 @@
-from flask import redirect, url_for, render_template, abort, request, jsonify, flash, Response
+from flask import redirect, url_for, render_template, abort, request, jsonify, flash, Response, make_response
 from flask_login import current_user, login_required
 from flask_admin import Admin, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
@@ -218,8 +218,12 @@ class WebshellView(BaseView):
                 'command': command
             })
         
-        # Normalny request - zwracamy cały szablon
-        response = self.render('webshell.html', result=result, command=command)
+        
+        # Normalny request - renderujemy szablon
+        html_content = self.render('webshell.html', result=result, command=command)
+        
+        # Tworzymy obiekt odpowiedzi z zawartości HTML
+        response = make_response(html_content)
         
         # Dodaj nagłówki no-cache
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -227,6 +231,7 @@ class WebshellView(BaseView):
         response.headers['Expires'] = '0'
         
         return response
+
 
 # Inicjalizacja panelu admina
 def init_admin(app):
