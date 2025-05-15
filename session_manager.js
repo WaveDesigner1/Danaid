@@ -6,8 +6,8 @@ class SessionManager {
         this.isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true';
         this.isAdmin = sessionStorage.getItem('is_admin') === 'true';
         
-        // Czas wygaśnięcia sesji (15 minut)
-        this.sessionTimeout = 15 * 60 * 1000;
+        // Czas wygaśnięcia sesji (30 minut)
+        this.sessionTimeout = 30 * 60 * 1000;
         
         // Nasłuchuj na zamknięcie przeglądarki/karty
         window.addEventListener('beforeunload', this.handleTabClose.bind(this));
@@ -22,7 +22,7 @@ class SessionManager {
     // Sprawdzanie stanu sesji na serwerze
     async checkServerSession() {
         try {
-            const response = await fetch('/check_session', {
+            const response = await fetch('/api/check_session', {
                 method: 'GET',
                 credentials: 'same-origin'
             });
@@ -51,6 +51,7 @@ class SessionManager {
             
             return false;
         } catch (error) {
+            console.error('Błąd podczas sprawdzania sesji:', error);
             this.clearSessionData();
             this.isLoggedIn = false;
             this.isAdmin = false;
@@ -81,10 +82,17 @@ class SessionManager {
         this.clearSessionData();
         
         // Wyślij żądanie do serwera o wylogowanie
-        this.serverLogout();
-        
-        // Przekieruj do strony logowania
-        window.location.href = '/';
+        fetch('/logout', {
+            method: 'GET',
+            credentials: 'same-origin'
+        }).then(() => {
+            // Przekieruj do strony logowania
+            window.location.href = '/';
+        }).catch(error => {
+            console.error('Błąd podczas wylogowania:', error);
+            // Przekieruj do strony logowania nawet w przypadku błędu
+            window.location.href = '/';
+        });
     }
     
     // Czyszczenie danych sesji
@@ -96,22 +104,6 @@ class SessionManager {
         sessionStorage.removeItem('username');
     }
     
-    // Wylogowanie na serwerze
-    serverLogout() {
-        try {
-            navigator.sendBeacon('/silent-logout');
-        } catch (e) {
-            // Fallback - synchroniczny XMLHttpRequest
-            try {
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', '/silent-logout', false);
-                xhr.send();
-            } catch (err) {
-                console.error('Błąd podczas wylogowania:', err);
-            }
-        }
-    }
-    
     // Sprawdź, czy sesja wygasła
     checkSessionTimeout() {
         if (!this.isLoggedIn) return;
@@ -121,6 +113,7 @@ class SessionManager {
         const sessionAge = currentTime - sessionStartTime;
         
         if (sessionAge > this.sessionTimeout) {
+            console.log('Sesja wygasła - automatyczne wylogowanie');
             this.logout();
         }
     }
@@ -128,7 +121,8 @@ class SessionManager {
     // Obsługa zamknięcia karty
     handleTabClose() {
         if (this.isLoggedIn) {
-            this.serverLogout();
+            // Metoda sendBeacon jest preferowana, ponieważ działa nawet przy zamykaniu przeglądarki
+            navigator.sendBeacon('/api/logout');
             this.clearSessionData();
         }
     }
