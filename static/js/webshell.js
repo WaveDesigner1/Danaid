@@ -1,70 +1,122 @@
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel Administratora - Webshell</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
-    <link rel="stylesheet" href="/static/css/admin_panel.css">
-</head>
-<body class="admin-panel">
-    <header class="admin-header">
-        <div class="admin-logo">Admin Panel</div>
-        <nav class="admin-nav">
-            <a href="/admin_dashboard"><i class="fa fa-dashboard"></i> Dashboard</a>
-            <a href="/flask_admin"><i class="fa fa-cogs"></i> Pełny Panel</a>
-            <a href="/logout"><i class="fa fa-sign-out"></i> Wyloguj</a>
-        </nav>
-    </header>
-
-    <div class="admin-container">
-        <aside class="admin-sidebar">
-            <div class="admin-menu">
-                <ul>
-                    <li><a href="/admin_dashboard"><i class="fa fa-dashboard"></i> Dashboard</a></li>
-                    <li><a href="/flask_admin/user/"><i class="fa fa-users"></i> Użytkownicy</a></li>
-                    <li><a href="/flask_admin/chatsession/"><i class="fa fa-comments"></i> Sesje Czatu</a></li>
-                    <li><a href="/flask_admin/message/"><i class="fa fa-envelope"></i> Wiadomości</a></li>
-                    <li><a href="/flask_admin/db_admin/"><i class="fa fa-database"></i> Baza Danych</a></li>
-                    <li><a href="/flask_admin/diagnostics/"><i class="fa fa-stethoscope"></i> Diagnostyka</a></li>
-                    <li class="active"><a href="/flask_admin/webshell/"><i class="fa fa-terminal"></i> Webshell</a></li>
-                </ul>
-            </div>
-        </aside>
-
-        <main class="admin-content">
-            <div class="admin-card">
-                <div class="admin-card-header">
-                    <h3><i class="fa fa-terminal"></i> Webshell</h3>
-                </div>
-                <div class="admin-card-body">
-                    <div class="admin-info-box">
-                        <h4><i class="fa fa-warning"></i> Uwaga!</h4>
-                        <p>Ten moduł pozwala na wykonywanie podstawowych komend systemowych. Używaj z rozwagą!</p>
-                        <p><strong>Dozwolone komendy:</strong> ls, ps, df, free, uptime, cat, grep, head, tail, find</p>
-                    </div>
-
-                    <div class="terminal-container">
-                        <div class="input-group">
-                            <span class="input-group-addon terminal-prompt">$</span>
-                            <input type="text" id="command-input" class="form-control" placeholder="Wprowadź komendę">
-                            <span class="input-group-btn">
-                                <button id="execute-btn" class="admin-btn primary">Wykonaj</button>
-                            </span>
-                        </div>
-
-                        <div id="terminal-output" class="admin-logs-container" style="margin-top: 15px; display: none;">
-                            <pre id="output-text" class="admin-logs-display"></pre>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
-    <script src="/static/js/webshell.js"></script>
-</body>
-</html>
+/**
+ * Webshell - skrypt do obsługi konsoli webshell w panelu administratora
+ */
+document.addEventListener('DOMContentLoaded', function() {
+    const commandInput = document.getElementById('command-input');
+    const executeBtn = document.getElementById('execute-btn');
+    const terminalOutput = document.getElementById('terminal-output');
+    const outputText = document.getElementById('output-text');
+    
+    // Historia komend
+    let commandHistory = [];
+    let historyIndex = -1;
+    
+    // Automatycznie ustaw focus na polu wejściowym
+    commandInput.focus();
+    
+    // Obsługa przycisku wykonania
+    executeBtn.addEventListener('click', function() {
+        executeCommand();
+    });
+    
+    // Obsługa klawisza Enter
+    commandInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            executeCommand();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            navigateHistory(-1); // w górę historii
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            navigateHistory(1);  // w dół historii
+        }
+    });
+    
+    // Funkcja wykonująca komendę
+    function executeCommand() {
+        const command = commandInput.value.trim();
+        
+        if (!command) return;
+        
+        // Dodaj komendę do historii
+        commandHistory.unshift(command);
+        historyIndex = -1;
+        
+        // Ogranicz historię do 20 komend
+        if (commandHistory.length > 20) {
+            commandHistory.pop();
+        }
+        
+        // Wyślij żądanie AJAX
+        fetch('/flask_admin/webshell/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: 'command=' + encodeURIComponent(command)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Błąd serwera: ' + response.status);
+            }
+            return response.text();
+        })
+        .then(html => {
+            // Wyodrębnij wynik z odpowiedzi HTML używając parsera DOM
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const resultElement = doc.querySelector('.well');
+            
+            if (resultElement) {
+                // Pokaż kontener wyjścia
+                terminalOutput.style.display = 'block';
+                
+                // Ustaw wynik
+                outputText.textContent = '$ ' + command + '\n\n' + resultElement.textContent;
+                
+                // Przewiń do najnowszego wyjścia
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            } else {
+                // Jeśli nie znaleziono wyniku, prawdopodobnie wystąpił błąd
+                terminalOutput.style.display = 'block';
+                outputText.textContent = '$ ' + command + '\n\nNie udało się przetworzyć wyniku.';
+            }
+            
+            // Wyczyść pole wejściowe i ustaw focus
+            commandInput.value = '';
+            commandInput.focus();
+        })
+        .catch(error => {
+            console.error('Błąd:', error);
+            terminalOutput.style.display = 'block';
+            outputText.textContent = '$ ' + command + '\n\nBłąd: ' + error.message;
+            
+            // Wyczyść pole wejściowe i ustaw focus
+            commandInput.value = '';
+            commandInput.focus();
+        });
+    }
+    
+    // Funkcja do nawigacji po historii komend
+    function navigateHistory(direction) {
+        // direction: -1 = góra (starsze), 1 = dół (nowsze)
+        if (commandHistory.length === 0) return;
+        
+        // Zaktualizuj indeks
+        historyIndex = Math.max(-1, Math.min(commandHistory.length - 1, historyIndex + direction));
+        
+        // Ustaw komendę z historii lub wyczyść
+        if (historyIndex === -1) {
+            commandInput.value = '';
+        } else {
+            commandInput.value = commandHistory[historyIndex];
+        }
+        
+        // Ustaw kursor na końcu tekstu
+        setTimeout(() => {
+            commandInput.selectionStart = commandInput.selectionEnd = commandInput.value.length;
+        }, 0);
+    }
+});
