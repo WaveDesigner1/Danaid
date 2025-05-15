@@ -33,33 +33,15 @@ def load_user(user_id):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
-    os.environ['DATABASE_URL'] = 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require'
+    def create_app():
+    app = Flask(__name__)
+    CORS(app, supports_credentials=True)
     
-    # Konfiguracja bazy danych
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url:
-        # Używanie zewnętrznej bazy PostgreSQL (Supabase)
-        # Napraw URL jeśli zaczyna się od postgres://
-        if database_url.startswith('postgres://'):
-            database_url = database_url.replace('postgres://', 'postgresql://', 1)
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-        print(f"Używam bazy danych Neon")
-    else:
-        # Fallback do SQLite - przydatne do lokalnego rozwoju
-        if 'RENDER' in os.environ:
-            # Na Render używaj tymczasowej bazy SQLite (skoro nie mamy trwałego dysku)
-            render_tmp_dir = '/tmp'
-            db_path = os.path.join(render_tmp_dir, 'users_temp.db')
-            print(f"UWAGA: Używam tymczasowej bazy danych SQLite na Render: {db_path}")
-        else:
-            # Lokalnie używaj normalnej bazy SQLite
-            instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
-            if not os.path.exists(instance_path):
-                os.makedirs(instance_path, exist_ok=True)
-            db_path = os.path.join(instance_path, 'users.db')
-            print(f"Używam lokalnej bazy danych SQLite: {db_path}")
-        
-        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    # Wymuszenie użycia Neon, niezależnie od istniejących zmiennych środowiskowych
+    neon_url = 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require'
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = neon_url
+    print(f"Używam bazy danych Neon: {neon_url}")
     
     # Optymalizacja wydajności bazy danych
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
