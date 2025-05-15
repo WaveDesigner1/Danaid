@@ -20,6 +20,15 @@ from chat_api import chat_api
 # Inicjalizacja login managera
 login_manager = LoginManager()
 
+# Funkcje pomocnicze do określania typu bazy danych
+def is_sqlite():
+    """Sprawdza, czy używamy bazy SQLite"""
+    return db.engine.name == 'sqlite'
+
+def is_postgresql():
+    """Sprawdza, czy używamy bazy PostgreSQL"""
+    return db.engine.name == 'postgresql'
+
 # Ładowanie użytkownika
 @login_manager.user_loader
 def load_user(user_id):
@@ -73,6 +82,37 @@ def create_app():
     
     # Inicjalizacja panelu admina
     init_admin(app)
+    
+    # Endpoint do debugowania bazy danych
+    @app.route('/db-debug')
+    def db_debug():
+        try:
+            from sqlalchemy import text, inspect
+            
+            # Sprawdź, jaki silnik bazy danych jest używany
+            engine_name = db.engine.name
+            
+            # Wykonaj bezpieczne zapytanie działające w obu bazach
+            result = db.session.execute(text("SELECT 1 as test")).fetchone()
+            
+            # Pobierz listę tabel w sposób niezależny od bazy
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
+            
+            return jsonify({
+                "status": "success",
+                "engine": engine_name,
+                "test_query": dict(result) if result else None,
+                "tables": tables,
+                "connection_string": str(db.engine.url)
+            })
+        except Exception as e:
+            return jsonify({
+                "status": "error",
+                "message": str(e),
+                "error_type": type(e).__name__,
+                "connection_string": str(db.engine.url) if hasattr(db, 'engine') and hasattr(db.engine, 'url') else "unknown"
+            }), 500
     
     # Inicjalizacja bazy danych
     with app.app_context():
@@ -184,13 +224,13 @@ def create_app():
     def internal_server_error(e):
         return render_template('errors/500.html'), 500
     
-    # Endpointy dla panelu administracyjnego (punkt 7)
+    # Endpointy dla panelu administracyjnego
     
     # Endpoint diagnostyczny dla sprawdzenia stanu bazy danych
     @app.route('/db-diagnostic')
     @login_required
     def db_diagnostic():
-        # Bezpieczeństwo - tylko dla administratorów (punkt 8)
+        # Bezpieczeństwo - tylko dla administratorów
         if not current_user.is_admin:
             flash('Brak dostępu do tej strony', 'danger')
             return redirect(url_for('auth.index'))
@@ -200,14 +240,14 @@ def create_app():
             db_status = "OK" if db.session.execute(text("SELECT 1")).scalar() == 1 else "ERROR"
             
             # Sprawdź ścieżkę do bazy danych
-            db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('://')[1].split('?')[0]
+            db_path = str(db.engine.url).split('://')[1].split('?')[0]
             
             # Sprawdź, czy plik istnieje (tylko dla SQLite)
             db_file_exists = False
             db_file_size = 0
             db_file_permissions = None
             
-            if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
+            if is_sqlite():
                 db_file_exists = os.path.exists(db_path)
                 db_file_size = os.path.getsize(db_path) if db_file_exists else 0
                 try:
@@ -220,10 +260,20 @@ def create_app():
             session_count = ChatSession.query.count()
             message_count = Message.query.count()
             
-            # Pobierz statystyki wydajności (tylko dla SQLite)
+            # Pobierz statystyki wydajności (specyficzne dla typu bazy)
             db_stats = []
-            if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
+            
+            if is_sqlite():
                 db_stats = db.session.execute(text("PRAGMA stats")).fetchall()
+            elif is_postgresql():
+                try:
+                    # Podstawowe statystyki PostgreSQL
+                    db_stats = db.session.execute(text("""
+                        SELECT * FROM pg_stat_database 
+                        WHERE datname = current_database()
+                    """)).fetchall()
+                except Exception as e:
+                    print(f"Błąd podczas pobierania statystyk PostgreSQL: {e}")
             
             return render_template('admin/db_diagnostic.html', 
                                   db_status=db_status,
@@ -239,7 +289,7 @@ def create_app():
             flash(f'Błąd podczas diagnostyki bazy danych: {str(e)}', 'danger')
             return render_template('admin/db_diagnostic.html', error=str(e))
     
-    # Vacuum bazy danych (tylko dla SQLite)
+    # Vacuum bazy danych (dostosowane do typu bazy)
     @app.route('/vacuum_database', methods=['POST'])
     @login_required
     def vacuum_database():
@@ -247,23 +297,26 @@ def create_app():
             flash('Brak dostępu do tej strony', 'danger')
             return redirect(url_for('auth.index'))
             
-        if not app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
-            flash('Operacja VACUUM jest dostępna tylko dla baz SQLite', 'warning')
-            return redirect(url_for('db_diagnostic'))
-            
         try:
-            # SQLAlchemy nie obsługuje VACUUM bezpośrednio, używamy połączenia SQLite
-            db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[1].split('?')[0]
-            conn = sqlite3.connect(db_path)
-            conn.execute("VACUUM")
-            conn.close()
-            
-            flash('Baza danych została zoptymalizowana pomyślnie', 'success')
+            if is_sqlite():
+                # SQLite VACUUM
+                db_path = str(db.engine.url).split('sqlite:///')[1].split('?')[0]
+                conn = sqlite3.connect(db_path)
+                conn.execute("VACUUM")
+                conn.close()
+                flash('Baza danych SQLite została zoptymalizowana pomyślnie', 'success')
+            elif is_postgresql():
+                # PostgreSQL VACUUM
+                db.session.execute(text("VACUUM"))
+                db.session.commit()
+                flash('Baza danych PostgreSQL została zoptymalizowana pomyślnie', 'success')
+            else:
+                flash('Operacja VACUUM nie jest obsługiwana dla tej bazy danych', 'warning')
         except Exception as e:
             flash(f'Błąd podczas wykonywania VACUUM: {str(e)}', 'danger')
         return redirect(url_for('db_diagnostic'))
     
-    # Sprawdzenie integralności bazy danych
+    # Sprawdzenie integralności bazy danych (dostosowane do typu bazy)
     @app.route('/check_integrity', methods=['POST'])
     @login_required
     def check_integrity():
@@ -272,24 +325,26 @@ def create_app():
             return redirect(url_for('auth.index'))
             
         try:
-            if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
+            if is_sqlite():
                 result = db.session.execute(text("PRAGMA integrity_check")).fetchone()[0]
                 if result == 'ok':
-                    flash('Baza danych jest spójna', 'success')
+                    flash('Baza danych SQLite jest spójna', 'success')
                 else:
                     flash(f'Wykryto problemy z integralnością bazy danych: {result}', 'warning')
+            elif is_postgresql():
+                # PostgreSQL nie ma bezpośredniego odpowiednika, ale możemy sprawdzić połączenie
+                # i podstawowe informacje o bazie danych
+                result = db.session.execute(text("""
+                    SELECT pg_is_in_recovery(), pg_postmaster_start_time()
+                """)).fetchone()
+                flash(f'Baza PostgreSQL działa, status recovery: {result[0]}, czas startu: {result[1]}', 'success')
             else:
-                # Dla PostgreSQL
-                result = db.session.execute(text("SELECT 1")).scalar()
-                if result == 1:
-                    flash('Połączenie z bazą danych PostgreSQL działa poprawnie', 'success')
-                else:
-                    flash('Nie można potwierdzić integralności bazy PostgreSQL', 'warning')
+                flash('Sprawdzanie integralności nie jest obsługiwane dla tej bazy danych', 'warning')
         except Exception as e:
             flash(f'Błąd podczas sprawdzania integralności: {str(e)}', 'danger')
         return redirect(url_for('db_diagnostic'))
     
-    # Tworzenie kopii zapasowej bazy danych
+    # Tworzenie kopii zapasowej bazy danych (dostosowane do typu bazy)
     @app.route('/backup_database', methods=['POST'])
     @login_required
     def backup_database():
@@ -298,11 +353,9 @@ def create_app():
             return redirect(url_for('auth.index'))
             
         try:
-            if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
+            if is_sqlite():
                 # Dla SQLite
-                # Ścieżka do bazy danych
-                db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[1].split('?')[0]
-                # Ścieżka do kopii zapasowej
+                db_path = str(db.engine.url).split('sqlite:///')[1].split('?')[0]
                 backup_dir = os.path.join(os.path.dirname(db_path), 'backups')
                 os.makedirs(backup_dir, exist_ok=True)
                 
@@ -317,14 +370,17 @@ def create_app():
                 conn.close()
                 
                 flash(f'Kopia zapasowa została utworzona: {backup_path}', 'success')
+            elif is_postgresql():
+                # Dla PostgreSQL informujemy o alternatywach
+                flash('Kopia zapasowa PostgreSQL powinna być wykonana przy użyciu narzędzi pg_dump lub przez panel Neon.', 'info')
+                flash('Zalecamy korzystanie z automatycznych kopii zapasowych oferowanych przez Neon.', 'info')
             else:
-                # Dla PostgreSQL nie implementujemy kopii zapasowej w aplikacji
-                flash('Kopia zapasowa PostgreSQL powinna być zarządzana przez administratora bazy danych', 'info')
+                flash('Kopia zapasowa nie jest obsługiwana dla tej bazy danych', 'warning')
         except Exception as e:
             flash(f'Błąd podczas tworzenia kopii zapasowej: {str(e)}', 'danger')
         return redirect(url_for('db_diagnostic'))
     
-    # Pobieranie kopii zapasowej
+    # Pobieranie kopii zapasowej (dostosowane do typu bazy)
     @app.route('/download_backup/<filename>')
     @login_required
     def download_backup(filename):
@@ -333,8 +389,8 @@ def create_app():
             return redirect(url_for('auth.index'))
             
         try:
-            if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite://'):
-                db_path = app.config['SQLALCHEMY_DATABASE_URI'].split('sqlite:///')[1].split('?')[0]
+            if is_sqlite():
+                db_path = str(db.engine.url).split('sqlite:///')[1].split('?')[0]
                 backup_dir = os.path.join(os.path.dirname(db_path), 'backups')
                 backup_path = os.path.join(backup_dir, filename)
                 
@@ -346,17 +402,17 @@ def create_app():
                 # Zwróć plik do pobrania
                 return send_file(backup_path, as_attachment=True)
             else:
-                flash('Pobieranie kopii zapasowej nie jest wspierane dla PostgreSQL', 'warning')
+                flash('Pobieranie kopii zapasowej nie jest wspierane dla tej bazy danych', 'warning')
                 return redirect(url_for('db_diagnostic'))
         except Exception as e:
             flash(f'Błąd podczas pobierania kopii zapasowej: {str(e)}', 'danger')
             return redirect(url_for('db_diagnostic'))
     
-    # API dla uzyskania listy użytkowników - zmieniono nazwę na admin_get_users
+    # API dla uzyskania listy użytkowników
     @app.route('/api/admin/users')
     @login_required
     def admin_get_users():
-        # Bezpieczeństwo - tylko dla administratorów (punkt 8)
+        # Bezpieczeństwo - tylko dla administratorów
         if not current_user.is_admin:
             return jsonify({'status': 'error', 'message': 'Brak uprawnień'}), 403
             
@@ -379,7 +435,7 @@ def create_app():
     @app.route('/api/admin/promote_to_admin', methods=['POST'])
     @login_required
     def promote_to_admin():
-        # Bezpieczeństwo - tylko dla administratorów (punkt 8)
+        # Bezpieczeństwo - tylko dla administratorów
         if not current_user.is_admin:
             return jsonify({'status': 'error', 'message': 'Brak uprawnień'}), 403
             
@@ -402,7 +458,7 @@ def create_app():
             db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
     
-    # Endpoint do panelu administracyjnego z poprawionym nazwą funkcji
+    # Endpoint do panelu administracyjnego
     @app.route('/dashboard')
     @login_required
     def admin_dashboard():
