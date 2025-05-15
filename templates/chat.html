@@ -10,19 +10,25 @@
 <body>
     <!-- Skrypt sprawdzania sesji -->
     <script>
-    document.addEventListener('DOMContentLoaded', async function() {
-        // Przed kontynuacją, sprawdź sesję na serwerze
-        if (window.sessionManager) {
-            const isLoggedIn = await window.sessionManager.checkServerSession();
-            
-            // Jeśli nie jesteśmy zalogowani a powinniśmy być, przekieruj na stronę logowania
-            const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
-            if (!isLoggedIn && !isLoginPage) {
-                console.log('Brak aktywnej sesji, przekierowanie na stronę logowania');
-                window.location.href = '/?next=' + encodeURIComponent(window.location.pathname);
-            }
+    document.addEventListener('DOMContentLoaded', function() {
+    // Sprawdź, czy jesteśmy na stronie, która wymaga logowania
+    const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
+    
+    if (!isLoginPage) {
+        // Sprawdź, czy mamy informację o zalogowaniu w localStorage lub sessionStorage
+        const isLoggedIn = (
+            sessionStorage.getItem('isLoggedIn') === 'true' || 
+            localStorage.getItem('isLoggedIn') === 'true'
+        );
+        
+        if (!isLoggedIn) {
+            console.log('Brak danych o logowaniu w pamięci przeglądarki');
+            // Nie przekierowujemy automatycznie - pozwalamy serwerowi obsłużyć autoryzację
+        } else {
+            console.log('Znaleziono dane o logowaniu w pamięci przeglądarki');
         }
-    });
+    }
+});
     </script>
     
     <!-- Panel użytkownika -->
