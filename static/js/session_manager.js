@@ -6,6 +6,15 @@ class SessionManager {
         this.isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true';
         this.isAdmin = sessionStorage.getItem('is_admin') === 'true';
         
+        // Czas wygaśnięcia sesji (30 minut)
+        this.sessionTimeout = 30 * 60 * 1000;
+        
+        // Nasłuchuj na zamknięcie przeglądarki/karty
+        window.addEventListener('beforeunload', this.handleTabClose.bind(this));
+        
+        // Regularnie sprawdzaj czas sesji (co minutę)
+        this.checkSessionInterval = setInterval(this.checkSessionTimeout.bind(this), 60 * 1000);
+        
         // Sprawdź sesję na serwerze przy inicjalizacji
         this.checkServerSession();
     }
@@ -15,6 +24,9 @@ class SessionManager {
         try {
             const response = await fetch('/check_session', {
                 method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
                 credentials: 'same-origin'
             });
             
@@ -42,6 +54,7 @@ class SessionManager {
             
             return false;
         } catch (error) {
+            console.error('Błąd podczas sprawdzania sesji:', error);
             this.clearSessionData();
             this.isLoggedIn = false;
             this.isAdmin = false;
@@ -72,10 +85,40 @@ class SessionManager {
         this.clearSessionData();
         
         // Wyślij żądanie do serwera o wylogowanie
-        this.serverLogout();
+        fetch('/logout', {
+            method: 'GET',
+            credentials: 'same-origin'
+        }).then(() => {
+            // Przekieruj do strony logowania
+            window.location.href = '/';
+        }).catch(error => {
+            console.error('Błąd podczas wylogowania:', error);
+            // Przekieruj do strony logowania nawet w przypadku błędu
+            window.location.href = '/';
+        });
+    }
+    
+    // Ciche wylogowanie (bez przekierowania)
+    silentLogout() {
+        this.isLoggedIn = false;
+        this.isAdmin = false;
         
-        // Przekieruj do strony logowania
-        window.location.href = '/';
+        // Czyszczenie sessionStorage
+        this.clearSessionData();
+        
+        // Wyślij żądanie do serwera o wylogowanie
+        try {
+            navigator.sendBeacon('/silent-logout');
+        } catch (e) {
+            // Fallback - synchroniczny XMLHttpRequest
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/silent-logout', false);
+                xhr.send();
+            } catch (err) {
+                console.error('Błąd podczas wylogowania:', err);
+            }
+        }
     }
     
     // Czyszczenie danych sesji
@@ -87,19 +130,32 @@ class SessionManager {
         sessionStorage.removeItem('username');
     }
     
-    // Wylogowanie na serwerze
-    serverLogout() {
-        try {
-            navigator.sendBeacon('/silent-logout');
-        } catch (e) {
-            // Fallback - synchroniczny XMLHttpRequest
-            try {
-                const xhr = new XMLHttpRequest();
-                xhr.open('POST', '/silent-logout', false);
-                xhr.send();
-            } catch (err) {
-                // Błąd podczas wylogowania
-            }
+    // Sprawdź, czy sesja wygasła
+    checkSessionTimeout() {
+        if (!this.isLoggedIn) return;
+        
+        const currentTime = Date.now();
+        const sessionStartTime = parseInt(sessionStorage.getItem('sessionStartTime') || '0');
+        const sessionAge = currentTime - sessionStartTime;
+        
+        if (sessionAge > this.sessionTimeout) {
+            console.log('Sesja wygasła - automatyczne wylogowanie');
+            this.logout();
+        }
+    }
+    
+    // Obsługa zamknięcia karty
+    handleTabClose() {
+        if (this.isLoggedIn) {
+            // Użyj metody cichego wylogowania
+            this.silentLogout();
+        }
+    }
+    
+    // Odnowienie sesji (po aktywności użytkownika)
+    refreshActivity() {
+        if (this.isLoggedIn) {
+            sessionStorage.setItem('sessionStartTime', Date.now().toString());
         }
     }
     
@@ -111,6 +167,13 @@ class SessionManager {
 
 // Inicjalizacja menedżera sesji
 const sessionManager = new SessionManager();
+
+// Nasłuchuj na aktywność użytkownika, aby odświeżać sesję
+['click', 'mousedown', 'keypress', 'touchstart', 'scroll'].forEach(eventType => {
+    document.addEventListener(eventType, () => {
+        sessionManager.refreshActivity();
+    }, { passive: true });
+});
 
 // Eksportuj do globalnego scope
 window.sessionManager = sessionManager;
