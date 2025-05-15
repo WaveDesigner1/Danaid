@@ -33,7 +33,8 @@ def load_user(user_id):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
-    os.environ['DATABASE_URL'] = 'postgresql://postgres:MxepqyBo0tfXkJCC@db.twojeID.supabase.co:5432/postgres'
+    os.environ['DATABASE_URL'] = 'postgresql://postgres:MxepqyBo0tfXkJCC@db.ueasoqqrfpmhvwrovxlr.supabase.co:5432/postgres'
+    
     # Konfiguracja bazy danych
     database_url = os.environ.get('DATABASE_URL')
     if database_url:
