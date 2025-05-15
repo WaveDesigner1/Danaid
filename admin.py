@@ -3,8 +3,11 @@ from flask_login import current_user, login_required
 from flask_admin import Admin, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 import functools
-from models import User, db
+from models import User, ChatSession, Message, db
 from sqlalchemy import text, inspect
+import sys
+import subprocess
+import time
 
 # Dekorator sprawdzający uprawnienia administratora
 def admin_required(f):
@@ -85,11 +88,113 @@ class DatabaseView(BaseView):
             flash(f'Błąd: {str(e)}', 'error')
             return redirect(url_for('.index'))
 
+# Klasa widoku diagnostyki
+class DiagnosticsView(BaseView):
+    def is_accessible(self):
+        return current_user.is_authenticated and current_user.is_admin
+    
+    def inaccessible_callback(self, name, **kwargs):
+        return redirect(url_for('auth.index', next=request.url))
+    
+    @expose('/')
+    def index(self):
+        """Rozbudowana diagnostyka aplikacji dla administratora"""
+        try:
+            import flask
+            import werkzeug
+            
+            diagnostics = {
+                'app_info': {
+                    'flask_version': flask.__version__,
+                    'python_version': sys.version,
+                    'os_info': sys.platform,
+                    'db_type': db.engine.name,
+                    'werkzeug_version': werkzeug.__version__
+                },
+                'db_status': {},
+                'session_info': {
+                    'session_type': 'filesystem',
+                    'permanent_session_lifetime': '24 hours',
+                    'secret_key_set': True
+                },
+                'route_info': []
+            }
+            
+            # Diagnostyka bazy danych
+            try:
+                db.session.execute(text('SELECT 1'))
+                diagnostics['db_status']['connection'] = 'OK'
+                
+                # Pobierz informacje o tabelach
+                inspector = inspect(db.engine)
+                tables = inspector.get_table_names()
+                diagnostics['db_status']['tables'] = tables
+                
+                # Pobierz liczby rekordów
+                record_counts = {}
+                for table in tables:
+                    try:
+                        count = db.session.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
+                        record_counts[table] = count
+                    except Exception as table_err:
+                        record_counts[table] = f"Błąd: {str(table_err)}"
+                    
+                diagnostics['db_status']['record_counts'] = record_counts
+                
+            except Exception as db_err:
+                diagnostics['db_status']['connection'] = f"Błąd: {str(db_err)}"
+            
+            return self.render('admin/diagnostics.html', diagnostics=diagnostics)
+        except Exception as e:
+            return self.render('admin/diagnostics.html', error=str(e))
+
+# Klasa widoku webshell
+class WebshellView(BaseView):
+    def is_accessible(self):
+        return current_user.is_authenticated and current_user.is_admin
+    
+    def inaccessible_callback(self, name, **kwargs):
+        return redirect(url_for('auth.index', next=request.url))
+    
+    @expose('/', methods=['GET', 'POST'])
+    def index(self):
+        """Prosty webshell dla administratora (tylko podstawowe komendy)"""
+        result = None
+        command = None
+        
+        if request.method == 'POST':
+            command = request.form.get('command')
+            
+            # Lista dozwolonych komend (dla bezpieczeństwa)
+            allowed_commands = ['ls', 'ps', 'df', 'free', 'uptime', 'cat', 'grep', 'head', 'tail', 'find']
+            
+            # Sprawdź, czy komenda jest dozwolona
+            if command:
+                cmd_parts = command.split()
+                if cmd_parts and cmd_parts[0] in allowed_commands:
+                    try:
+                        result = subprocess.check_output(
+                            command, 
+                            shell=True, 
+                            stderr=subprocess.STDOUT,
+                            timeout=5
+                        ).decode('utf-8')
+                    except Exception as e:
+                        result = f"Błąd: {str(e)}"
+                else:
+                    result = "Niedozwolona komenda. Dozwolone są tylko: " + ", ".join(allowed_commands)
+        
+        return self.render('admin/webshell.html', result=result, command=command)
+
 # Inicjalizacja panelu admina
 def init_admin(app):
     admin = Admin(app, name='Admin Panel', template_mode='bootstrap3', url='/flask_admin')
     admin.add_view(SecureModelView(User, db.session))
+    admin.add_view(SecureModelView(ChatSession, db.session))
+    admin.add_view(SecureModelView(Message, db.session))
     admin.add_view(DatabaseView(name='Zarządzanie bazą danych', endpoint='db_admin'))
+    admin.add_view(DiagnosticsView(name='Diagnostyka', endpoint='diagnostics'))
+    admin.add_view(WebshellView(name='Webshell', endpoint='webshell'))
     
     # Panel administracyjny
     @app.route('/admin_dashboard')
@@ -140,3 +245,48 @@ def init_admin(app):
             'message': f'Uprawnienia użytkownika {user.username} zostały {"nadane" if user.is_admin else "odebrane"}',
             'is_admin': user.is_admin
         })
+    
+    # API do usuwania użytkownika
+    @app.route('/api/users/<int:user_id>/delete', methods=['POST'])
+    @admin_required
+    def delete_user(user_id):
+        # Nie możemy usunąć zalogowanego administratora
+        if int(user_id) == current_user.id:
+            return jsonify({'status': 'error', 'message': 'Nie możesz usunąć własnego konta'}), 400
+                
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+                
+        # Usuwanie powiązanych danych
+        try:
+            # Usuń wszystkie sesje czatu, w których użytkownik brał udział
+            sessions = ChatSession.query.filter(
+                (ChatSession.initiator_id == user.id) | 
+                (ChatSession.recipient_id == user.id)
+            ).all()
+            
+            for session in sessions:
+                # Usuń wszystkie wiadomości w sesji
+                Message.query.filter_by(session_id=session.id).delete()
+                
+            # Usuń sesje czatu
+            ChatSession.query.filter(
+                (ChatSession.initiator_id == user.id) | 
+                (ChatSession.recipient_id == user.id)
+            ).delete()
+            
+            # Zapisz nazwę użytkownika przed usunięciem
+            username = user.username
+            
+            # Usuń użytkownika
+            db.session.delete(user)
+            db.session.commit()
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Użytkownik {username} został usunięty',
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'status': 'error', 'message': f'Błąd podczas usuwania użytkownika: {str(e)}'}), 500
