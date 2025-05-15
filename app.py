@@ -42,7 +42,16 @@ def load_user(user_id):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
+    # Pobierz DATABASE_URL ze zmiennych środowiskowych lub użyj wartości domyślnej
+    database_url = os.environ.get('DATABASE_URL', 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require')
     
+    # Popraw URL jeśli zaczyna się od "postgres://" (ważne dla starszych wersji SQLAlchemy)
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    
+    # Ustaw URI bazy danych w konfiguracji aplikacji
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    print(f"Używam bazy danych: {database_url}")
     # Konfiguracja bezpieczeństwa
     app.config['SECRET_KEY'] = 'your_secret_key'
     
