@@ -5,7 +5,6 @@ from datetime import timedelta
 import os
 import shutil
 import datetime
-import sqlite3
 import time
 from sqlalchemy import text
 from sqlalchemy import inspect, text
@@ -37,6 +36,25 @@ def load_user(user_id):
     except Exception as e:
         print(f"Błąd ładowania użytkownika: {e}")
         return None
+
+# Skrypt do usunięcia bazy danych (zakomentowany)
+"""
+def drop_database():
+    with db.engine.connect() as conn:
+        # Wyłączenie sesji połączeń do bazy
+        trans = conn.begin()
+        conn.execute(text('''
+        SELECT pg_terminate_backend(pg_stat_activity.pid)
+        FROM pg_stat_activity
+        WHERE pg_stat_activity.datname = current_database()
+        AND pid <> pg_backend_pid();
+        '''))
+        trans.commit()
+        
+        # Usunięcie wszystkich tabel
+        db.drop_all()
+        print("Baza danych została zresetowana")
+"""
 
 # Główna funkcja tworząca aplikację
 def create_app():
@@ -132,47 +150,6 @@ def create_app():
             if not existing_tables:
                 print("Baza danych jest pusta, tworzę schemat...")
                 db.create_all()
-                
-                # Tworzenie domyślnego administratora przy pierwszym uruchomieniu
-                if User.query.count() == 0:
-                    # Generuj parę kluczy RSA
-                    try:
-                        from Crypto.PublicKey import RSA
-                        
-                        # Generuj nową parę kluczy
-                        key = RSA.generate(2048)
-                        private_key = key.export_key().decode('utf-8')
-                        public_key = key.publickey().export_key().decode('utf-8')
-                        
-                        # Utwórz nowego administratora
-                        admin = User(username="admin", is_admin=True)
-                        admin.set_password("TymczasoweHasloAdmina123!")  # Pamiętaj zmienić po pierwszym logowaniu
-                        admin.public_key = public_key
-                        admin.generate_user_id()
-                        db.session.add(admin)
-                        db.session.commit()
-                        
-                        print("\n\n==================================================")
-                        print("UWAGA! UTWORZONO DOMYŚLNE KONTO ADMINISTRATORA:")
-                        print("Login: admin")
-                        print("Hasło: TymczasoweHasloAdmina123!")
-                        print("\nPRYWATNY KLUCZ RSA (SKOPIUJ I ZACHOWAJ BEZPIECZNIE):")
-                        print(private_key)
-                        print("==================================================\n\n")
-                        
-                    except ImportError:
-                        print("Nie można wygenerować pary kluczy - brak pakietu Crypto.PublicKey")
-                        # Alternatywne rozwiązanie z tymczasowym kluczem
-                        admin = User(username="admin", is_admin=True)
-                        admin.set_password("TymczasoweHasloAdmina123!")
-                        admin.public_key = "TEMPORARY_ADMIN_KEY"  # Specjalny klucz, który pozwala na logowanie bez weryfikacji
-                        admin.generate_user_id()
-                        db.session.add(admin)
-                        db.session.commit()
-                        print("Utworzono domyślne konto administratora z tymczasowym kluczem")
-                    except Exception as e:
-                        print(f"Błąd podczas tworzenia administratora: {e}")
-                        db.session.rollback()
             else:
                 print(f"Znaleziono istniejące tabele: {existing_tables}")
                 
