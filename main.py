@@ -3,12 +3,12 @@ import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 
-# Pobierz URL bazy danych ze zmiennych środowiskowych
-database_url = os.environ.get('DATABASE_URL', 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require')
+# Wymuszenie konfiguracji przed importem aplikacji
+os.environ['DATABASE_URL'] = 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require'
+os.environ['FORCE_POSTGRESQL'] = 'true'
 
-# Popraw URL jeśli zaczyna się od "postgres://"
-if database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+# Wyświetl wartość zmiennej (dla debugowania)
+print(f"DATABASE_URL = {os.environ.get('DATABASE_URL')}")
 
 from app import create_app
 
