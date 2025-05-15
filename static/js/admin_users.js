@@ -1,18 +1,55 @@
 /**
  * Admin Users - skrypt do zarządzania użytkownikami w panelu administratora
+ * Wersja poprawiona uwzględniająca problemy z ładowaniem użytkowników
  */
-document.addEventListener('DOMContentLoaded', function() {
-    // Inicjalizacja
-    loadUsers();
 
-    // Obsługa kliknięcia przycisku odświeżenia użytkowników
-    const refreshButton = document.getElementById('refresh-users');
-    if (refreshButton) {
-        refreshButton.addEventListener('click', function() {
-            loadUsers();
+// Inicjalizacja sesji administracyjnej
+(function() {
+    // Pobierz dane z sesji przy starcie
+    document.addEventListener('DOMContentLoaded', function() {
+        // Załaduj dane użytkownika jeśli jesteśmy zalogowani
+        checkSession();
+        
+        // Inicjalizacja listy użytkowników
+        loadUsers();
+
+        // Obsługa kliknięcia przycisku odświeżenia użytkowników
+        const refreshButton = document.getElementById('refresh-users');
+        if (refreshButton) {
+            refreshButton.addEventListener('click', function() {
+                loadUsers();
+                showNotification('Odświeżanie listy użytkowników...', 'info');
+            });
+        }
+    });
+    
+    // Funkcja sprawdzająca sesję i ustawiająca ID użytkownika
+    function checkSession() {
+        fetch('/check_session', {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.authenticated) {
+                // Zapisz ID użytkownika w sessionStorage
+                sessionStorage.setItem('user_id', data.user_id);
+                sessionStorage.setItem('username', data.username);
+                sessionStorage.setItem('is_admin', data.is_admin);
+                console.log('Sesja poprawnie załadowana, ID użytkownika:', data.user_id);
+            } else {
+                console.log('Brak sesji, przekierowanie do logowania');
+                window.location.href = '/';
+            }
+        })
+        .catch(error => {
+            console.error('Błąd podczas sprawdzania sesji:', error);
         });
     }
-});
+})();
 
 /**
  * Funkcja do pobierania i wyświetlania listy użytkowników
@@ -43,6 +80,9 @@ function loadUsers() {
         return response.json();
     })
     .then(users => {
+        // Aktualizuj statystyki
+        updateStatistics(users);
+        
         usersTable.innerHTML = '';
         
         if (!users || users.length === 0) {
@@ -56,14 +96,14 @@ function loadUsers() {
             return;
         }
         
+        // Pobierz ID aktualnego użytkownika z sessionStorage
+        const currentUserId = parseInt(sessionStorage.getItem('user_id'));
+        
         // Wyświetl użytkowników
         users.forEach(user => {
             const row = document.createElement('tr');
             row.className = 'user-row';
             row.setAttribute('data-user-id', user.id);
-            
-            // Pobierz ID aktualnego użytkownika z sessionStorage
-            const currentUserId = parseInt(sessionStorage.getItem('user_id'));
             
             // Zablokuj usuwanie/zmianę własnego konta
             const isCurrentUser = currentUserId === user.id;
@@ -76,10 +116,10 @@ function loadUsers() {
                 <td>${user.is_admin ? '<span class="label label-primary">Administrator</span>' : '<span class="label label-default">Użytkownik</span>'}</td>
                 <td class="user-actions">
                     ${isCurrentUser ? '<em class="text-muted">Aktualny użytkownik</em>' : `
-                        <button class="btn btn-sm ${user.is_admin ? 'btn-warning' : 'btn-success'}" onclick="toggleAdmin(${user.id}, '${user.username}')">
+                        <button class="btn btn-sm ${user.is_admin ? 'btn-warning' : 'btn-success'} toggle-admin-btn" data-user-id="${user.id}" data-username="${user.username}">
                             ${user.is_admin ? '<i class="fa fa-times"></i> Odbierz uprawnienia' : '<i class="fa fa-check"></i> Nadaj uprawnienia'}
                         </button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteUser(${user.id}, '${user.username}')">
+                        <button class="btn btn-sm btn-danger delete-user-btn" data-user-id="${user.id}" data-username="${user.username}">
                             <i class="fa fa-trash"></i> Usuń
                         </button>
                     `}
@@ -88,10 +128,60 @@ function loadUsers() {
             
             usersTable.appendChild(row);
         });
+        
+        // Dodaj obsługę zdarzeń dla przycisków
+        attachButtonHandlers();
     })
     .catch(error => {
-        console.error('Błąd:', error);
-        usersTable.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Błąd: ${error.message}</td></tr>`;
+        console.error('Błąd podczas pobierania użytkowników:', error);
+        usersTable.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Błąd ładowania danych: ${error.message}</td></tr>`;
+        showNotification('Błąd podczas pobierania użytkowników: ' + error.message, 'error');
+    });
+}
+
+/**
+ * Aktualizuje liczniki statystyk na podstawie listy użytkowników
+ * @param {Array} users - Lista użytkowników
+ */
+function updateStatistics(users) {
+    if (!users) return;
+    
+    // Aktualizuj licznik użytkowników
+    const usersCount = document.getElementById('users-count');
+    if (usersCount) {
+        usersCount.textContent = users.length;
+    }
+    
+    // Aktualizuj licznik użytkowników online
+    const onlineCount = document.getElementById('online-count');
+    if (onlineCount) {
+        const onlineUsers = users.filter(user => user.is_online).length;
+        onlineCount.textContent = onlineUsers;
+    }
+}
+
+/**
+ * Dodaje obsługę zdarzeń do przycisków w tabeli
+ */
+function attachButtonHandlers() {
+    // Przyciski zmieniające uprawnienia administratora
+    document.querySelectorAll('.toggle-admin-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const userId = this.getAttribute('data-user-id');
+            const username = this.getAttribute('data-username');
+            
+            toggleAdmin(userId, username);
+        });
+    });
+    
+    // Przyciski usuwające użytkownika
+    document.querySelectorAll('.delete-user-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const userId = this.getAttribute('data-user-id');
+            const username = this.getAttribute('data-username');
+            
+            deleteUser(userId, username);
+        });
     });
 }
 
@@ -110,7 +200,12 @@ function toggleAdmin(userId, username) {
             },
             credentials: 'same-origin'
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Błąd serwera: ' + response.status);
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.status === 'success') {
                 showNotification(data.message, 'success');
@@ -120,8 +215,8 @@ function toggleAdmin(userId, username) {
             }
         })
         .catch(error => {
-            console.error('Błąd:', error);
-            showNotification('Wystąpił błąd podczas zmiany uprawnień', 'error');
+            console.error('Błąd podczas zmiany uprawnień:', error);
+            showNotification('Wystąpił błąd podczas zmiany uprawnień: ' + error.message, 'error');
         });
     }
 }
@@ -141,7 +236,12 @@ function deleteUser(userId, username) {
             },
             credentials: 'same-origin'
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Błąd serwera: ' + response.status);
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.status === 'success') {
                 showNotification(data.message, 'success');
@@ -151,8 +251,8 @@ function deleteUser(userId, username) {
             }
         })
         .catch(error => {
-            console.error('Błąd:', error);
-            showNotification('Wystąpił błąd podczas usuwania użytkownika', 'error');
+            console.error('Błąd podczas usuwania użytkownika:', error);
+            showNotification('Wystąpił błąd podczas usuwania użytkownika: ' + error.message, 'error');
         });
     }
 }
@@ -221,6 +321,6 @@ function showNotification(message, type = 'info') {
     // Obsługa przycisku zamknięcia
     const closeButton = notification.querySelector('.close');
     closeButton.addEventListener('click', function() {
-        notificationsContainer.removeChild(notification);
+        notification.remove();
     });
 }
