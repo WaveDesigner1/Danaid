@@ -264,4 +264,52 @@ def check_is_online_column():
             "message": f"Błąd podczas sprawdzania struktury tabeli: {str(e)}"
         }), 500
 
-# Usunięto metody związane z SQLite: debug/db-info, admin/clean-db
+@auth_bp.route("/logout")
+@login_required
+def logout():
+    """Bezpieczne wylogowanie użytkownika"""
+    user_id = None
+    try:
+        # Najpierw oznaczamy użytkownika jako offline
+        if current_user.is_authenticated:
+            user_id = current_user.id
+            if hasattr(current_user, 'is_online'):
+                current_user.is_online = False
+                db.session.commit()
+    except Exception as e:
+        print(f"Ostrzeżenie: nie można zaktualizować statusu offline: {e}")
+        db.session.rollback()
+    finally:
+        # Zawsze wyloguj użytkownika i wyczyść sesję, nawet przy błędach
+        logout_user()
+        session.clear()
+        print(f"Użytkownik {user_id} wylogowany pomyślnie")
+    
+    return redirect(url_for('auth.index'))
+
+@auth_bp.route("/silent-logout", methods=["POST", "GET"])
+def silent_logout():
+    """Ciche wylogowanie (np. przy zamknięciu karty)"""
+    user_id = None
+    try:
+        if current_user.is_authenticated:
+            user_id = current_user.id
+            try:
+                if hasattr(current_user, 'is_online'):
+                    current_user.is_online = False
+                    db.session.commit()
+            except Exception as e:
+                print(f"Błąd przy aktualizacji statusu offline: {e}")
+                db.session.rollback()
+    except Exception as e:
+        print(f"Błąd w silent-logout: {e}")
+    finally:
+        # Zawsze próbujemy wylogować i wyczyścić sesję
+        try:
+            logout_user()
+            session.clear()
+            print(f"Użytkownik {user_id} wylogowany cicho")
+        except Exception as e:
+            print(f"Krytyczny błąd podczas silent-logout: {e}")
+    
+    return '', 204  # No Content
