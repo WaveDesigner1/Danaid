@@ -1,6 +1,18 @@
 document.addEventListener('DOMContentLoaded', function () {
     const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
 
+    // Sprawdź, czy użytkownik jest zalogowany i przekieruj go, jeśli próbuje otworzyć stronę logowania
+    if (isLoginPage && window.sessionManager && window.sessionManager.isLoggedIn) {
+        const isAdmin = window.sessionManager.isAdmin;
+        if (isAdmin) {
+            window.location.href = '/admin_dashboard';
+        } else {
+            window.location.href = '/chat';
+        }
+        return;
+    }
+
+    // Sprawdź, czy użytkownik nie jest zalogowany i próbuje uzyskać dostęp do chronionej strony
     if (!isLoginPage && window.sessionManager && !window.sessionManager.isLoggedIn) {
         window.location.href = '/?next=' + encodeURIComponent(window.location.pathname);
         return;
@@ -91,13 +103,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (result.status === 'success') {
                 const message = getMessage(result.code) || 'Zalogowano pomyślnie!';
                 statusDiv.innerHTML = `${message} Twój identyfikator: <strong>${result.user_id}</strong><br>Za chwilę nastąpi przekierowanie...`;
-                // KLUCZOWA ZMIANA: Bezpośrednie przekierowanie do /chat bez sprawdzania warunków
-                setTimeout(() => {
-                    window.location.href = '/chat';
-                }, 1500);
-}
-
-                // Jeśli istnieje sessionManager, zaktualizuj jego stan
+                
+                // Określamy, czy użytkownik jest administratorem
+                const isAdmin = result.is_admin === true;
+                
+                // Aktualizacja stanu sesji
                 if (window.sessionManager) {
                     window.sessionManager.login({
                         user_id: result.user_id,
@@ -121,9 +131,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 }, 1500);
             } else {
-                statusDiv.textContent = getMessage(result.code) || result.error || 'Błąd logowania';
+                statusDiv.textContent = getMessage(result.code) || result.message || 'Błąd logowania';
             }
         } catch (error) {
+            console.error("Błąd logowania:", error);
             statusDiv.textContent = "Błąd logowania lub podpisu. Sprawdź plik PEM.";
         }
     }
