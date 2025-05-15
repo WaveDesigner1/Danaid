@@ -9,6 +9,7 @@ import time
 from sqlalchemy import text
 from sqlalchemy import inspect, text
 import traceback
+import sys
 # Bezpośrednie importy
 from models import db, User, ChatSession, Message
 from admin import init_admin
@@ -37,24 +38,34 @@ def load_user(user_id):
         print(f"Błąd ładowania użytkownika: {e}")
         return None
 
-# Skrypt do usunięcia bazy danych (zakomentowany)
-"""
-def drop_database():
-    with db.engine.connect() as conn:
-        # Wyłączenie sesji połączeń do bazy
-        trans = conn.begin()
-        conn.execute(text('''
-        SELECT pg_terminate_backend(pg_stat_activity.pid)
-        FROM pg_stat_activity
-        WHERE pg_stat_activity.datname = current_database()
-        AND pid <> pg_backend_pid();
-        '''))
-        trans.commit()
+# Automatyczne migracje bazy danych
+def apply_migrations(app):
+    """Automatyczne migracje bazy danych"""
+    with app.app_context():
+        inspector = inspect(db.engine)
         
-        # Usunięcie wszystkich tabel
-        db.drop_all()
-        print("Baza danych została zresetowana")
-"""
+        # Migracja 1: Dodanie kolumny is_online do tabeli user (jeśli nie istnieje)
+        apply_migration(inspector, 'user', 'is_online', 'ALTER TABLE "user" ADD COLUMN is_online BOOLEAN DEFAULT FALSE')
+        
+        # Migracja 2: Dodanie kolumny encrypted_session_key do tabeli chat_session
+        apply_migration(inspector, 'chat_session', 'encrypted_session_key', 'ALTER TABLE "chat_session" ADD COLUMN encrypted_session_key TEXT')
+        
+        # Migracja 3: Dodanie kolumny key_acknowledged do tabeli chat_session
+        apply_migration(inspector, 'chat_session', 'key_acknowledged', 'ALTER TABLE "chat_session" ADD COLUMN key_acknowledged BOOLEAN DEFAULT FALSE')
+
+def apply_migration(inspector, table, column, sql_statement):
+    """Wykonuje pojedynczą migrację, jeśli jest potrzebna"""
+    if table in inspector.get_table_names():
+        columns = [c['name'] for c in inspector.get_columns(table)]
+        if column not in columns:
+            try:
+                print(f"Wykonywanie migracji: Dodawanie kolumny {column} do tabeli {table}")
+                db.session.execute(text(sql_statement))
+                db.session.commit()
+                print(f"Migracja zakończona pomyślnie")
+            except Exception as e:
+                print(f"Błąd podczas migracji: {e}")
+                db.session.rollback()
 
 # Główna funkcja tworząca aplikację
 def create_app():
@@ -90,6 +101,9 @@ def create_app():
     
     # Inicjalizacja panelu admina
     init_admin(app)
+    
+    # Uruchom migracje bazy danych
+    apply_migrations(app)
     
     # Endpoint diagnostyczny do sprawdzenia połączenia z bazą danych
     @app.route('/db-debug')
