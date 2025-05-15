@@ -45,29 +45,24 @@ class DatabaseView(BaseView):
     def index(self):
         # Pobierz strukturę bazy danych
         try:
-            if is_sqlite():
-                # Kod dla SQLite
-                tables = db.session.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()
-                tables = [table[0] for table in tables]
-                
-                table_structure = {}
-                for table in tables:
-                    columns = db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()
-                    table_structure[table] = columns
+            # Kod tylko dla PostgreSQL
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
             
-            elif is_postgresql():
-                # Kod dla PostgreSQL
-                inspector = inspect(db.engine)
-                tables = inspector.get_table_names()
-                
-                table_structure = {}
-                for table in tables:
-                    columns = inspector.get_columns(table)
-                    table_structure[table] = columns
+            table_structure = {}
+            for table in tables:
+                columns = inspector.get_columns(table)
+                table_structure[table] = columns
             
             return self.render('admin/database.html', tables=tables, structure=table_structure)
         except Exception as e:
             return self.render('admin/database.html', error=str(e))
+    
+    @expose('/add_column', methods=['POST'])
+    def add_column(self):
+        try:
+            table = request.form.get('table')
+            column_name = request.form.get('column_
     
     @expose('/add_column', methods=['POST'])
     def add_column(self):
