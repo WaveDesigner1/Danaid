@@ -6,12 +6,21 @@ from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
 import io
 from models import User, db
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 import os
 import traceback
 import time
 import subprocess
 import shlex
+
+# Funkcje pomocnicze do określania typu bazy danych
+def is_sqlite():
+    """Sprawdza, czy używamy bazy SQLite"""
+    return db.engine.name == 'sqlite'
+
+def is_postgresql():
+    """Sprawdza, czy używamy bazy PostgreSQL"""
+    return db.engine.name == 'postgresql'
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -469,14 +478,28 @@ def db_diagnostic():
         return "Dostęp zabroniony", 403
         
     try:
-        # Sprawdź strukturę tabeli user
-        user_structure = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
-        columns = [{"id": row[0], "name": row[1], "type": row[2], "notnull": row[3], 
-                  "default": row[4], "pk": row[5]} for row in user_structure]
+        if is_sqlite():
+            # Sprawdź strukturę tabeli user
+            user_structure = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
+            columns = [{"id": row[0], "name": row[1], "type": row[2], "notnull": row[3], 
+                      "default": row[4], "pk": row[5]} for row in user_structure]
+            
+            # Sprawdź używaną bazę danych
+            db_info = db.session.execute(text("PRAGMA database_list")).fetchall()
+            db_files = [{"name": row[1], "file": row[2]} for row in db_info]
         
-        # Sprawdź używaną bazę danych
-        db_info = db.session.execute(text("PRAGMA database_list")).fetchall()
-        db_files = [{"name": row[1], "file": row[2]} for row in db_info]
+        elif is_postgresql():
+            # Kod dla PostgreSQL
+            inspector = inspect(db.engine)
+            columns_data = inspector.get_columns('user')
+            columns = [{"id": i, "name": col['name'], "type": str(col['type']), 
+                         "notnull": not col.get('nullable', True), 
+                         "default": col.get('default'), "pk": col.get('primary_key', False)} 
+                       for i, col in enumerate(columns_data)]
+            
+            # Informacje o bazie danych
+            db_name = db.engine.url.database
+            db_files = [{"name": db_name, "file": "postgresql"}]
         
         # Sprawdź, czy kolumna is_online istnieje
         has_is_online = 'is_online' in [col["name"] for col in columns]
@@ -507,8 +530,14 @@ def add_is_online_column():
     
     try:
         # Sprawdź, czy kolumna już istnieje
-        result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
-        columns = [row[1] for row in result]
+        if is_sqlite():
+            result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
+            columns = [row[1] for row in result]
+        elif is_postgresql():
+            # Kod dla PostgreSQL
+            inspector = inspect(db.engine)
+            columns_data = inspector.get_columns('user')
+            columns = [col['name'] for col in columns_data]
         
         if 'is_online' in columns:
             return jsonify({
@@ -517,12 +546,20 @@ def add_is_online_column():
             })
         
         # Dodaj kolumnę
-        db.session.execute(text("ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE"))
+        if is_sqlite():
+            db.session.execute(text("ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE"))
+        elif is_postgresql():
+            db.session.execute(text("ALTER TABLE \"user\" ADD COLUMN is_online BOOLEAN DEFAULT FALSE"))
+        
         db.session.commit()
         
         # Ustaw wszystkich użytkowników jako offline
         try:
-            db.session.execute(text("UPDATE user SET is_online = 0"))
+            if is_sqlite():
+                db.session.execute(text("UPDATE user SET is_online = 0"))
+            elif is_postgresql():
+                db.session.execute(text("UPDATE \"user\" SET is_online = false"))
+            
             db.session.commit()
             print("Wszyscy użytkownicy oznaczeni jako offline")
         except Exception as e:
@@ -530,36 +567,42 @@ def add_is_online_column():
             db.session.rollback()
         
         return jsonify({
-            "status": "success", 
-            "message": "Kolumna is_online została pomyślnie dodana do tabeli user"
-        })
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            "status": "error", 
-            "message": f"Błąd: {str(e)}"
-        }), 500
+           "status": "success", 
+           "message": "Kolumna is_online została pomyślnie dodana do tabeli user"
+       })
+   except Exception as e:
+       db.session.rollback()
+       return jsonify({
+           "status": "error", 
+           "message": f"Błąd: {str(e)}"
+       }), 500
 
 @auth_bp.route('/api/check_is_online_column', methods=['GET'])
 @login_required
 def check_is_online_column():
-    """Sprawdza, czy kolumna is_online istnieje w tabeli user"""
-    if not current_user.is_admin:
-        return jsonify({"status": "error", "message": "Dostęp zabroniony"}), 403
-    
-    try:
-        # Sprawdź, czy kolumna już istnieje
-        result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
-        columns = [row[1] for row in result]
-        
-        has_column = 'is_online' in columns
-        
-        return jsonify({
-            "status": "success", 
-            "has_is_online": has_column
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error", 
-            "message": f"Błąd podczas sprawdzania struktury tabeli: {str(e)}"
-        }), 500
+   """Sprawdza, czy kolumna is_online istnieje w tabeli user"""
+   if not current_user.is_admin:
+       return jsonify({"status": "error", "message": "Dostęp zabroniony"}), 403
+   
+   try:
+       # Sprawdź, czy kolumna już istnieje
+       if is_sqlite():
+           result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
+           columns = [row[1] for row in result]
+       elif is_postgresql():
+           # Kod dla PostgreSQL
+           inspector = inspect(db.engine)
+           columns_data = inspector.get_columns('user')
+           columns = [col['name'] for col in columns_data]
+       
+       has_column = 'is_online' in columns
+       
+       return jsonify({
+           "status": "success", 
+           "has_is_online": has_column
+       })
+   except Exception as e:
+       return jsonify({
+           "status": "error", 
+           "message": f"Błąd podczas sprawdzania struktury tabeli: {str(e)}"
+       }), 500
