@@ -1,6 +1,8 @@
-// Admin panel JavaScript dla zarządzania użytkownikami
-
+/**
+ * Admin Users - skrypt do zarządzania użytkownikami w panelu administratora
+ */
 document.addEventListener('DOMContentLoaded', function() {
+    // Inicjalizacja
     loadUsers();
 
     // Obsługa kliknięcia przycisku odświeżenia użytkowników
@@ -12,7 +14,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Funkcja do pobierania i wyświetlania listy użytkowników
+/**
+ * Funkcja do pobierania i wyświetlania listy użytkowników
+ */
 function loadUsers() {
     const usersTable = document.getElementById('users-table-body');
     
@@ -24,21 +28,31 @@ function loadUsers() {
     // Pokaż loader
     usersTable.innerHTML = '<tr><td colspan="6" class="text-center"><i class="fa fa-spinner fa-spin"></i> Ładowanie użytkowników...</td></tr>';
     
-    fetch('/api/users', {
+    // Dodaj parametr timestamp, aby uniknąć cachowania
+    fetch('/api/users?t=' + Date.now(), {
         method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
         credentials: 'same-origin'
     })
     .then(response => {
         if (!response.ok) {
-            throw new Error('Błąd pobierania listy użytkowników');
+            throw new Error('Błąd serwera: ' + response.status);
         }
         return response.json();
     })
     .then(users => {
         usersTable.innerHTML = '';
         
-        if (users.length === 0) {
+        if (!users || users.length === 0) {
             usersTable.innerHTML = '<tr><td colspan="6" class="text-center">Brak użytkowników</td></tr>';
+            return;
+        }
+        
+        // Jeśli mamy informację o błędzie
+        if (users.error) {
+            usersTable.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Błąd: ${users.error}</td></tr>`;
             return;
         }
         
@@ -48,8 +62,11 @@ function loadUsers() {
             row.className = 'user-row';
             row.setAttribute('data-user-id', user.id);
             
-            // Zablokuj usuwanie własnego konta
-            const isCurrentUser = parseInt(sessionStorage.getItem('user_id')) === user.id;
+            // Pobierz ID aktualnego użytkownika z sessionStorage
+            const currentUserId = parseInt(sessionStorage.getItem('user_id'));
+            
+            // Zablokuj usuwanie/zmianę własnego konta
+            const isCurrentUser = currentUserId === user.id;
             
             row.innerHTML = `
                 <td>${user.id}</td>
@@ -58,12 +75,14 @@ function loadUsers() {
                 <td>${user.is_online ? '<span class="label label-success">Online</span>' : '<span class="label label-default">Offline</span>'}</td>
                 <td>${user.is_admin ? '<span class="label label-primary">Administrator</span>' : '<span class="label label-default">Użytkownik</span>'}</td>
                 <td class="user-actions">
-                    ${isCurrentUser ? '' : `<button class="btn btn-sm ${user.is_admin ? 'btn-warning' : 'btn-success'}" onclick="toggleAdmin(${user.id}, '${user.username}')">
-                        ${user.is_admin ? 'Odbierz uprawnienia' : 'Nadaj uprawnienia'}
-                    </button>`}
-                    ${isCurrentUser ? '' : `<button class="btn btn-sm btn-danger" onclick="deleteUser(${user.id}, '${user.username}')">
-                        Usuń
-                    </button>`}
+                    ${isCurrentUser ? '<em class="text-muted">Aktualny użytkownik</em>' : `
+                        <button class="btn btn-sm ${user.is_admin ? 'btn-warning' : 'btn-success'}" onclick="toggleAdmin(${user.id}, '${user.username}')">
+                            ${user.is_admin ? '<i class="fa fa-times"></i> Odbierz uprawnienia' : '<i class="fa fa-check"></i> Nadaj uprawnienia'}
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteUser(${user.id}, '${user.username}')">
+                            <i class="fa fa-trash"></i> Usuń
+                        </button>
+                    `}
                 </td>
             `;
             
@@ -76,13 +95,18 @@ function loadUsers() {
     });
 }
 
-// Funkcja do zmiany uprawnień administratora
+/**
+ * Funkcja do zmiany uprawnień administratora
+ * @param {number} userId - ID użytkownika
+ * @param {string} username - Nazwa użytkownika
+ */
 function toggleAdmin(userId, username) {
-    if (confirm(`Czy na pewno chcesz zmienić uprawnienia użytkownika ${username}?`)) {
+    if (confirm(`Czy na pewno chcesz zmienić uprawnienia administratora dla użytkownika ${username}?`)) {
         fetch(`/api/users/${userId}/toggle_admin`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
             },
             credentials: 'same-origin'
         })
@@ -102,13 +126,18 @@ function toggleAdmin(userId, username) {
     }
 }
 
-// Funkcja do usuwania użytkownika
+/**
+ * Funkcja do usuwania użytkownika
+ * @param {number} userId - ID użytkownika
+ * @param {string} username - Nazwa użytkownika
+ */
 function deleteUser(userId, username) {
-    if (confirm(`Czy na pewno chcesz usunąć użytkownika ${username}? To działanie jest nieodwracalne.`)) {
+    if (confirm(`Czy na pewno chcesz usunąć użytkownika ${username}? To działanie jest nieodwracalne i usunie wszystkie powiązane dane, w tym sesje czatu i wiadomości.`)) {
         fetch(`/api/users/${userId}/delete`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
             },
             credentials: 'same-origin'
         })
@@ -128,8 +157,23 @@ function deleteUser(userId, username) {
     }
 }
 
-// Funkcja do wyświetlania powiadomień
+/**
+ * Funkcja do wyświetlania powiadomień
+ * @param {string} message - Treść powiadomienia
+ * @param {string} type - Typ powiadomienia (success, error, info, warning)
+ */
 function showNotification(message, type = 'info') {
+    // Mapowanie typów na klasy Bootstrap
+    const typeClass = {
+        'success': 'alert-success',
+        'error': 'alert-danger',
+        'info': 'alert-info',
+        'warning': 'alert-warning'
+    };
+    
+    // Domyślny typ, jeśli podany jest nieprawidłowy
+    const alertClass = typeClass[type] || 'alert-info';
+    
     // Sprawdź, czy kontener powiadomień istnieje
     let notificationsContainer = document.getElementById('notifications-container');
     
@@ -146,12 +190,18 @@ function showNotification(message, type = 'info') {
     
     // Utwórz powiadomienie
     const notification = document.createElement('div');
-    notification.className = `alert alert-${type === 'error' ? 'danger' : type}`;
+    notification.className = `alert ${alertClass}`;
     notification.style.minWidth = '300px';
     notification.style.marginBottom = '10px';
+    notification.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
     notification.innerHTML = `
         <button type="button" class="close" data-dismiss="alert">&times;</button>
-        ${message}
+        <div>
+            <i class="fa fa-${type === 'error' ? 'exclamation-circle' : 
+                         type === 'success' ? 'check-circle' : 
+                         type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
+            ${message}
+        </div>
     `;
     
     // Dodaj powiadomienie do kontenera
@@ -162,7 +212,9 @@ function showNotification(message, type = 'info') {
         notification.style.opacity = '0';
         notification.style.transition = 'opacity 0.5s';
         setTimeout(() => {
-            notificationsContainer.removeChild(notification);
+            if (notification.parentNode === notificationsContainer) {
+                notificationsContainer.removeChild(notification);
+            }
         }, 500);
     }, 5000);
     
