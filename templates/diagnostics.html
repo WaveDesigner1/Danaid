@@ -1,0 +1,99 @@
+{% extends 'admin/base.html' %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <h2>Diagnostyka Systemu</h2>
+            
+            {% if error %}
+            <div class="alert alert-danger">
+                <h4>Błąd!</h4>
+                <p>{{ error }}</p>
+            </div>
+            {% endif %}
+            
+            <div class="panel panel-primary">
+                <div class="panel-heading">
+                    <h3 class="panel-title">Informacje o Aplikacji</h3>
+                </div>
+                <div class="panel-body">
+                    <table class="table table-striped">
+                        <tr>
+                            <th>Flask Version</th>
+                            <td>{{ diagnostics.app_info.flask_version }}</td>
+                        </tr>
+                        <tr>
+                            <th>Python Version</th>
+                            <td>{{ diagnostics.app_info.python_version }}</td>
+                        </tr>
+                        <tr>
+                            <th>System Operacyjny</th>
+                            <td>{{ diagnostics.app_info.os_info }}</td>
+                        </tr>
+                        <tr>
+                            <th>Typ Bazy Danych</th>
+                            <td>{{ diagnostics.app_info.db_type }}</td>
+                        </tr>
+                        <tr>
+                            <th>Werkzeug Version</th>
+                            <td>{{ diagnostics.app_info.werkzeug_version }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="panel panel-info">
+                <div class="panel-heading">
+                    <h3 class="panel-title">Status Bazy Danych</h3>
+                </div>
+                <div class="panel-body">
+                    <p><strong>Status Połączenia:</strong> {{ diagnostics.db_status.connection }}</p>
+                    
+                    {% if diagnostics.db_status.tables %}
+                    <h4>Tabele w Bazie Danych</h4>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Nazwa Tabeli</th>
+                                <th>Liczba Rekordów</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for table in diagnostics.db_status.tables %}
+                            <tr>
+                                <td>{{ table }}</td>
+                                <td>{{ diagnostics.db_status.record_counts[table] }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="panel panel-success">
+                <div class="panel-heading">
+                    <h3 class="panel-title">Informacje o Sesji</h3>
+                </div>
+                <div class="panel-body">
+                    <table class="table table-striped">
+                        <tr>
+                            <th>Typ Sesji</th>
+                            <td>{{ diagnostics.session_info.session_type }}</td>
+                        </tr>
+                        <tr>
+                            <th>Czas życia sesji</th>
+                            <td>{{ diagnostics.session_info.permanent_session_lifetime }}</td>
+                        </tr>
+                        <tr>
+                            <th>Klucz Secret ustawiony</th>
+                            <td>{{ "Tak" if diagnostics.session_info.secret_key_set else "Nie" }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
