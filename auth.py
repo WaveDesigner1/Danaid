@@ -265,51 +265,52 @@ def check_is_online_column():
         }), 500
 
 @auth_bp.route("/logout")
-@login_required
 def logout():
-    """Bezpieczne wylogowanie użytkownika"""
+    """Ulepszone i uproszczone wylogowanie użytkownika"""
+    print("\n=== ROZPOCZĘCIE PROCESU WYLOGOWANIA ===")
+    print(f"Czas: {datetime.datetime.now()}")
+    
     user_id = None
+    
     try:
-        # Najpierw oznaczamy użytkownika jako offline
+        # Zapisz ID użytkownika przed wylogowaniem
         if current_user.is_authenticated:
             user_id = current_user.id
+            print(f"Wylogowywanie użytkownika: ID={user_id}")
+            
+            # Zaktualizuj status online użytkownika
             if hasattr(current_user, 'is_online'):
                 current_user.is_online = False
                 db.session.commit()
+                print("Status offline ustawiony pomyślnie")
     except Exception as e:
-        print(f"Ostrzeżenie: nie można zaktualizować statusu offline: {e}")
+        print(f"Błąd podczas aktualizacji statusu: {e}")
         db.session.rollback()
-    finally:
-        # Zawsze wyloguj użytkownika i wyczyść sesję, nawet przy błędach
+    
+    # Wyloguj użytkownika i wyczyść sesję
+    try:
         logout_user()
         session.clear()
         print(f"Użytkownik {user_id} wylogowany pomyślnie")
-    
-    return redirect(url_for('auth.index'))
-
-@auth_bp.route("/silent-logout", methods=["POST", "GET"])
-def silent_logout():
-    """Ciche wylogowanie (np. przy zamknięciu karty)"""
-    user_id = None
-    try:
-        if current_user.is_authenticated:
-            user_id = current_user.id
-            try:
-                if hasattr(current_user, 'is_online'):
-                    current_user.is_online = False
-                    db.session.commit()
-            except Exception as e:
-                print(f"Błąd przy aktualizacji statusu offline: {e}")
-                db.session.rollback()
     except Exception as e:
-        print(f"Błąd w silent-logout: {e}")
-    finally:
-        # Zawsze próbujemy wylogować i wyczyścić sesję
-        try:
-            logout_user()
-            session.clear()
-            print(f"Użytkownik {user_id} wylogowany cicho")
-        except Exception as e:
-            print(f"Krytyczny błąd podczas silent-logout: {e}")
+        print(f"Błąd podczas wylogowywania: {e}")
     
-    return '', 204  # No Content
+    # Przygotuj odpowiedź z wyczyszczonymi ciasteczkami
+    response = redirect(url_for('auth.index'))
+    
+    # Wyczyść wszystkie ciasteczka związane z sesją
+    response.delete_cookie('session')
+    response.delete_cookie('remember_token')
+    response.delete_cookie('session_id')
+    
+    # Ustaw ciasteczka z ujemnym czasem ważności jako dodatkowe zabezpieczenie
+    response.set_cookie('session', '', expires=0)
+    response.set_cookie('remember_token', '', expires=0)
+    
+    # Ustaw nagłówki cache, aby zapobiec cachowaniu
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '-1'
+    
+    print("=== WYLOGOWANIE ZAKOŃCZONE ===\n")
+    return response
