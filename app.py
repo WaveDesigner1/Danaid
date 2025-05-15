@@ -38,7 +38,7 @@ def load_user(user_id):
         return None
 
 # Skrypt do usunięcia bazy danych (zakomentowany)
-
+"""
 def drop_database():
     with db.engine.connect() as conn:
         # Wyłączenie sesji połączeń do bazy
@@ -54,7 +54,7 @@ def drop_database():
         # Usunięcie wszystkich tabel
         db.drop_all()
         print("Baza danych została zresetowana")
-
+"""
 
 # Główna funkcja tworząca aplikację
 def create_app():
