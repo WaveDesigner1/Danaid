@@ -1,21 +1,18 @@
-from app import create_app
 import os
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
 
-# Wymuszenie konfiguracji przed importem aplikacji
-os.environ['DATABASE_URL'] = 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require'
-os.environ['FORCE_POSTGRESQL'] = 'true'
+# Pobierz URL bazy danych ze zmiennych środowiskowych
+database_url = os.environ.get('DATABASE_URL', 'postgresql://danaid_database_owner:npg_LcawRkg3jpD2@ep-yellow-block-a4fc64bc-pooler.us-east-1.aws.neon.tech/danaid_database?sslmode=require')
 
-# Wyświetl wartość zmiennej (dla debugowania)
-print(f"DATABASE_URL = {os.environ.get('DATABASE_URL')}")
+# Popraw URL jeśli zaczyna się od "postgres://"
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
 
 from app import create_app
 
-# Uruchomienie aplikacji
+# Utworzenie aplikacji
 app = create_app()
 
-# Wymuszenie ustawienia bazy danych
+# Wymuszenie ustawienia bazy danych - użyj zdefiniowanej wcześniej zmiennej database_url
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 
 if __name__ == '__main__':
