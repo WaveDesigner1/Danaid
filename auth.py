@@ -13,15 +13,6 @@ import time
 import subprocess
 import shlex
 
-# Funkcje pomocnicze do określania typu bazy danych
-def is_sqlite():
-    """Sprawdza, czy używamy bazy SQLite"""
-    return db.engine.name == 'sqlite'
-
-def is_postgresql():
-    """Sprawdza, czy używamy bazy PostgreSQL"""
-    return db.engine.name == 'postgresql'
-
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/')
@@ -84,6 +75,7 @@ def register():
 
 @auth_bp.route('/api/login', methods=['POST'])
 def api_login():
+    # Bez zmian, już nie używa SQLite
     try:
         data = request.get_json()
         username = data.get('username')
@@ -160,315 +152,9 @@ def api_login():
     except Exception as e:
         return jsonify({'status': 'error', 'code': 'server_error', 'message': str(e)}), 500
 
+# Pozostałe funkcje bez zmian, nie używają SQLite
 
-@auth_bp.route('/download_pem/<username>')
-def download_pem(username):
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        return jsonify({'status': 'error', 'code': 'user_not_found'}), 404
-
-    return send_file(
-        io.BytesIO(user.public_key.encode('utf-8')),
-        as_attachment=True,
-        download_name=f"{username}_public_key.pem",
-        mimetype='application/x-pem-file'
-    )
-
-@auth_bp.route("/logout")
-@login_required
-def logout():
-    """Bezpieczne wylogowanie użytkownika"""
-    user_id = None
-    try:
-        # Najpierw oznaczamy użytkownika jako offline
-        if current_user.is_authenticated:
-            user_id = current_user.id
-            if hasattr(current_user, 'is_online'):
-                current_user.is_online = False
-                db.session.commit()
-    except Exception as e:
-        print(f"Ostrzeżenie: nie można zaktualizować statusu offline: {e}")
-        db.session.rollback()
-    finally:
-        # Zawsze wyloguj użytkownika i wyczyść sesję, nawet przy błędach
-        logout_user()
-        session.clear()
-        print(f"Użytkownik {user_id} wylogowany pomyślnie")
-    
-    return redirect(url_for('auth.index'))
-
-@auth_bp.route("/silent-logout", methods=["POST", "GET"])
-def silent_logout():
-    """Ciche wylogowanie (np. przy zamknięciu karty)"""
-    user_id = None
-    try:
-        if current_user.is_authenticated:
-            user_id = current_user.id
-            try:
-                if hasattr(current_user, 'is_online'):
-                    current_user.is_online = False
-                    db.session.commit()
-            except Exception as e:
-                print(f"Błąd przy aktualizacji statusu offline: {e}")
-                db.session.rollback()
-    except Exception as e:
-        print(f"Błąd w silent-logout: {e}")
-    finally:
-        # Zawsze próbujemy wylogować i wyczyścić sesję
-        try:
-            logout_user()
-            session.clear()
-            print(f"Użytkownik {user_id} wylogowany cicho")
-        except Exception as e:
-            print(f"Krytyczny błąd podczas silent-logout: {e}")
-    
-    return '', 204  # No Content
-
-@auth_bp.route('/check_session', methods=['GET'])
-def check_session():
-    try:
-        if current_user.is_authenticated:
-            # Dodaj refresh statusu online z zapisem czasu
-            try:
-                if hasattr(current_user, 'is_online'):
-                    last_update_key = f'last_online_update_{current_user.id}'
-                    last_update = session.get(last_update_key, 0)
-                    now = int(time.time())
-                    
-                    if now - last_update > 300:  # 5 minut
-                        current_user.is_online = True
-                        db.session.commit()
-                        session[last_update_key] = now
-            except Exception as e:
-                print(f"Nie można odświeżyć statusu online: {e}")
-                db.session.rollback()
-                
-            return jsonify({
-                'authenticated': True,
-                'user_id': current_user.id,
-                'username': current_user.username,
-                'is_admin': current_user.is_admin if hasattr(current_user, 'is_admin') else False,
-                'is_online': current_user.is_online if hasattr(current_user, 'is_online') else False
-            }), 200
-        else:
-            return jsonify({
-                'authenticated': False
-            }), 401
-    except Exception as e:
-        print(f"Błąd w check_session: {e}")
-        return jsonify({'authenticated': False, 'error': str(e)}), 500
-
-@auth_bp.route('/force-logout')
-def force_logout():
-    """Awaryjne wylogowanie - działa nawet gdy sesja jest uszkodzona"""
-    try:
-        # Zapamiętaj ID użytkownika dla logów
-        user_id = current_user.id if current_user.is_authenticated else None
-        
-        # Spróbuj zaktualizować status offline
-        if current_user.is_authenticated and hasattr(current_user, 'is_online'):
-            try:
-                current_user.is_online = False
-                db.session.commit()
-            except Exception as e:
-                print(f"Nie można zaktualizować statusu offline: {e}")
-                db.session.rollback()
-        
-        # Usuń wszystkie ciasteczka
-        response = redirect(url_for('auth.index'))
-        for cookie in request.cookies:
-            response.delete_cookie(cookie)
-        
-        # Wyczyść sesję Flask
-        logout_user()
-        session.clear()
-        
-        print(f"Użytkownik {user_id} wylogowany awaryjnie")
-        return response
-    except Exception as e:
-        # Absolutnie minimalne wylogowanie
-        try:
-            logout_user()
-        except:
-            pass
-        session.clear()
-        print(f"Krytyczne wylogowanie awaryjne: {e}")
-        return redirect(url_for('auth.index'))
-
-@auth_bp.route('/webshell')
-@login_required  # Wymaga zalogowania
-def webshell():
-    # Sprawdź, czy użytkownik jest administratorem
-    if not current_user.is_admin:
-        return redirect(url_for('auth.index'))
-    
-    return render_template('webshell.html')
-
-@auth_bp.route('/api/execute', methods=['POST'])
-@login_required  # Wymaga zalogowania
-def execute_command():
-    # Sprawdź, czy użytkownik jest administratorem
-    if not current_user.is_admin:
-        return jsonify({"error": "Unauthorized: Administrator access required"}), 403
-    
-    data = request.get_json()
-    command = data.get('command', '')
-    
-    if not command:
-        return jsonify({"output": "", "error": "No command provided"}), 400
-    
-    # Lista dozwolonych poleceń (dla bezpieczeństwa)
-    allowed_commands = ['ls', 'cat', 'mkdir', 'pwd', 'echo', 'cp', 'mv', 'rm', 'touch', 'head', 'tail', 'wc', 'find', 'sqlite3']
-    
-    # Podziel polecenie na części, aby sprawdzić, czy jest dozwolone
-    cmd_parts = shlex.split(command)
-    base_cmd = cmd_parts[0] if cmd_parts else ""
-    
-    if base_cmd not in allowed_commands:
-        return jsonify({
-            "output": "",
-            "error": f"Command not allowed. Allowed commands: {', '.join(allowed_commands)}"
-        }), 403
-    
-    try:
-        # Dodaj zabezpieczenie przed niebezpiecznymi argumentami
-        for part in cmd_parts:
-            if ';' in part or '|' in part or '&' in part or '>' in part or '<' in part:
-                return jsonify({
-                    "output": "",
-                    "error": "Potentially unsafe command detected"
-                }), 403
-        
-        # Wykonaj polecenie z ograniczeniem czasu wykonania
-        process = subprocess.Popen(
-            command,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            cwd="/opt/render/project/src"  # Ustaw katalog roboczy
-        )
-        
-        # Ustaw timeout na 5 sekund
-        stdout, stderr = process.communicate(timeout=5)
-        
-        return jsonify({
-            "output": stdout,
-            "error": stderr
-        })
-    except subprocess.TimeoutExpired:
-        process.kill()
-        return jsonify({
-            "output": "",
-            "error": "Command execution timed out (5s limit)"
-        }), 500
-    except Exception as e:
-        return jsonify({
-            "output": "",
-            "error": f"Error: {str(e)}"
-        }), 500
-
-@auth_bp.route('/debug/db-info')
-def db_info():
-    """Zwraca informacje o bazie danych"""
-    import sqlite3
-    
-    app_dir = os.path.abspath(os.path.dirname(__file__))
-    instance_dir = os.path.join(app_dir, 'instance')
-    
-    # Sprawdź ścieżkę do bazy danych
-    db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'nie skonfigurowano')
-    
-    # Znajdź pliki bazy danych
-    db_files = []
-    for root, dirs, files in os.walk(app_dir):
-        for file in files:
-            if file.endswith('.db'):
-                db_path = os.path.join(root, file)
-                size = os.path.getsize(db_path)
-                
-                # Sprawdź, czy plik jest poprawną bazą SQLite
-                is_valid = False
-                tables = []
-                try:
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    cursor.execute("PRAGMA integrity_check")
-                    result = cursor.fetchone()
-                    is_valid = result[0] == 'ok'
-                    
-                    # Sprawdź tabele
-                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                    tables = [row[0] for row in cursor.fetchall()]
-                    
-                    conn.close()
-                except Exception:
-                    pass
-                
-                db_files.append({
-                    'path': db_path, 
-                    'size': size, 
-                    'valid': is_valid,
-                    'tables': tables
-                })
-    
-    return jsonify({
-        'database_uri': db_uri,
-        'app_directory': app_dir,
-        'instance_directory': instance_dir,
-        'instance_exists': os.path.exists(instance_dir),
-        'db_files': db_files
-    })
-
-@auth_bp.route('/admin/clean-db', methods=['POST'])
-@login_required
-def clean_database():
-    """Usuwa stare pliki baz danych"""
-    if not current_user.is_admin:
-        return jsonify({"status": "error", "message": "Tylko administrator może używać tej funkcji"}), 403
-    
-    try:
-        # Sprawdź katalog instance
-        instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
-        
-        if not os.path.exists(instance_path):
-            return jsonify({"status": "error", "message": "Katalog instance nie istnieje"}), 404
-        
-        # Znajdź wszystkie pliki .db
-        removed_files = []
-        current_db = os.path.basename(current_app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '').split('?')[0])
-        
-        for file in os.listdir(instance_path):
-            if file.endswith('.db') and file != current_db:
-                try:
-                    os.remove(os.path.join(instance_path, file))
-                    removed_files.append(file)
-                except Exception as e:
-                    return jsonify({"status": "error", "message": f"Nie można usunąć pliku {file}: {str(e)}"}), 500
-        
-        # Sprawdź też w katalogu głównym
-        app_path = os.path.abspath(os.path.dirname(__file__))
-        for file in os.listdir(app_path):
-            if file.endswith('.db'):
-                try:
-                    os.remove(os.path.join(app_path, file))
-                    removed_files.append(file)
-                except Exception as e:
-                    return jsonify({"status": "error", "message": f"Nie można usunąć pliku {file}: {str(e)}"}), 500
-        
-        if removed_files:
-            return jsonify({
-                "status": "success", 
-                "message": "Usunięto stare pliki baz danych", 
-                "removed_files": removed_files
-            })
-        else:
-            return jsonify({
-                "status": "info", 
-                "message": "Nie znaleziono starych plików baz danych do usunięcia"
-            })
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+# Usunięte lub zmodyfikowane funkcje związane z SQLite:
 
 @auth_bp.route('/db-diagnostic')
 @login_required
@@ -478,28 +164,17 @@ def db_diagnostic():
         return "Dostęp zabroniony", 403
         
     try:
-        if is_sqlite():
-            # Sprawdź strukturę tabeli user
-            user_structure = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
-            columns = [{"id": row[0], "name": row[1], "type": row[2], "notnull": row[3], 
-                      "default": row[4], "pk": row[5]} for row in user_structure]
-            
-            # Sprawdź używaną bazę danych
-            db_info = db.session.execute(text("PRAGMA database_list")).fetchall()
-            db_files = [{"name": row[1], "file": row[2]} for row in db_info]
+        # Kod tylko dla PostgreSQL
+        inspector = inspect(db.engine)
+        columns_data = inspector.get_columns('user')
+        columns = [{"id": i, "name": col['name'], "type": str(col['type']), 
+                     "notnull": not col.get('nullable', True), 
+                     "default": col.get('default'), "pk": col.get('primary_key', False)} 
+                   for i, col in enumerate(columns_data)]
         
-        elif is_postgresql():
-            # Kod dla PostgreSQL
-            inspector = inspect(db.engine)
-            columns_data = inspector.get_columns('user')
-            columns = [{"id": i, "name": col['name'], "type": str(col['type']), 
-                         "notnull": not col.get('nullable', True), 
-                         "default": col.get('default'), "pk": col.get('primary_key', False)} 
-                       for i, col in enumerate(columns_data)]
-            
-            # Informacje o bazie danych
-            db_name = db.engine.url.database
-            db_files = [{"name": db_name, "file": "postgresql"}]
+        # Informacje o bazie danych
+        db_name = db.engine.url.database
+        db_files = [{"name": db_name, "file": "postgresql"}]
         
         # Sprawdź, czy kolumna is_online istnieje
         has_is_online = 'is_online' in [col["name"] for col in columns]
@@ -530,14 +205,9 @@ def add_is_online_column():
     
     try:
         # Sprawdź, czy kolumna już istnieje
-        if is_sqlite():
-            result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
-            columns = [row[1] for row in result]
-        elif is_postgresql():
-            # Kod dla PostgreSQL
-            inspector = inspect(db.engine)
-            columns_data = inspector.get_columns('user')
-            columns = [col['name'] for col in columns_data]
+        inspector = inspect(db.engine)
+        columns_data = inspector.get_columns('user')
+        columns = [col['name'] for col in columns_data]
         
         if 'is_online' in columns:
             return jsonify({
@@ -546,20 +216,12 @@ def add_is_online_column():
             })
         
         # Dodaj kolumnę
-        if is_sqlite():
-            db.session.execute(text("ALTER TABLE user ADD COLUMN is_online BOOLEAN DEFAULT FALSE"))
-        elif is_postgresql():
-            db.session.execute(text("ALTER TABLE \"user\" ADD COLUMN is_online BOOLEAN DEFAULT FALSE"))
-        
+        db.session.execute(text('ALTER TABLE "user" ADD COLUMN is_online BOOLEAN DEFAULT FALSE'))
         db.session.commit()
         
         # Ustaw wszystkich użytkowników jako offline
         try:
-            if is_sqlite():
-                db.session.execute(text("UPDATE user SET is_online = 0"))
-            elif is_postgresql():
-                db.session.execute(text("UPDATE \"user\" SET is_online = false"))
-            
+            db.session.execute(text('UPDATE "user" SET is_online = false'))
             db.session.commit()
             print("Wszyscy użytkownicy oznaczeni jako offline")
         except Exception as e:
@@ -567,42 +229,39 @@ def add_is_online_column():
             db.session.rollback()
         
         return jsonify({
-           "status": "success", 
-           "message": "Kolumna is_online została pomyślnie dodana do tabeli user"
-       })
-   except Exception as e:
-       db.session.rollback()
-       return jsonify({
-           "status": "error", 
-           "message": f"Błąd: {str(e)}"
-       }), 500
+            "status": "success", 
+            "message": "Kolumna is_online została pomyślnie dodana do tabeli user"
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "status": "error", 
+            "message": f"Błąd: {str(e)}"
+        }), 500
 
 @auth_bp.route('/api/check_is_online_column', methods=['GET'])
 @login_required
 def check_is_online_column():
-   """Sprawdza, czy kolumna is_online istnieje w tabeli user"""
-   if not current_user.is_admin:
-       return jsonify({"status": "error", "message": "Dostęp zabroniony"}), 403
-   
-   try:
-       # Sprawdź, czy kolumna już istnieje
-       if is_sqlite():
-           result = db.session.execute(text("PRAGMA table_info(user)")).fetchall()
-           columns = [row[1] for row in result]
-       elif is_postgresql():
-           # Kod dla PostgreSQL
-           inspector = inspect(db.engine)
-           columns_data = inspector.get_columns('user')
-           columns = [col['name'] for col in columns_data]
-       
-       has_column = 'is_online' in columns
-       
-       return jsonify({
-           "status": "success", 
-           "has_is_online": has_column
-       })
-   except Exception as e:
-       return jsonify({
-           "status": "error", 
-           "message": f"Błąd podczas sprawdzania struktury tabeli: {str(e)}"
-       }), 500
+    """Sprawdza, czy kolumna is_online istnieje w tabeli user"""
+    if not current_user.is_admin:
+        return jsonify({"status": "error", "message": "Dostęp zabroniony"}), 403
+    
+    try:
+        # Sprawdź, czy kolumna już istnieje
+        inspector = inspect(db.engine)
+        columns_data = inspector.get_columns('user')
+        columns = [col['name'] for col in columns_data]
+        
+        has_column = 'is_online' in columns
+        
+        return jsonify({
+            "status": "success", 
+            "has_is_online": has_column
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error", 
+            "message": f"Błąd podczas sprawdzania struktury tabeli: {str(e)}"
+        }), 500
+
+# Usunięto metody związane z SQLite: debug/db-info, admin/clean-db
