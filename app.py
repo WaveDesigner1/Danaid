@@ -76,7 +76,7 @@ def create_app():
     # Konfiguracja sesji
     app.config['SESSION_TYPE'] = 'filesystem'  # Przechowuj sesje w plikach, a nie w cookies
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
-    app.config['SESSION_REFRESH_EACH_REQUEST'] = True  # Odświeżaj sesję przy każdym żądaniu
+   # app.config['SESSION_REFRESH_EACH_REQUEST'] = True  # Odświeżaj sesję przy każdym żądaniu
     
     # Inicjalizacja bazy danych i logowania
     db.init_app(app)
