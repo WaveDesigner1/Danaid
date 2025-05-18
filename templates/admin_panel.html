@@ -26,7 +26,7 @@
                     <li><a href="{{ url_for('user.index_view') }}"><i class="fa fa-users"></i> Użytkownicy</a></li>
                     <li><a href="{{ url_for('chatsession.index_view') }}"><i class="fa fa-comments"></i> Sesje Czatu</a></li>
                     <li><a href="{{ url_for('message.index_view') }}"><i class="fa fa-envelope"></i> Wiadomości</a></li>
-                    <li><a href="{{ url_for('auth.index') }}"><i class="fa fa-database"></i> Zarządzanie Bazą</a></li>
+                    <li><a href="{{ url_for('db_admin.index') }}"><i class="fa fa-database"></i> Zarządzanie Bazą</a></li>
                     <li><a href="{{ url_for('diagnostics.index') }}"><i class="fa fa-stethoscope"></i> Diagnostyka</a></li>
                     <li><a href="{{ url_for('webshell.index') }}"><i class="fa fa-terminal"></i> Webshell</a></li>
                 </ul>
@@ -44,28 +44,28 @@
                             <div class="admin-stat-icon">
                                 <i class="fa fa-users"></i>
                             </div>
-                            <div class="admin-stat-value" id="users-count">...</div>
+                            <div class="admin-stat-value" id="users-count">-</div>
                             <div class="admin-stat-label">Użytkownicy</div>
                         </div>
                         <div class="admin-stat-card">
                             <div class="admin-stat-icon">
                                 <i class="fa fa-comments"></i>
                             </div>
-                            <div class="admin-stat-value" id="sessions-count">...</div>
+                            <div class="admin-stat-value" id="sessions-count">-</div>
                             <div class="admin-stat-label">Sesje Czatu</div>
                         </div>
                         <div class="admin-stat-card">
                             <div class="admin-stat-icon">
                                 <i class="fa fa-envelope"></i>
                             </div>
-                            <div class="admin-stat-value" id="messages-count">...</div>
+                            <div class="admin-stat-value" id="messages-count">-</div>
                             <div class="admin-stat-label">Wiadomości</div>
                         </div>
                         <div class="admin-stat-card">
                             <div class="admin-stat-icon">
                                 <i class="fa fa-user-circle"></i>
                             </div>
-                            <div class="admin-stat-value" id="online-count">...</div>
+                            <div class="admin-stat-value" id="online-count">-</div>
                             <div class="admin-stat-label">Użytkownicy Online</div>
                         </div>
                     </div>
@@ -113,29 +113,41 @@
     <script>
         // Funkcja do ładowania statystyk
         function loadStats() {
-            // Użytkownicy
-            fetch('/api/users', {
+            // Użytkownicy - dodajemy timestamp i nagłówki no-cache
+            fetch('/api/users?' + new Date().getTime(), {
                 method: 'GET',
                 headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
                 },
                 credentials: 'same-origin'
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Status: ' + response.status);
+                }
+                return response.json();
+            })
             .then(users => {
-                document.getElementById('users-count').textContent = users.length;
-                const onlineCount = users.filter(user => user.is_online).length;
-                document.getElementById('online-count').textContent = onlineCount;
+                if (Array.isArray(users)) {
+                    document.getElementById('users-count').textContent = users.length;
+                    const onlineCount = users.filter(user => user && user.is_online).length;
+                    document.getElementById('online-count').textContent = onlineCount;
+                } else if (users && users.error) {
+                    console.error('API error:', users.error);
+                    document.getElementById('users-count').textContent = '-';
+                    document.getElementById('online-count').textContent = '-';
+                }
             })
             .catch(error => {
                 console.error('Błąd podczas pobierania użytkowników:', error);
-                document.getElementById('users-count').textContent = 'Błąd';
-                document.getElementById('online-count').textContent = 'Błąd';
+                document.getElementById('users-count').textContent = '-';
+                document.getElementById('online-count').textContent = '-';
             });
 
             // Sesje i wiadomości
-            // Te dane musiałbyś pobrać z innych endpointów API, które trzeba by dodać
-            // Na razie ustawiamy placeholder
             document.getElementById('sessions-count').textContent = '-';
             document.getElementById('messages-count').textContent = '-';
         }
