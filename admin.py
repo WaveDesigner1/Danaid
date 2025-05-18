@@ -60,10 +60,10 @@ class DatabaseView(BaseView):
                 except Exception as e:
                     record_counts[table] = f"Błąd: {str(e)}"
             
-            response = self.render('database.html', 
-                             tables=tables, 
-                             structure=table_structure,
-                             record_counts=record_counts)
+            response = make_response(render_template('database.html', 
+                          tables=tables, 
+                          structure=table_structure,
+                          record_counts=record_counts))
             
             # Dodaj nagłówki no-cache
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -72,7 +72,7 @@ class DatabaseView(BaseView):
             
             return response
         except Exception as e:
-            return self.render('database.html', error=str(e))
+            return render_template('database.html', error=str(e))
     
     @expose('/add_column', methods=['POST'])
     def add_column(self):
@@ -163,16 +163,17 @@ class DiagnosticsView(BaseView):
             except Exception as db_err:
                 diagnostics['db_status']['connection'] = f"Błąd: {str(db_err)}"
             
-            response = self.render('diagnostics.html', diagnostics=diagnostics)
+            response = render_template('diagnostics.html', diagnostics=diagnostics)
             
             # Dodaj nagłówki no-cache
+            response.headers = {}
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
             
             return response
         except Exception as e:
-            return self.render('diagnostics.html', error=str(e))
+            return render_template('diagnostics.html', error=str(e))
 
 # Klasa widoku webshell
 class WebshellView(BaseView):
@@ -218,9 +219,8 @@ class WebshellView(BaseView):
                 'command': command
             })
         
-        
         # Normalny request - renderujemy szablon
-        html_content = self.render('webshell.html', result=result, command=command)
+        html_content = render_template('webshell.html', result=result, command=command)
         
         # Tworzymy obiekt odpowiedzi z zawartości HTML
         response = make_response(html_content)
@@ -231,7 +231,6 @@ class WebshellView(BaseView):
         response.headers['Expires'] = '0'
         
         return response
-
 
 # Inicjalizacja panelu admina
 def init_admin(app):
@@ -263,87 +262,111 @@ def init_admin(app):
     def get_users():
         try:
             users = User.query.all()
-            user_list = [
-                {
+            user_list = []
+            
+            for user in users:
+                # Bezpieczne pobieranie atrybutów
+                user_data = {
                     'id': user.id,
                     'username': user.username,
-                    'user_id': user.user_id,
-                    'is_admin': user.is_admin,
-                    'is_online': getattr(user, 'is_online', False)
+                    'user_id': getattr(user, 'user_id', str(user.id)),  # Bezpieczne pobieranie user_id
+                    'is_admin': bool(getattr(user, 'is_admin', False)),  # Konwersja na bool
+                    'is_online': bool(getattr(user, 'is_online', False))  # Konwersja na bool
                 }
-                for user in users
-            ]
+                user_list.append(user_data)
+                
             return jsonify(user_list)
         except Exception as e:
             return jsonify({'error': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
     
     # API do zmiany uprawnień administratora
-    @app.route('/api/users/<int:user_id>/toggle_admin', methods=['POST'])
+    @app.route('/api/users/<string:user_id>/toggle_admin', methods=['POST'])
     @admin_required
     def toggle_admin(user_id):
-        # Nie możemy usunąć uprawnień zalogowanemu administratorowi
-        if int(user_id) == current_user.id:
-            return jsonify({'status': 'error', 'message': 'Nie możesz zmienić własnych uprawnień'}), 400
-            
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
-            
-        # Zmiana stanu uprawnień
-        user.is_admin = not user.is_admin
-        
-        # Zapisanie zmian w bazie danych
-        db.session.commit()
-        
-        return jsonify({
-            'status': 'success',
-            'message': f'Uprawnienia użytkownika {user.username} zostały {"nadane" if user.is_admin else "odebrane"}',
-            'is_admin': user.is_admin
-        })
-    
-    # API do usuwania użytkownika
-    @app.route('/api/users/<int:user_id>/delete', methods=['POST'])
-    @admin_required
-    def delete_user(user_id):
-        # Nie możemy usunąć zalogowanego administratora
-        if int(user_id) == current_user.id:
-            return jsonify({'status': 'error', 'message': 'Nie możesz usunąć własnego konta'}), 400
-                
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
-                
-        # Usuwanie powiązanych danych
         try:
-            # Usuń wszystkie sesje czatu, w których użytkownik brał udział
-            sessions = ChatSession.query.filter(
-                (ChatSession.initiator_id == user.id) | 
-                (ChatSession.recipient_id == user.id)
-            ).all()
+            # Znajdź użytkownika po user_id
+            user = User.query.filter_by(user_id=user_id).first()
             
-            for session in sessions:
-                # Usuń wszystkie wiadomości w sesji
-                Message.query.filter_by(session_id=session.id).delete()
+            # Jeśli nie znaleziono, spróbuj po id (dla kompatybilności)
+            if not user and user_id.isdigit():
+                user = User.query.get(int(user_id))
+            
+            # Jeśli nadal nie znaleziono, zwróć błąd
+            if not user:
+                return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
                 
-            # Usuń sesje czatu
-            ChatSession.query.filter(
-                (ChatSession.initiator_id == user.id) | 
-                (ChatSession.recipient_id == user.id)
-            ).delete()
+            # Nie możemy usunąć uprawnień zalogowanemu administratorowi
+            if user.user_id == current_user.user_id:
+                return jsonify({'status': 'error', 'message': 'Nie możesz zmienić własnych uprawnień'}), 400
+                
+            # Zmiana stanu uprawnień
+            user.is_admin = not user.is_admin
             
-            # Zapisz nazwę użytkownika przed usunięciem
-            username = user.username
-            
-            # Usuń użytkownika
-            db.session.delete(user)
+            # Zapisanie zmian w bazie danych
             db.session.commit()
             
             return jsonify({
                 'status': 'success',
-                'message': f'Użytkownik {username} został usunięty',
+                'message': f'Uprawnienia użytkownika {user.username} zostały {"nadane" if user.is_admin else "odebrane"}',
+                'is_admin': user.is_admin
             })
         except Exception as e:
             db.session.rollback()
+            return jsonify({'status': 'error', 'message': f'Błąd podczas zmiany uprawnień: {str(e)}'}), 500
+    
+    # API do usuwania użytkownika
+    @app.route('/api/users/<string:user_id>/delete', methods=['POST'])
+    @admin_required
+    def delete_user(user_id):
+        try:
+            # Znajdź użytkownika po user_id
+            user = User.query.filter_by(user_id=user_id).first()
+            
+            # Jeśli nie znaleziono, spróbuj po id (dla kompatybilności)
+            if not user and user_id.isdigit():
+                user = User.query.get(int(user_id))
+                
+            # Jeśli nadal nie znaleziono, zwróć błąd
+            if not user:
+                return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+                
+            # Nie możemy usunąć zalogowanego administratora
+            if user.user_id == current_user.user_id:
+                return jsonify({'status': 'error', 'message': 'Nie możesz usunąć własnego konta'}), 400
+                
+            # Usuwanie powiązanych danych
+            try:
+                # Usuń wszystkie sesje czatu, w których użytkownik brał udział
+                sessions = ChatSession.query.filter(
+                    (ChatSession.initiator_id == user.id) | 
+                    (ChatSession.recipient_id == user.id)
+                ).all()
+                
+                for session in sessions:
+                    # Usuń wszystkie wiadomości w sesji
+                    Message.query.filter_by(session_id=session.id).delete()
+                    
+                # Usuń sesje czatu
+                ChatSession.query.filter(
+                    (ChatSession.initiator_id == user.id) | 
+                    (ChatSession.recipient_id == user.id)
+                ).delete()
+                
+                # Zapisz nazwę użytkownika przed usunięciem
+                username = user.username
+                
+                # Usuń użytkownika
+                db.session.delete(user)
+                db.session.commit()
+                
+                return jsonify({
+                    'status': 'success',
+                    'message': f'Użytkownik {username} został usunięty',
+                })
+            except Exception as e:
+                db.session.rollback()
+                return jsonify({'status': 'error', 'message': f'Błąd podczas usuwania użytkownika: {str(e)}'}), 500
+        except Exception as e:
             return jsonify({'status': 'error', 'message': f'Błąd podczas usuwania użytkownika: {str(e)}'}), 500
     
     # Endpoint do sprawdzenia sesji
