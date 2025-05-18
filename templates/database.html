@@ -1,130 +1,166 @@
-{% extends 'base.html' %}
+html<!-- templates/database.html -->
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zarządzanie Bazą Danych - Admin Panel</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_panel.css') }}">
+</head>
+<body class="admin-panel">
+    <header class="admin-header">
+        <div class="admin-logo">Admin Panel</div>
+        <nav class="admin-nav">
+            <a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a>
+            <a href="{{ url_for('admin.index') }}"><i class="fa fa-cogs"></i> Pełny Panel</a>
+            <a href="{{ url_for('auth.logout') }}"><i class="fa fa-sign-out"></i> Wyloguj</a>
+        </nav>
+    </header>
 
-{% block content %}
-<div class="container">
-    <div class="row">
-        <div class="col-md-12">
-            <h2>Zarządzanie Bazą Danych</h2>
-            
-            {% if error %}
-            <div class="alert alert-danger">
-                <h4>Błąd!</h4>
-                <p>{{ error }}</p>
+    <div class="admin-container">
+        <aside class="admin-sidebar">
+            <div class="admin-menu">
+                <ul>
+                    <li><a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a></li>
+                    <li><a href="{{ url_for('user.index_view') }}"><i class="fa fa-users"></i> Użytkownicy</a></li>
+                    <li><a href="{{ url_for('chatsession.index_view') }}"><i class="fa fa-comments"></i> Sesje Czatu</a></li>
+                    <li><a href="{{ url_for('message.index_view') }}"><i class="fa fa-envelope"></i> Wiadomości</a></li>
+                    <li class="active"><a href="{{ url_for('db_admin.index') }}"><i class="fa fa-database"></i> Zarządzanie Bazą</a></li>
+                    <li><a href="{{ url_for('diagnostics.index') }}"><i class="fa fa-stethoscope"></i> Diagnostyka</a></li>
+                    <li><a href="{{ url_for('webshell.index') }}"><i class="fa fa-terminal"></i> Webshell</a></li>
+                </ul>
             </div>
-            {% endif %}
-            
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">
-                        {{ message }}
+        </aside>
+
+        <main class="admin-content">
+            <div class="admin-card">
+                <div class="admin-card-header">
+                    <h3><i class="fa fa-database"></i> Zarządzanie Bazą Danych</h3>
+                </div>
+                <div class="admin-card-body">
+                    {% if error %}
+                    <div class="alert alert-danger">
+                        <strong>Błąd:</strong> {{ error }}
                     </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-            
-            <div class="panel panel-primary">
-                <div class="panel-heading">
-                    <h3 class="panel-title">Dodaj nową kolumnę do tabeli</h3>
-                </div>
-                <div class="panel-body">
-                    <form method="post" action="{{ url_for('db_admin.add_column') }}" class="form-horizontal">
-                        <div class="form-group">
-                            <label class="col-sm-3 control-label">Tabela:</label>
-                            <div class="col-sm-9">
-                                <select name="table" class="form-control" required>
-                                    {% for table in tables %}
-                                    <option value="{{ table }}">{{ table }}</option>
-                                    {% endfor %}
-                                </select>
+                    {% endif %}
+
+                    <div class="admin-card">
+                        <div class="admin-card-header">
+                            <h3>Struktura Bazy Danych</h3>
+                        </div>
+                        <div class="admin-card-body">
+                            <div class="table-responsive">
+                                <table class="admin-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Tabela</th>
+                                            <th>Liczba rekordów</th>
+                                            <th>Akcje</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for table in tables %}
+                                        <tr>
+                                            <td>{{ table }}</td>
+                                            <td>{{ record_counts[table] }}</td>
+                                            <td>
+                                                <button class="admin-btn primary admin-btn-sm" onclick="showColumns('{{ table }}')">
+                                                    <i class="fa fa-columns"></i> Pokaż kolumny
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <tr id="columns-{{ table }}" style="display: none;">
+                                            <td colspan="3">
+                                                <div class="table-responsive">
+                                                    <table class="admin-table">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Nazwa kolumny</th>
+                                                                <th>Typ</th>
+                                                                <th>Nullable</th>
+                                                                <th>Default</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for column in structure[table] %}
+                                                            <tr>
+                                                                <td>{{ column.name }}</td>
+                                                                <td>{{ column.type }}</td>
+                                                                <td>{{ 'Tak' if column.nullable else 'Nie' }}</td>
+                                                                <td>{{ column.default if column.default is not none else '-' }}</td>
+                                                            </tr>
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label class="col-sm-3 control-label">Nazwa kolumny:</label>
-                            <div class="col-sm-9">
-                                <input type="text" name="column_name" class="form-control" required>
-                            </div>
+                    </div>
+
+                    <div class="admin-card">
+                        <div class="admin-card-header">
+                            <h3>Dodaj kolumnę</h3>
                         </div>
-                        <div class="form-group">
-                            <label class="col-sm-3 control-label">Typ danych:</label>
-                            <div class="col-sm-9">
-                                <select name="column_type" class="form-control" required>
-                                    <option value="INTEGER">INTEGER</option>
-                                    <option value="FLOAT">FLOAT</option>
-                                    <option value="TEXT">TEXT</option>
-                                    <option value="VARCHAR(255)">VARCHAR(255)</option>
-                                    <option value="BOOLEAN">BOOLEAN</option>
-                                    <option value="TIMESTAMP">TIMESTAMP</option>
-                                    <option value="DATE">DATE</option>
-                                    <option value="JSON">JSON</option>
-                                </select>
-                            </div>
+                        <div class="admin-card-body">
+                            <form action="{{ url_for('db_admin.add_column') }}" method="POST" class="admin-form">
+                                <div class="form-group">
+                                    <label for="table">Tabela:</label>
+                                    <select name="table" id="table" class="form-control" required>
+                                        <option value="">Wybierz tabelę</option>
+                                        {% for table in tables %}
+                                        <option value="{{ table }}">{{ table }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="column_name">Nazwa kolumny:</label>
+                                    <input type="text" name="column_name" id="column_name" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="column_type">Typ kolumny:</label>
+                                    <select name="column_type" id="column_type" class="form-control" required>
+                                        <option value="INTEGER">INTEGER</option>
+                                        <option value="TEXT">TEXT</option>
+                                        <option value="VARCHAR(100)">VARCHAR(100)</option>
+                                        <option value="BOOLEAN">BOOLEAN</option>
+                                        <option value="TIMESTAMP">TIMESTAMP</option>
+                                        <option value="FLOAT">FLOAT</option>
+                                        <option value="JSONB">JSONB</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="default_value">Wartość domyślna (opcjonalnie):</label>
+                                    <input type="text" name="default_value" id="default_value" class="form-control">
+                                </div>
+                                <button type="submit" class="admin-btn primary">
+                                    <i class="fa fa-plus"></i> Dodaj kolumnę
+                                </button>
+                            </form>
                         </div>
-                        <div class="form-group">
-                            <label class="col-sm-3 control-label">Wartość domyślna (opcjonalnie):</label>
-                            <div class="col-sm-9">
-                                <input type="text" name="default_value" class="form-control">
-                                <span class="help-block">Dla tekstu użyj pojedynczych cudzysłowów, np. 'wartość'. <br>Dla typów Boolean: TRUE / FALSE. <br>Dla daty/czasu: NOW() lub '2023-01-01'.</span>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <div class="col-sm-offset-3 col-sm-9">
-                                <button type="submit" class="btn btn-primary">Dodaj kolumnę</button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            
-            <div class="panel panel-info">
-                <div class="panel-heading">
-                    <h3 class="panel-title">Struktura Bazy Danych</h3>
-                </div>
-                <div class="panel-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-bordered">
-                            <thead>
-                                <tr>
-                                    <th>Tabela</th>
-                                    <th>Liczba rekordów</th>
-                                    <th>Kolumny</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for table in tables %}
-                                <tr>
-                                    <td>{{ table }}</td>
-                                    <td>{{ record_counts[table] }}</td>
-                                    <td>
-                                        <table class="table table-condensed">
-                                            <thead>
-                                                <tr>
-                                                    <th>Nazwa</th>
-                                                    <th>Typ</th>
-                                                    <th>Nullable</th>
-                                                    <th>Default</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {% for column in structure[table] %}
-                                                <tr>
-                                                    <td>{{ column.name }}</td>
-                                                    <td>{{ column.type }}</td>
-                                                    <td>{{ 'Tak' if column.nullable else 'Nie' }}</td>
-                                                    <td>{{ column.default or '-' }}</td>
-                                                </tr>
-                                                {% endfor %}
-                                            </tbody>
-                                        </table>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
                     </div>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
-</div>
-{% endblock %}
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+    <script>
+        function showColumns(tableName) {
+            const columnsRow = document.getElementById(`columns-${tableName}`);
+            if (columnsRow.style.display === 'none') {
+                columnsRow.style.display = 'table-row';
+            } else {
+                columnsRow.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
