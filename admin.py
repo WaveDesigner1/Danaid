@@ -185,176 +185,135 @@ def init_admin(app):
     @admin_required
     def get_admin_stats():
         try:
-            users_count = User.query.count()
-            sessions_count = ChatSession.query.count()
-            messages_count = Message.query.count()
-            online_users_count = User.query.filter_by(is_online=True).count()
+            # Pobierz dane bezpośrednio przez SQL dla większej niezawodności
+            stats_query = """
+            SELECT 
+                (SELECT COUNT(*) FROM "user") as users_count,
+                (SELECT COUNT(*) FROM "chat_session") as sessions_count,
+                (SELECT COUNT(*) FROM "message") as messages_count,
+                (SELECT COUNT(*) FROM "user" WHERE is_online = TRUE) as online_users_count
+            """
+            
+            result = db.session.execute(text(stats_query)).fetchone()
             
             return jsonify({
                 'status': 'success',
                 'data': {
-                    'users_count': users_count,
-                    'sessions_count': sessions_count,
-                    'messages_count': messages_count,
-                    'online_users_count': online_users_count,
+                    'users_count': result[0],
+                    'sessions_count': result[1],
+                    'messages_count': result[2],
+                    'online_users_count': result[3],
                     'timestamp': int(time.time())
                 }
             })
         except Exception as e:
             return jsonify({'status': 'error', 'message': f'Nie można pobrać statystyk: {str(e)}'}), 500
     
-    # API użytkowników
+    # API użytkowników - pobieranie bezpośrednio z PostgreSQL
     @app.route('/api/users')
     @admin_required
     def get_users():
         try:
-            users = User.query.all()
+            # Pobierz dane bezpośrednio z bazy przez SQL zamiast ORM
+            users_query = 'SELECT id, username, user_id, is_admin, is_online FROM "user"'
+            raw_users = db.session.execute(text(users_query)).fetchall()
+            
             user_list = []
             
-            for user in users:
-                try:
-                    user_data = {
-                        'id': user.id,
-                        'username': user.username,
-                        'user_id': str(getattr(user, 'user_id', str(user.id))),
-                        'is_admin': bool(getattr(user, 'is_admin', False)),
-                        'is_online': bool(getattr(user, 'is_online', False))
-                    }
-                    user_list.append(user_data)
-                except Exception:
-                    pass
+            for user in raw_users:
+                user_data = {
+                    'id': user[0],
+                    'username': user[1],
+                    'user_id': str(user[2]),
+                    'is_admin': bool(user[3]),
+                    'is_online': bool(user[4])
+                }
+                user_list.append(user_data)
             
             return jsonify({'status': 'success', 'users': user_list})
         except Exception as e:
             return jsonify({'status': 'error', 'message': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
     
-    # API zmiany uprawnień
+    # API zmiany uprawnień - prosta wersja bez zbędnych funkcji
     @app.route('/api/users/<string:user_id>/toggle_admin', methods=['POST'])
     @admin_required
     def toggle_admin(user_id):
         try:
-            # Znajdź użytkownika
-            user = User.query.filter_by(user_id=user_id).first()
-            if not user and user_id.isdigit(): user = User.query.get(int(user_id))
-            if not user: return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+            # Znajdź użytkownika przez SQL
+            user_query = 'SELECT id, username, user_id, is_admin FROM "user" WHERE user_id = :user_id'
+            user = db.session.execute(text(user_query), {'user_id': user_id}).fetchone()
             
-            # Nie możemy zmienić uprawnień zalogowanego admina
-            if user.user_id == current_user.user_id:
+            if not user:
+                return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+            
+            # Nie możemy zmienić własnych uprawnień
+            if str(user[2]) == current_user.user_id:
                 return jsonify({'status': 'error', 'message': 'Nie możesz zmienić własnych uprawnień'}), 400
             
-            # Zmień uprawnienia
-            current_admin_state = bool(user.is_admin)
-            user.is_admin = not current_admin_state
-            db.session.commit()
+            # Zmień uprawnienia administratora (odwróć obecny stan)
+            current_admin_state = bool(user[3])
+            new_admin_state = not current_admin_state
             
-            # Sprawdź, czy zmiany zostały zapisane
-            db.session.refresh(user)
-            verified_state = bool(user.is_admin)
+            # Aktualizuj bezpośrednio przez SQL
+            update_query = 'UPDATE "user" SET is_admin = :new_state WHERE user_id = :user_id'
+            db.session.execute(text(update_query), {'new_state': new_admin_state, 'user_id': user_id})
+            db.session.commit()
             
             return jsonify({
                 'status': 'success',
-                'message': f'Uprawnienia użytkownika {user.username} zostały {"nadane" if verified_state else "odebrane"}',
-                'is_admin': verified_state
+                'message': f'Uprawnienia użytkownika {user[1]} zostały {"nadane" if new_admin_state else "odebrane"}',
+                'is_admin': new_admin_state
             })
         except Exception as e:
             db.session.rollback()
             return jsonify({'status': 'error', 'message': f'Błąd podczas zmiany uprawnień: {str(e)}'}), 500
-    
-    # API naprawy uprawnień
-    @app.route('/api/users/fix_admin/<string:user_id>', methods=['POST'])
-    @admin_required
-    def fix_admin(user_id):
-        try:
-            # Znajdź użytkownika
-            user = User.query.filter_by(user_id=user_id).first()
-            if not user and user_id.isdigit(): user = User.query.get(int(user_id))
-            if not user: return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
-            
-            # Ustaw uprawnienia admina
-            user.is_admin = True
-            db.session.commit()
-            
-            return jsonify({
-                'status': 'success',
-                'message': f'Uprawnienia administratora przywrócone dla użytkownika {user.username}',
-                'user': {'username': user.username, 'is_admin': bool(user.is_admin)}
-            })
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({'status': 'error', 'message': f'Błąd podczas naprawy uprawnień: {str(e)}'}), 500
-    
-    # Naprawa wszystkich uprawnień admin
-    @app.route('/admin/repair_all_admin_permissions')
-    @admin_required
-    def repair_all_admin_permissions():
-        try:
-            all_users = User.query.all()
-            admins = [user for user in all_users if getattr(user, 'is_admin', False)]
-            
-            for user in admins: user.is_admin = True
-            db.session.commit()
-            
-            flash(f'Naprawiono uprawnienia dla {len(admins)} użytkowników!', 'success')
-            return redirect(url_for('user.index_view'))
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Błąd podczas naprawy uprawnień: {str(e)}', 'error')
-            return redirect(url_for('admin.index'))
-    
-    # Naprawa uprawnień pojedynczego użytkownika
-    @app.route('/admin/repair_permissions/<int:user_id>')
-    @admin_required
-    def repair_permissions(user_id):
-        try:
-            user = User.query.get(user_id)
-            if not user:
-                flash('Użytkownik nie istnieje', 'error')
-                return redirect(url_for('admin.index'))
-            
-            user.is_admin = True
-            db.session.commit()
-            
-            flash(f'Uprawnienia administratora dla użytkownika {user.username} zostały naprawione!', 'success')
-            return redirect(url_for('user.index_view'))
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Błąd podczas naprawy uprawnień: {str(e)}', 'error')
-            return redirect(url_for('admin.index'))
     
     # API usuwania użytkownika
     @app.route('/api/users/<string:user_id>/delete', methods=['POST'])
     @admin_required
     def delete_user(user_id):
         try:
-            # Znajdź użytkownika
-            user = User.query.filter_by(user_id=user_id).first()
-            if not user and user_id.isdigit(): user = User.query.get(int(user_id))
-            if not user: return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+            # Znajdź użytkownika przez SQL
+            user_query = 'SELECT id, username, user_id FROM "user" WHERE user_id = :user_id'
+            user = db.session.execute(text(user_query), {'user_id': user_id}).fetchone()
+            
+            if not user:
+                return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
             
             # Nie możemy usunąć własnego konta
-            if user.user_id == current_user.user_id:
+            if str(user[2]) == current_user.user_id:
                 return jsonify({'status': 'error', 'message': 'Nie możesz usunąć własnego konta'}), 400
             
-            # Usuń powiązane dane
+            # Usuń powiązane dane w jednej transakcji
+            user_id_value = user[0]  # ID użytkownika w bazie (klucz główny)
+            username = user[1]
+            
             try:
-                # Usuń sesje czatu i wiadomości
-                sessions = ChatSession.query.filter(
-                    (ChatSession.initiator_id == user.id) | (ChatSession.recipient_id == user.id)
-                ).all()
+                # Usuń wiadomości powiązane z sesjami użytkownika
+                db.session.execute(text("""
+                    DELETE FROM "message" 
+                    WHERE session_id IN (
+                        SELECT id FROM "chat_session" 
+                        WHERE initiator_id = :user_id OR recipient_id = :user_id
+                    )
+                """), {'user_id': user_id_value})
                 
-                for session in sessions:
-                    Message.query.filter_by(session_id=session.id).delete()
+                # Usuń sesje czatu użytkownika
+                db.session.execute(text("""
+                    DELETE FROM "chat_session" 
+                    WHERE initiator_id = :user_id OR recipient_id = :user_id
+                """), {'user_id': user_id_value})
                 
-                ChatSession.query.filter(
-                    (ChatSession.initiator_id == user.id) | (ChatSession.recipient_id == user.id)
-                ).delete()
+                # Usuń użytkownika
+                db.session.execute(text('DELETE FROM "user" WHERE id = :user_id'), 
+                                   {'user_id': user_id_value})
                 
-                # Zapisz nazwę użytkownika przed usunięciem
-                username = user.username
-                db.session.delete(user)
                 db.session.commit()
                 
-                return jsonify({'status': 'success', 'message': f'Użytkownik {username} został usunięty'})
+                return jsonify({
+                    'status': 'success',
+                    'message': f'Użytkownik {username} został usunięty'
+                })
             except Exception as e:
                 db.session.rollback()
                 return jsonify({'status': 'error', 'message': f'Błąd podczas usuwania użytkownika: {str(e)}'}), 500
@@ -379,7 +338,11 @@ def init_admin(app):
     def silent_logout():
         if current_user.is_authenticated:
             try:
-                current_user.is_online = False
+                # Aktualizacja statusu bezpośrednio w bazie
+                db.session.execute(text("""
+                    UPDATE "user" SET is_online = FALSE 
+                    WHERE user_id = :user_id
+                """), {'user_id': current_user.user_id})
                 db.session.commit()
             except Exception:
                 db.session.rollback()
