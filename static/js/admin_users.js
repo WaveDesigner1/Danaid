@@ -1,6 +1,6 @@
 /**
  * Admin Users - skrypt do zarządzania użytkownikami w panelu administratora
- * Wersja z rozszerzoną diagnostyką
+ * Wersja z rozszerzoną diagnostyką i poprawioną obsługą uprawnień
  */
 
 // Inicjalizacja sesji administracyjnej
@@ -16,6 +16,17 @@ document.addEventListener('DOMContentLoaded', function() {
         refreshButton.addEventListener('click', function() {
             loadUsers();
             showNotification('Odświeżanie listy użytkowników...', 'info');
+        });
+    }
+    
+    // Obsługa przycisku naprawy uprawnień w modalu
+    const fixUserAdminButton = document.getElementById('fix-user-admin');
+    if (fixUserAdminButton) {
+        fixUserAdminButton.addEventListener('click', function() {
+            const userId = this.getAttribute('data-user-id');
+            if (userId) {
+                fixAdminPermission(userId);
+            }
         });
     }
     
@@ -103,21 +114,7 @@ function loadUsers() {
     })
     .then(result => {
         console.log("Sparsowane dane:", result);
-        
-        // Wyświetl surowy JSON w tabeli (tylko dla celów diagnostycznych)
-        usersTable.innerHTML = `<tr><td colspan="6" class="text-center">
-            <div style="text-align: left; max-height: 200px; overflow-y: auto; background-color: #333; padding: 10px; border-radius: 4px;">
-                <pre style="color: white;">${JSON.stringify(result, null, 2)}</pre>
-            </div>
-            <button id="continue-parsing" class="admin-btn primary" style="margin-top: 10px;">
-                Przetwórz dane
-            </button>
-        </td></tr>`;
-        
-        // Dodaj przycisk kontynuacji parsowania
-        document.getElementById('continue-parsing').addEventListener('click', function() {
-            processUsers(result, usersTable);
-        });
+        processUsers(result, usersTable);
     })
     .catch(error => {
         console.error('Błąd podczas pobierania użytkowników:', error);
@@ -127,14 +124,11 @@ function loadUsers() {
 }
 
 /**
- * Funkcja do przetwarzania danych użytkowników (oddzielona dla lepszej diagnostyki)
+ * Funkcja do przetwarzania danych użytkowników
  */
 function processUsers(result, usersTable) {
     try {
         console.log("Przetwarzanie danych użytkowników...");
-        
-        // Pokaż loader podczas przetwarzania
-        usersTable.innerHTML = '<tr><td colspan="6" class="text-center"><i class="fa fa-spinner fa-spin"></i> Przetwarzanie danych...</td></tr>';
         
         // Sprawdź wszystkie możliwe formaty danych
         let users = [];
@@ -220,12 +214,20 @@ function processUsers(result, usersTable) {
                 <td class="user-actions">
                     ${isCurrentUser ? 
                     '<em>Aktualny użytkownik</em>' : 
-                    `<button class="admin-btn ${userData.is_admin ? 'warning' : 'success'} admin-btn-sm toggle-admin-btn" data-user-id="${userData.user_id}" data-username="${userData.username}">
-                        ${userData.is_admin ? '<i class="fa fa-times"></i> Odbierz uprawnienia' : '<i class="fa fa-check"></i> Nadaj uprawnienia'}
-                     </button>
-                     <button class="admin-btn danger admin-btn-sm delete-user-btn" data-user-id="${userData.user_id}" data-username="${userData.username}">
-                        <i class="fa fa-trash"></i> Usuń
-                     </button>`}
+                    `<div class="btn-group">
+                        <button class="admin-btn ${userData.is_admin ? 'warning' : 'success'} admin-btn-sm toggle-admin-btn" data-user-id="${userData.user_id}" data-username="${userData.username}" title="${userData.is_admin ? 'Odbierz uprawnienia' : 'Nadaj uprawnienia'}">
+                            <i class="fa fa-${userData.is_admin ? 'times' : 'check'}"></i>
+                        </button>
+                        <button class="admin-btn info admin-btn-sm show-user-data-btn" data-user-id="${userData.user_id}" data-username="${userData.username}" title="Szczegóły danych">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        <button class="admin-btn primary admin-btn-sm fix-admin-btn" data-user-id="${userData.user_id}" data-username="${userData.username}" title="Napraw uprawnienia">
+                            <i class="fa fa-wrench"></i>
+                        </button>
+                        <button class="admin-btn danger admin-btn-sm delete-user-btn" data-user-id="${userData.user_id}" data-username="${userData.username}" title="Usuń użytkownika">
+                            <i class="fa fa-trash"></i>
+                        </button>
+                    </div>`}
                 </td>
             `;
             
@@ -264,6 +266,125 @@ function attachButtonHandlers() {
             deleteUser(userId, username);
         });
     });
+    
+    // Przyciski pokazujące dane użytkownika
+    document.querySelectorAll('.show-user-data-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const userId = this.getAttribute('data-user-id');
+            const username = this.getAttribute('data-username');
+            
+            showUserData(userId, username);
+        });
+    });
+    
+    // Przyciski naprawiające uprawnienia administratora
+    document.querySelectorAll('.fix-admin-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const userId = this.getAttribute('data-user-id');
+            const username = this.getAttribute('data-username');
+            
+            fixAdminPermission(userId, username);
+        });
+    });
+}
+
+/**
+ * Funkcja do pokazywania danych użytkownika w modalu
+ */
+function showUserData(userId, username) {
+    if (!userId) {
+        console.error('Brak ID użytkownika');
+        showNotification('Błąd: Brak ID użytkownika', 'error');
+        return;
+    }
+    
+    // Znajdź wiersz z danymi użytkownika
+    const userRow = document.querySelector(`.user-row[data-user-id="${userId}"]`);
+    if (!userRow) {
+        console.error('Nie znaleziono wiersza użytkownika');
+        showNotification('Błąd: Nie znaleziono danych użytkownika', 'error');
+        return;
+    }
+    
+    // Zbierz dane z wiersza
+    const userData = {
+        id: userRow.cells[0].textContent,
+        username: userRow.cells[1].textContent,
+        user_id: userId,
+        is_online: userRow.cells[3].querySelector('.admin-badge').textContent === 'Online',
+        is_admin: userRow.cells[4].querySelector('.admin-badge').textContent === 'Administrator'
+    };
+    
+    // Wyświetl dane w modalu
+    const modalTitle = document.getElementById('userDataModalLabel');
+    const userDataDetails = document.getElementById('user-data-details');
+    const fixButton = document.getElementById('fix-user-admin');
+    
+    if (modalTitle && userDataDetails && fixButton) {
+        modalTitle.textContent = `Dane użytkownika: ${username}`;
+        userDataDetails.innerHTML = `<pre>${JSON.stringify(userData, null, 2)}</pre>`;
+        fixButton.setAttribute('data-user-id', userId);
+        
+        // Pokaż modal
+        $('#userDataModal').modal('show');
+    } else {
+        console.error('Nie znaleziono elementów modalu');
+        showNotification('Błąd: Nie można wyświetlić danych', 'error');
+    }
+}
+
+/**
+ * Funkcja do naprawiania uprawnień administratora
+ */
+function fixAdminPermission(userId, username) {
+    if (!userId) {
+        console.error('Brak ID użytkownika');
+        showNotification('Błąd: Brak ID użytkownika', 'error');
+        return;
+    }
+    
+    const confirmMessage = username 
+        ? `Czy na pewno chcesz naprawić uprawnienia administratora dla użytkownika "${username}"?`
+        : 'Czy na pewno chcesz naprawić uprawnienia administratora dla tego użytkownika?';
+    
+    if (confirm(confirmMessage)) {
+        fetch(`/api/users/fix_admin/${userId}`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            console.log("Odpowiedź naprawy uprawnień status:", response.status);
+            if (!response.ok) {
+                throw new Error('Status: ' + response.status);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("Odpowiedź naprawy uprawnień:", data);
+            if (data.status === 'success') {
+                showNotification(data.message, 'success');
+                
+                // Zamknij modal jeśli jest otwarty
+                if ($('#userDataModal').hasClass('in')) {
+                    $('#userDataModal').modal('hide');
+                }
+                
+                // Odśwież listę użytkowników
+                loadUsers();
+            } else {
+                showNotification(`Błąd: ${data.message || 'Nieznany błąd'}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Błąd podczas naprawy uprawnień:', error);
+            showNotification('Wystąpił błąd podczas naprawy uprawnień: ' + error.message, 'error');
+        });
+    }
 }
 
 /**
@@ -279,12 +400,18 @@ function toggleAdmin(userId, username) {
     }
     
     if (confirm(`Czy na pewno chcesz zmienić uprawnienia administratora dla użytkownika "${username}"?`)) {
-        fetch(`/api/users/${userId}/toggle_admin`, {
+        // Dodaj wersję i timestamp do URL, aby uniknąć problemów z cache
+        const timestamp = new Date().getTime();
+        const url = `/api/users/${userId}/toggle_admin?v=2&t=${timestamp}`;
+        
+        fetch(url, {
             method: 'POST',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
                 'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache, no-store, must-revalidate'
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
             },
             credentials: 'same-origin'
         })
