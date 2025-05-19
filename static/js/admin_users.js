@@ -99,16 +99,18 @@ function loadUsers() {
     .then(result => {
         console.log("Received data:", result);
         
-        // Sprawdź, czy mamy właściwy format odpowiedzi
+        // Sprawdź, czy otrzymaliśmy status błędu
         if (result.status === 'error') {
             throw new Error(result.message || 'Nieznany błąd API');
         }
-        
-        if (result.status !== 'success' || !result.users) {
-            throw new Error('Nieprawidłowy format danych z API: ' + JSON.stringify(result));
+
+        // Sprawdź, czy mamy poprawny format danych
+        if (result.status !== 'success') {
+            throw new Error('Nieprawidłowy format odpowiedzi: brak statusu "success"');
         }
-        
-        const users = result.users;
+
+        // Pobierz listę użytkowników, jeśli istnieje
+        const users = result.users || [];
         
         // Jeśli lista jest pusta
         if (users.length === 0) {
