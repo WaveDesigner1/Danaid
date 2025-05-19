@@ -130,7 +130,7 @@
         const addFriendBtn = document.getElementById('add-friend-btn');
         const closeBtn = modal.querySelector('.search-close');
         const sendRequestBtn = document.getElementById('send-friend-request-btn');
-        const friendIdInput = document.getElementById('friend-user-id');
+        const friendIdInput = document.getElementById('friend-username');
         const statusDiv = document.getElementById('friend-request-status');
         
         // Otwórz modal po kliknięciu przycisku
@@ -155,10 +155,10 @@
         
         // Obsługa wysyłania zaproszenia
         sendRequestBtn.addEventListener('click', function() {
-            const friendId = friendIdInput.value.trim();
+           const friendUsername = friendIdInput.value.trim();
             
             if (!friendId) {
-                statusDiv.textContent = 'Wprowadź ID użytkownika';
+                statusDiv.textContent = 'Wprowadź nazwę użytkownika';
                 statusDiv.className = 'search-error';
                 statusDiv.style.display = 'block';
                 return;
@@ -170,7 +170,7 @@
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ recipient_id: friendId })
+                body: JSON.stringify({ username: friendUsername })
             })
             .then(response => response.json())
             .then(data => {
