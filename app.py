@@ -16,6 +16,8 @@ from admin import init_admin
 from auth import auth_bp
 from chat import chat_bp
 from chat_api import chat_api
+from database_migrations import apply_migrations as apply_e2ee_migrations
+from secure_messaging_server import initialize_app as initialize_secure_messaging
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
@@ -101,10 +103,11 @@ def create_app():
     
     # Inicjalizacja panelu admina
     init_admin(app)
-    
+    # Inicjalizacja obsługi bezpiecznych wiadomości
+    initialize_secure_messaging(app)
     # Uruchom migracje bazy danych
     apply_migrations(app)
-    
+    apply_e2ee_migrations(app)
     # Endpoint diagnostyczny do sprawdzenia połączenia z bazą danych
     @app.route('/db-debug')
     def db_debug():
