@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 from datetime import datetime
 import logging
@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 # Create blueprint
 secure_messaging = Blueprint('secure_messaging', __name__)
 
-# Import models
-from app.models import User, FriendRequest, Message, db
+# Import models - nie importujemy pełnych modeli, tylko używamy tych z głównej aplikacji
+# Modele FriendRequest i Message muszą być dodane do models.py jeśli jeszcze ich tam nie ma
 
 @secure_messaging.route('/api/friend_requests', methods=['POST'])
 @login_required
@@ -27,6 +27,7 @@ def send_friend_request():
     recipient_id = data['recipient_id']
     
     # Check if recipient exists
+    from models import User, FriendRequest, db
     recipient = User.query.filter_by(user_id=recipient_id).first()
     if not recipient:
         return jsonify({
@@ -83,6 +84,7 @@ def send_friend_request():
 @login_required
 def get_pending_requests():
     """Get all pending friend requests for current user"""
+    from models import User, FriendRequest
     pending_requests = FriendRequest.query.filter_by(
         recipient_id=current_user.id,
         status='pending'
@@ -108,6 +110,7 @@ def get_pending_requests():
 def accept_friend_request(request_id):
     """Accept a friend request"""
     # Find the friend request
+    from models import FriendRequest, db
     friend_request = FriendRequest.query.filter_by(id=request_id, recipient_id=current_user.id).first()
     
     # Check if request exists
@@ -143,6 +146,7 @@ def accept_friend_request(request_id):
 def reject_friend_request(request_id):
     """Reject a friend request"""
     # Find the friend request
+    from models import FriendRequest, db
     friend_request = FriendRequest.query.filter_by(id=request_id, recipient_id=current_user.id).first()
     
     # Check if request exists
@@ -174,6 +178,7 @@ def reject_friend_request(request_id):
 def get_online_users():
     """Get list of online users"""
     # Query users with is_online = True
+    from models import User
     online_users = User.query.filter(
         User.is_online == True,
         User.id != current_user.id
@@ -225,6 +230,7 @@ def send_message(recipient_id):
         }), 400
     
     # Check if recipient exists
+    from models import User, Message, db
     recipient = User.query.filter_by(user_id=recipient_id).first()
     if not recipient:
         return jsonify({
@@ -264,6 +270,7 @@ def send_message(recipient_id):
 def get_messages(user_id):
     """Get conversation with another user"""
     # Check if user exists
+    from models import User, Message, db
     other_user = User.query.filter_by(user_id=user_id).first()
     if not other_user:
         return jsonify({
