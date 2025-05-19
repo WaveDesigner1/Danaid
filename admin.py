@@ -24,47 +24,7 @@ class SecureModelView(ModelView):
     def inaccessible_callback(self, name, **kwargs):
         return redirect(url_for('auth.index', next=request.url))
 
-# Użytkownicy - usunięto wszystkie automatyczne konwersje typów
-class UserModelView(SecureModelView):
-    column_exclude_list = ['password_hash']
-    form_excluded_columns = ['password_hash', 'sessions_initiated', 'sessions_received', 'messages']
-    column_filters = ['is_admin', 'is_online']
-    column_formatters = {
-        'is_admin': lambda v, c, m, p: 'Tak' if m.is_admin else 'Nie',
-        'is_online': lambda v, c, m, p: 'Tak' if m.is_online else 'Nie',
-    }
-
-# Widok bazy danych
-class DatabaseView(BaseView):
-    def is_accessible(self):
-        return current_user.is_authenticated and current_user.is_admin
-    
-    def inaccessible_callback(self, name, **kwargs):
-        return redirect(url_for('auth.index', next=request.url))
-    
-    @expose('/')
-    def index(self):
-        try:
-            inspector = inspect(db.engine)
-            tables = inspector.get_table_names()
-            
-            table_structure = {}
-            record_counts = {}
-            
-            for table in tables:
-                table_structure[table] = inspector.get_columns(table)
-                try: record_counts[table] = db.session.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
-                except Exception as e: record_counts[table] = f"Błąd: {str(e)}"
-            
-            response = make_response(render_template('database.html', 
-                          tables=tables, structure=table_structure, record_counts=record_counts))
-            
-            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-            return response
-        except Exception as e:
-            return render_template('database.html', error=str(e))
-
-# Diagnostyka
+# Klasa widoku diagnostyki
 class DiagnosticsView(BaseView):
     def is_accessible(self): return current_user.is_authenticated and current_user.is_admin
     def inaccessible_callback(self, name, **kwargs): return redirect(url_for('auth.index', next=request.url))
@@ -108,7 +68,7 @@ class DiagnosticsView(BaseView):
         except Exception as e:
             return render_template('diagnostics.html', error=str(e))
 
-# Webshell
+# Klasa widoku webshell
 class WebshellView(BaseView):
     def is_accessible(self): return current_user.is_authenticated and current_user.is_admin
     def inaccessible_callback(self, name, **kwargs): return redirect(url_for('auth.index', next=request.url))
@@ -143,15 +103,11 @@ class WebshellView(BaseView):
 def init_admin(app):
     admin = Admin(app, name='Admin Panel', template_mode='bootstrap3', url='/flask_admin')
     
-    # Dodaj widoki
-    admin.add_view(UserModelView(User, db.session, endpoint='user', name='Użytkownicy'))
-    admin.add_view(SecureModelView(ChatSession, db.session, endpoint='chatsession', name='Sesje Czatu'))
-    admin.add_view(SecureModelView(Message, db.session, endpoint='message', name='Wiadomości'))
-    admin.add_view(DatabaseView(name='Zarządzanie bazą danych', endpoint='db_admin'))
+    # Dodaj tylko niezbędne widoki
     admin.add_view(DiagnosticsView(name='Diagnostyka', endpoint='diagnostics'))
     admin.add_view(WebshellView(name='Webshell', endpoint='webshell'))
     
-    # Panel administracyjny
+    # Panel administracyjny z uproszczonym interfejsem
     @app.route('/admin_dashboard')
     @admin_required
     def admin_panel():
@@ -186,35 +142,6 @@ def init_admin(app):
             })
         except Exception as e:
             return jsonify({'status': 'error', 'message': f'Nie można pobrać statystyk: {str(e)}'}), 500
-    
-    # API użytkowników - tylko odczyt bez konwersji
-    @app.route('/api/users')
-    @admin_required
-    def get_users():
-        try:
-            # Pobierz dane bezpośrednio z bazy bez konwersji typów
-            users_query = 'SELECT * FROM "user"'
-            raw_users = db.session.execute(text(users_query)).fetchall()
-            
-            user_list = []
-            
-            for user in raw_users:
-                # Mapowanie kolumn na indeksy
-                column_map = {col: idx for idx, col in enumerate(user._mapping.keys())}
-                
-                # Pobierz wartości dokładnie takie jakie są w bazie, bez konwersji
-                user_data = {
-                    'id': str(user[column_map['id']]),
-                    'username': user[column_map['username']],
-                    'user_id': str(user[column_map['user_id']]),
-                    'is_admin': user[column_map['is_admin']],  # Bez konwersji
-                    'is_online': user[column_map['is_online']]  # Bez konwersji
-                }
-                user_list.append(user_data)
-            
-            return jsonify({'status': 'success', 'users': user_list})
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
     
     # Sprawdzenie sesji
     @app.route('/check_session')
