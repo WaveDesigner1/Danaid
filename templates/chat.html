@@ -51,6 +51,8 @@
     <div id="main-container">
         <div id="friends">
             <h3>Konwersacje i Znajomi</h3>
+            <!-- Dodany przycisk "Dodaj znajomego" -->
+            <button id="add-friend-btn" class="action-btn">Dodaj znajomego</button>
             <ul id="friend-list">
                 <!-- tutaj będą znajomi i sesje czatu -->
             </ul>
@@ -100,5 +102,104 @@
             <button class="notification-close">&times;</button>
         </div>
     </template>
+
+    <!-- Modal do dodawania znajomych -->
+    <div id="add-friend-modal" class="friend-search-panel" style="display: none;">
+        <div class="search-header">
+            <input type="text" id="friend-user-id" placeholder="Wprowadź 6-cyfrowe ID znajomego">
+            <button class="search-close">&times;</button>
+        </div>
+        <div class="search-results">
+            <div id="friend-request-form">
+                <div class="search-result-item">
+                    <div class="result-info">
+                        <div class="result-message">Wprowadź ID użytkownika, którego chcesz dodać do znajomych</div>
+                    </div>
+                    <button id="send-friend-request-btn" class="result-action-btn">Wyślij zaproszenie</button>
+                </div>
+                <div id="friend-request-status" class="search-no-results" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript dla modala dodawania znajomych -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Pobierz elementy modala
+        const modal = document.getElementById('add-friend-modal');
+        const addFriendBtn = document.getElementById('add-friend-btn');
+        const closeBtn = modal.querySelector('.search-close');
+        const sendRequestBtn = document.getElementById('send-friend-request-btn');
+        const friendIdInput = document.getElementById('friend-user-id');
+        const statusDiv = document.getElementById('friend-request-status');
+        
+        // Otwórz modal po kliknięciu przycisku
+        addFriendBtn.addEventListener('click', function() {
+            modal.style.display = 'block';
+            friendIdInput.value = '';
+            statusDiv.style.display = 'none';
+            statusDiv.className = 'search-no-results';
+        });
+        
+        // Zamknij modal po kliknięciu na X
+        closeBtn.addEventListener('click', function() {
+            modal.style.display = 'none';
+        });
+        
+        // Zamknij modal po kliknięciu poza nim
+        window.addEventListener('click', function(event) {
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        });
+        
+        // Obsługa wysyłania zaproszenia
+        sendRequestBtn.addEventListener('click', function() {
+            const friendId = friendIdInput.value.trim();
+            
+            if (!friendId) {
+                statusDiv.textContent = 'Wprowadź ID użytkownika';
+                statusDiv.className = 'search-error';
+                statusDiv.style.display = 'block';
+                return;
+            }
+            
+            // Wyślij zapytanie do API
+            fetch('/api/friend_requests', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ recipient_id: friendId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusDiv.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
+                    statusDiv.className = 'search-no-results';
+                    
+                    // Wyczyść pole wprowadzania
+                    friendIdInput.value = '';
+                    
+                    // Zamknij modal po 3 sekundach
+                    setTimeout(function() {
+                        modal.style.display = 'none';
+                    }, 3000);
+                } else {
+                    statusDiv.textContent = data.message || 'Wystąpił błąd';
+                    statusDiv.className = 'search-error';
+                }
+                
+                statusDiv.style.display = 'block';
+            })
+            .catch(error => {
+                console.error('Błąd:', error);
+                statusDiv.textContent = 'Wystąpił błąd sieciowy';
+                statusDiv.className = 'search-error';
+                statusDiv.style.display = 'block';
+            });
+        });
+    });
+    </script>
 </body>
 </html>
