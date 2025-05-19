@@ -1,4 +1,4 @@
-python"""
+"""
 Secure Messaging Server Module
 
 Ten moduł obsługuje bezpieczną komunikację między użytkownikami z szyfrowaniem end-to-end.
@@ -253,6 +253,7 @@ def reject_friend_request(request_id):
         'status': 'success',
         'message': 'Zaproszenie odrzucone'
     })
+
 @secure_messaging.route('/api/online_users', methods=['GET'])
 @login_required
 def get_online_users():
