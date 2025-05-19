@@ -5,30 +5,32 @@
     <title>Czat szyfrowany</title>
     
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chat_style.css') }}">
-    <script src="{{ url_for('static', filename='js/session_manager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/E2EEProtocol.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/SecureSessionManager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ChatInterface.js') }}"></script>
 </head>
 <body>
     <!-- Skrypt sprawdzania sesji -->
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-    // Sprawdź, czy jesteśmy na stronie, która wymaga logowania
-    const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
-    
-    if (!isLoginPage) {
-        // Sprawdź, czy mamy informację o zalogowaniu w localStorage lub sessionStorage
-        const isLoggedIn = (
-            sessionStorage.getItem('isLoggedIn') === 'true' || 
-            localStorage.getItem('isLoggedIn') === 'true'
-        );
+        // Sprawdź, czy jesteśmy na stronie, która wymaga logowania
+        const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
         
-        if (!isLoggedIn) {
-            console.log('Brak danych o logowaniu w pamięci przeglądarki');
-            // Nie przekierowujemy automatycznie - pozwalamy serwerowi obsłużyć autoryzację
-        } else {
-            console.log('Znaleziono dane o logowaniu w pamięci przeglądarki');
+        if (!isLoginPage) {
+            // Sprawdź, czy mamy informację o zalogowaniu w localStorage lub sessionStorage
+            const isLoggedIn = (
+                sessionStorage.getItem('isLoggedIn') === 'true' || 
+                localStorage.getItem('isLoggedIn') === 'true'
+            );
+            
+            if (!isLoggedIn) {
+                console.log('Brak danych o logowaniu w pamięci przeglądarki');
+                // Nie przekierowujemy automatycznie - pozwalamy serwerowi obsłużyć autoryzację
+            } else {
+                console.log('Znaleziono dane o logowaniu w pamięci przeglądarki');
+            }
         }
-    }
-});
+    });
     </script>
     
     <!-- Panel użytkownika -->
@@ -37,79 +39,66 @@
             <span id="username">{{ current_user.username }}</span>
         </div>
         <div id="user-actions">
-                {% if current_user.is_admin %}
-                <a href="{{ url_for('admin_panel') }}" class="action-btn">Panel Admina</a>
-                {% endif %}
-                <button class="action-btn" id="settings-btn">Ustawienia</button>
-                <a href="{{ url_for('auth.logout') }}" class="action-btn" id="logout-btn">Wyloguj</a>
+            {% if current_user.is_admin %}
+            <a href="{{ url_for('admin_panel') }}" class="action-btn">Panel Admina</a>
+            {% endif %}
+            <button class="action-btn" id="settings-btn">Ustawienia</button>
+            <a href="{{ url_for('auth.logout') }}" class="action-btn" id="logout-btn">Wyloguj</a>
         </div>
     </div>
     
     <!-- Główny kontener -->
     <div id="main-container">
         <div id="friends">
-            <h3>Znajomi</h3>
+            <h3>Konwersacje i Znajomi</h3>
             <ul id="friend-list">
-                <!-- tutaj będą znajomi -->
+                <!-- tutaj będą znajomi i sesje czatu -->
             </ul>
         </div>
 
         <div id="chat">
             <div id="messages">
                 <!-- wiadomości będą się tu pojawiać -->
+                <div class="welcome-message">
+                    <h3>Witaj w czacie z szyfrowaniem end-to-end!</h3>
+                    <p>Wybierz istniejącą konwersację z listy po lewej stronie lub dodaj nowego znajomego, aby rozpocząć czat.</p>
+                    <p>Wszystkie wiadomości są szyfrowane i chronione przed podsłuchem!</p>
+                </div>
             </div>
             <div id="input-area">
-                <input type="text" id="message-input" placeholder="Wpisz wiadomość...">
+                <textarea id="message-input" placeholder="Wpisz wiadomość..." rows="1"></textarea>
                 <button id="send-button">Wyślij</button>
             </div>
         </div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Wyświetlenie nazwy użytkownika
-            const usernameElement = document.getElementById('username');
-            
-            // Obsługa wysyłania wiadomości
-            const messageInput = document.getElementById('message-input');
-            const sendButton = document.getElementById('send-button');
-            const messagesContainer = document.getElementById('messages');
-            
-            function sendMessage() {
-                const message = messageInput.value.trim();
-                if (message) {
-                    // Tutaj będzie logika szyfrowania wiadomości
-                    
-                    // Dodanie wiadomości do czatu (tylko interfejs)
-                    const messageElement = document.createElement('div');
-                    messageElement.classList.add('message', 'sent');
-                    messageElement.textContent = message;
-                    messagesContainer.appendChild(messageElement);
-                    
-                    // Przewinięcie na dół
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                    
-                    // Wyczyszczenie pola
-                    messageInput.value = '';
-                }
-            }
-            
-            // Nasłuchiwanie kliknięcia przycisku wysyłania
-            sendButton.addEventListener('click', sendMessage);
-            
-            // Nasłuchiwanie klawisza Enter
-            messageInput.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    sendMessage();
-                }
-            });
-            
-            // Przycisk ustawień
-            const settingsButton = document.getElementById('settings-btn');
-            settingsButton.addEventListener('click', function() {
-                alert('Panel ustawień będzie dostępny wkrótce');
-            });
-        });
-    </script>
+    <!-- Szablony dla dynamicznie tworzonych elementów -->
+    <template id="message-template">
+        <div class="message">
+            <div class="message-content"></div>
+            <div class="message-info">
+                <span class="message-time"></span>
+                <span class="message-status"></span>
+            </div>
+        </div>
+    </template>
+
+    <template id="friend-item-template">
+        <li class="friend-item">
+            <div class="friend-avatar">
+                <div class="status-indicator"></div>
+            </div>
+            <div class="friend-info">
+                <div class="friend-name"></div>
+            </div>
+        </li>
+    </template>
+
+    <template id="notification-template">
+        <div class="notification">
+            <div class="notification-content"></div>
+            <button class="notification-close">&times;</button>
+        </div>
+    </template>
 </body>
 </html>
