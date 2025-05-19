@@ -11,6 +11,7 @@ import time
 import flask
 import werkzeug
 import traceback
+import wtforms
 
 # Dekorator sprawdzający uprawnienia administratora
 def admin_required(f):
@@ -61,6 +62,12 @@ class UserModelView(SecureModelView):
         'is_online': lambda v, c, m, p: 'Tak' if m.is_online else 'Nie',
     }
     
+    # Upewniamy się, że is_admin jest traktowane jako pole wyboru boolean
+    form_overrides = {
+        'is_admin': wtforms.BooleanField,
+        'is_online': wtforms.BooleanField
+    }
+    
     # Dodaj obsługę wartości logicznych w formularzu
     form_choices = {
         'is_admin': [
@@ -76,16 +83,19 @@ class UserModelView(SecureModelView):
     # Dodaj specjalną obsługę dla edycji użytkownika
     def update_model(self, form, model):
         try:
+            # Zachowaj oryginalną wartość przed zmianą
+            original_is_admin = model.is_admin
+            
+            # Pobierz wartości z formularza i zastosuj do modelu
             form.populate_obj(model)
             
-            # Pobierz bezpośrednio wartości formularza
-            is_admin_value = form.data.get('is_admin', model.is_admin)
-            
-            # Zapewnij poprawny typ
-            model.is_admin = bool(is_admin_value)
+            # Zapewnij właściwy typ danych dla pól logicznych
+            model.is_admin = bool(form.is_admin.data)
+            model.is_online = bool(form.is_online.data)
             
             print(f"UserModelView.update_model: Użytkownik {model.username}, "
-                  f"is_admin ustawione na {model.is_admin} (typ: {type(model.is_admin).__name__})")
+                  f"is_admin zmienione z {original_is_admin} na {model.is_admin} "
+                  f"(typ: {type(model.is_admin).__name__})")
             
             self.session.commit()
             return True
@@ -410,7 +420,7 @@ def init_admin(app):
             print(traceback_str)
             return jsonify({'status': 'error', 'message': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
     
-    # API do zmiany uprawnień administratora
+    # Poprawiona funkcja API do zmiany uprawnień administratora
     @app.route('/api/users/<string:user_id>/toggle_admin', methods=['POST'])
     @admin_required
     def toggle_admin(user_id):
@@ -434,13 +444,13 @@ def init_admin(app):
                 print(f"Próba zmiany własnych uprawnień przez {current_user.username}")
                 return jsonify({'status': 'error', 'message': 'Nie możesz zmienić własnych uprawnień'}), 400
             
-            # Pobierz aktualny stan z bazy danych
+            # Pobierz aktualny stan uprawnień (jako boolean)
             current_admin_state = bool(user.is_admin)
             print(f"Aktualny stan uprawnień dla {user.username}: {current_admin_state} (typ: {type(user.is_admin).__name__})")
             
-            # Zmiana stanu uprawnień - używaj wyraźnych wartości True/False
+            # Zmiana stanu uprawnień - jawna zamiana na boolean
             new_admin_state = not current_admin_state
-            user.is_admin = True if new_admin_state else False  # Wyraźna konwersja na boolean
+            user.is_admin = new_admin_state
             
             print(f"Nowy stan uprawnień dla {user.username}: {user.is_admin} (typ: {type(user.is_admin).__name__})")
             
@@ -452,18 +462,9 @@ def init_admin(app):
             verified_state = bool(user.is_admin)
             print(f"Zweryfikowany stan uprawnień po zapisie: {verified_state} (typ: {type(user.is_admin).__name__})")
             
-            # Upewnij się, że stan po zapisie jest zgodny z oczekiwanym
-            if verified_state != new_admin_state:
-                print(f"BŁĄD: Stan po zapisie ({verified_state}) nie zgadza się z oczekiwanym ({new_admin_state})")
-                db.session.rollback()
-                return jsonify({
-                    'status': 'error', 
-                    'message': 'Błąd integralności danych: zmiany nie zostały poprawnie zapisane'
-                }), 500
-            
             return jsonify({
                 'status': 'success',
-                'message': f'Uprawnienia użytkownika {user.username} zostały {"nadane" if user.is_admin else "odebrane"}',
+                'message': f'Uprawnienia użytkownika {user.username} zostały {"nadane" if verified_state else "odebrane"}',
                 'is_admin': verified_state
             })
         except Exception as e:
@@ -527,6 +528,38 @@ def init_admin(app):
             traceback_str = traceback.format_exc()
             print(traceback_str)
             return jsonify({'status': 'error', 'message': error_message}), 500
+    
+    # Nowy endpoint do naprawy wszystkich uprawnień administratora
+    @app.route('/admin/repair_all_admin_permissions')
+    @admin_required
+    def repair_all_admin_permissions():
+        try:
+            # Znajdź wszystkich użytkowników, którzy powinni być administratorami
+            admins = User.query.filter(User.is_admin.in_([1, '1', 't', 'true', 'True', True])).all()
+            
+            # Lista naprawionych użytkowników
+            repaired_users = []
+            
+            # Napraw uprawnienia dla każdego użytkownika
+            for user in admins:
+                original_value = user.is_admin
+                # Ustaw wartość na True
+                user.is_admin = True
+                repaired_users.append({
+                    'username': user.username,
+                    'before': original_value,
+                    'after': user.is_admin
+                })
+            
+            # Zapisz zmiany
+            db.session.commit()
+            
+            flash(f'Naprawiono uprawnienia dla {len(repaired_users)} użytkowników!', 'success')
+            return redirect(url_for('user.index_view'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Błąd podczas naprawy uprawnień: {str(e)}', 'error')
+            return redirect(url_for('admin.index'))
     
     # Endpoint do bezpośredniego przyznania uprawnień administratora użytkownikowi (dla łatwiejszej obsługi)
     @app.route('/admin/repair_permissions/<int:user_id>')
@@ -624,27 +657,3 @@ def init_admin(app):
                 'authenticated': False
             })
     
-    # Endpoint do cichego wylogowania (bez przekierowania)
-    @app.route('/silent-logout', methods=['POST'])
-    def silent_logout():
-        """Wylogowanie bez przekierowania"""
-        if current_user.is_authenticated:
-            try:
-                # Aktualizacja statusu online
-                current_user.is_online = False
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-        
-        return jsonify({'status': 'success'})
-    
-    # Dodanie nagłówków CORS i bezpieczeństwa
-    @app.after_request
-    def add_headers(response):
-        # Nagłówki bezpieczeństwa
-        if request.path.startswith('/api/') or request.path.startswith('/flask_admin/'):
-            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
-        
-        return response
