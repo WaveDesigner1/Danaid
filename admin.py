@@ -287,8 +287,14 @@ def init_admin(app):
     @admin_required
     def get_users():
         try:
+            # Dodaj więcej szczegółowego logowania
+            print("Wywołanie API /api/users")
+            
             users = User.query.all()
             user_list = []
+            
+            # Log liczby znalezionych użytkowników
+            print(f"Znaleziono {len(users)} użytkowników")
             
             for user in users:
                 # Bezpieczne pobieranie atrybutów z obsługą błędów
@@ -301,17 +307,23 @@ def init_admin(app):
                         'is_online': bool(getattr(user, 'is_online', False))
                     }
                     user_list.append(user_data)
+                    print(f"Dodano użytkownika: {user_data}")
                 except Exception as user_error:
                     # Log błędu dla pojedynczego użytkownika nie powinien przerwać całej operacji
                     print(f"Błąd podczas przetwarzania użytkownika {user.id}: {str(user_error)}")
             
-            # Zwróć dane w spójnym formacie: {"status": "success", "users": [...]}
-            return jsonify({
+            # Loguj format odpowiedzi przed wysłaniem
+            response_data = {
                 'status': 'success',
                 'users': user_list
-            })
+            }
+            print(f"Wysyłanie odpowiedzi API /api/users: {response_data}")
+            
+            # Zwróć dane w spójnym formacie: {"status": "success", "users": [...]}
+            return jsonify(response_data)
         except Exception as e:
-            print(f"Błąd API /api/users: {str(e)}")
+            error_message = f"Błąd API /api/users: {str(e)}"
+            print(error_message)
             traceback_str = traceback.format_exc()
             print(traceback_str)
             return jsonify({'status': 'error', 'message': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
