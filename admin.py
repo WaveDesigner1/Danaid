@@ -267,17 +267,20 @@ def init_admin(app):
             online_users_count = User.query.filter_by(is_online=True).count()
             
             return jsonify({
-                'users_count': users_count,
-                'sessions_count': sessions_count,
-                'messages_count': messages_count,
-                'online_users_count': online_users_count,
-                'timestamp': int(time.time())
+                'status': 'success',
+                'data': {
+                    'users_count': users_count,
+                    'sessions_count': sessions_count,
+                    'messages_count': messages_count,
+                    'online_users_count': online_users_count,
+                    'timestamp': int(time.time())
+                }
             })
         except Exception as e:
             print(f"Błąd API /api/admin/stats: {str(e)}")
             traceback_str = traceback.format_exc()
             print(traceback_str)
-            return jsonify({'error': f'Nie można pobrać statystyk: {str(e)}'}), 500
+            return jsonify({'status': 'error', 'message': f'Nie można pobrać statystyk: {str(e)}'}), 500
     
     # API do pobierania listy użytkowników
     @app.route('/api/users')
@@ -301,13 +304,17 @@ def init_admin(app):
                 except Exception as user_error:
                     # Log błędu dla pojedynczego użytkownika nie powinien przerwać całej operacji
                     print(f"Błąd podczas przetwarzania użytkownika {user.id}: {str(user_error)}")
-                    
-            return jsonify(user_list)
+            
+            # Zwróć dane w spójnym formacie: {"status": "success", "users": [...]}
+            return jsonify({
+                'status': 'success',
+                'users': user_list
+            })
         except Exception as e:
             print(f"Błąd API /api/users: {str(e)}")
             traceback_str = traceback.format_exc()
             print(traceback_str)
-            return jsonify({'error': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
+            return jsonify({'status': 'error', 'message': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
     
     # API do zmiany uprawnień administratora
     @app.route('/api/users/<string:user_id>/toggle_admin', methods=['POST'])
