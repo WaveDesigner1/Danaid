@@ -226,3 +226,4 @@ function showNotification(message, type = 'info') {
     closeButton.addEventListener('click', function() {
         notification.remove();
     });
+}
