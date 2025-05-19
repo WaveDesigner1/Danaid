@@ -22,13 +22,79 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Widok admina z zabezpieczeniami
+# Widok admina z zabezpieczeniami i poprawioną obsługą edycji
 class SecureModelView(ModelView):
     def is_accessible(self):
         return current_user.is_authenticated and current_user.is_admin
     
     def inaccessible_callback(self, name, **kwargs):
         return redirect(url_for('auth.index', next=request.url))
+    
+    # Rozszerzenie funkcji na_model_change do poprawnej obsługi pola is_admin
+    def on_model_change(self, form, model, is_created):
+        # Dla użytkowników gwarantujemy poprawność wartości logicznej is_admin
+        if isinstance(model, User):
+            # Zapisz oryginalną wartość przed konwersją
+            original_value = model.is_admin
+            
+            # Upewnij się, że is_admin jest wartością logiczną
+            if model.is_admin not in (True, False):
+                model.is_admin = bool(model.is_admin)
+            
+            print(f"SecureModelView.on_model_change: Użytkownik {model.username}, "
+                  f"is_admin zmienione z {original_value} (typ: {type(original_value).__name__}) "
+                  f"na {model.is_admin} (typ: {type(model.is_admin).__name__})")
+            
+        # Wywołaj oryginalną metodę bazową
+        super(SecureModelView, self).on_model_change(form, model, is_created)
+
+# Rozszerzona klasa dla modelu User
+class UserModelView(SecureModelView):
+    column_exclude_list = ['password_hash']  # Ukryj hasło
+    form_excluded_columns = ['password_hash', 'sessions_initiated', 'sessions_received', 'messages']
+    column_searchable_list = ['username', 'email']
+    column_filters = ['is_admin', 'is_online']
+    
+    # Dodaj specjalne formatery dla pól logicznych
+    column_formatters = {
+        'is_admin': lambda v, c, m, p: 'Tak' if m.is_admin else 'Nie',
+        'is_online': lambda v, c, m, p: 'Tak' if m.is_online else 'Nie',
+    }
+    
+    # Dodaj obsługę wartości logicznych w formularzu
+    form_choices = {
+        'is_admin': [
+            (True, 'Tak'),
+            (False, 'Nie')
+        ],
+        'is_online': [
+            (True, 'Tak'),
+            (False, 'Nie')
+        ]
+    }
+    
+    # Dodaj specjalną obsługę dla edycji użytkownika
+    def update_model(self, form, model):
+        try:
+            form.populate_obj(model)
+            
+            # Pobierz bezpośrednio wartości formularza
+            is_admin_value = form.data.get('is_admin', model.is_admin)
+            
+            # Zapewnij poprawny typ
+            model.is_admin = bool(is_admin_value)
+            
+            print(f"UserModelView.update_model: Użytkownik {model.username}, "
+                  f"is_admin ustawione na {model.is_admin} (typ: {type(model.is_admin).__name__})")
+            
+            self.session.commit()
+            return True
+        except Exception as ex:
+            if not self.handle_view_exception(ex):
+                flash(f'Nie można zaktualizować rekordu: {str(ex)}', 'error')
+                traceback.print_exc()
+            self.session.rollback()
+            return False
 
 # Nowy widok administratora do zarządzania bazą danych
 class DatabaseView(BaseView):
@@ -235,10 +301,10 @@ class WebshellView(BaseView):
 def init_admin(app):
     admin = Admin(app, name='Admin Panel', template_mode='bootstrap3', url='/flask_admin')
     
-    # Dodaj jawnie endpoint dla każdego widoku modelu
-    admin.add_view(SecureModelView(User, db.session, endpoint='user'))
-    admin.add_view(SecureModelView(ChatSession, db.session, endpoint='chatsession'))
-    admin.add_view(SecureModelView(Message, db.session, endpoint='message'))
+    # Dodaj jawnie endpoint dla każdego widoku modelu - korzystamy ze specjalnej klasy dla User
+    admin.add_view(UserModelView(User, db.session, endpoint='user', name='Użytkownicy'))
+    admin.add_view(SecureModelView(ChatSession, db.session, endpoint='chatsession', name='Sesje Czatu'))
+    admin.add_view(SecureModelView(Message, db.session, endpoint='message', name='Wiadomości'))
     
     # Te widoki już mają poprawne endpointy
     admin.add_view(DatabaseView(name='Zarządzanie bazą danych', endpoint='db_admin'))
@@ -297,20 +363,36 @@ def init_admin(app):
             print(f"Znaleziono {len(users)} użytkowników")
             
             for user in users:
-                # Bezpieczne pobieranie atrybutów z obsługą błędów
+                # Bezpieczne pobieranie atrybutów z obsługą błędów i dokładnym logowaniem typów danych
                 try:
+                    # Pobierz wartości atrybutów
+                    user_id_value = getattr(user, 'user_id', str(user.id))
+                    is_admin_value = getattr(user, 'is_admin', False)
+                    is_online_value = getattr(user, 'is_online', False)
+                    
+                    # Loguj oryginalne wartości i ich typy
+                    print(f"Użytkownik {user.id} ({user.username}):")
+                    print(f"  - user_id: {user_id_value} (typ: {type(user_id_value).__name__})")
+                    print(f"  - is_admin: {is_admin_value} (typ: {type(is_admin_value).__name__})")
+                    print(f"  - is_online: {is_online_value} (typ: {type(is_online_value).__name__})")
+                    
+                    # Upewnij się, że wartości są odpowiednio skonwertowane
                     user_data = {
                         'id': user.id,
                         'username': user.username,
-                        'user_id': str(getattr(user, 'user_id', str(user.id))),
-                        'is_admin': bool(getattr(user, 'is_admin', False)),
-                        'is_online': bool(getattr(user, 'is_online', False))
+                        'user_id': str(user_id_value),
+                        'is_admin': bool(is_admin_value),  # Wyraźna konwersja na boolean
+                        'is_online': bool(is_online_value)  # Wyraźna konwersja na boolean
                     }
+                    
+                    # Loguj przetworzone wartości
+                    print(f"Przetworzone dane użytkownika: {user_data}")
+                    
                     user_list.append(user_data)
-                    print(f"Dodano użytkownika: {user_data}")
                 except Exception as user_error:
                     # Log błędu dla pojedynczego użytkownika nie powinien przerwać całej operacji
                     print(f"Błąd podczas przetwarzania użytkownika {user.id}: {str(user_error)}")
+                    print(traceback.format_exc())
             
             # Loguj format odpowiedzi przed wysłaniem
             response_data = {
@@ -333,6 +415,75 @@ def init_admin(app):
     @admin_required
     def toggle_admin(user_id):
         try:
+            print(f"Wywołanie toggle_admin dla użytkownika {user_id}")
+            
+            # Znajdź użytkownika po user_id
+            user = User.query.filter_by(user_id=user_id).first()
+            
+            # Jeśli nie znaleziono, spróbuj po id (dla kompatybilności)
+            if not user and user_id.isdigit():
+                user = User.query.get(int(user_id))
+            
+            # Jeśli nadal nie znaleziono, zwróć błąd
+            if not user:
+                print(f"Użytkownik {user_id} nie istnieje")
+                return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+            
+            # Nie możemy usunąć uprawnień zalogowanemu administratorowi
+            if user.user_id == current_user.user_id:
+                print(f"Próba zmiany własnych uprawnień przez {current_user.username}")
+                return jsonify({'status': 'error', 'message': 'Nie możesz zmienić własnych uprawnień'}), 400
+            
+            # Pobierz aktualny stan z bazy danych
+            current_admin_state = bool(user.is_admin)
+            print(f"Aktualny stan uprawnień dla {user.username}: {current_admin_state} (typ: {type(user.is_admin).__name__})")
+            
+            # Zmiana stanu uprawnień - używaj wyraźnych wartości True/False
+            new_admin_state = not current_admin_state
+            user.is_admin = True if new_admin_state else False  # Wyraźna konwersja na boolean
+            
+            print(f"Nowy stan uprawnień dla {user.username}: {user.is_admin} (typ: {type(user.is_admin).__name__})")
+            
+            # Zapisanie zmian w bazie danych
+            db.session.commit()
+            
+            # Sprawdź, czy zmiany zostały faktycznie zapisane
+            db.session.refresh(user)
+            verified_state = bool(user.is_admin)
+            print(f"Zweryfikowany stan uprawnień po zapisie: {verified_state} (typ: {type(user.is_admin).__name__})")
+            
+            # Upewnij się, że stan po zapisie jest zgodny z oczekiwanym
+            if verified_state != new_admin_state:
+                print(f"BŁĄD: Stan po zapisie ({verified_state}) nie zgadza się z oczekiwanym ({new_admin_state})")
+                db.session.rollback()
+                return jsonify({
+                    'status': 'error', 
+                    'message': 'Błąd integralności danych: zmiany nie zostały poprawnie zapisane'
+                }), 500
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Uprawnienia użytkownika {user.username} zostały {"nadane" if user.is_admin else "odebrane"}',
+                'is_admin': verified_state
+            })
+        except Exception as e:
+            db.session.rollback()
+            error_message = f"Błąd podczas zmiany uprawnień: {str(e)}"
+            print(error_message)
+            traceback_str = traceback.format_exc()
+            print(traceback_str)
+            return jsonify({'status': 'error', 'message': error_message}), 500
+    
+    # API do naprawy upawnień użytkownika
+    @app.route('/api/users/fix_admin/<string:user_id>', methods=['POST'])
+    @admin_required
+    def fix_admin(user_id):
+        """
+        Endpoint do naprawy uprawnień administratora (jednokrotne użycie w razie problemu)
+        """
+        try:
+            print(f"Próba przywrócenia uprawnień administratora dla użytkownika {user_id}")
+            
             # Znajdź użytkownika po user_id
             user = User.query.filter_by(user_id=user_id).first()
             
@@ -343,25 +494,64 @@ def init_admin(app):
             # Jeśli nadal nie znaleziono, zwróć błąd
             if not user:
                 return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
-                
-            # Nie możemy usunąć uprawnień zalogowanemu administratorowi
-            if user.user_id == current_user.user_id:
-                return jsonify({'status': 'error', 'message': 'Nie możesz zmienić własnych uprawnień'}), 400
-                
-            # Zmiana stanu uprawnień
-            user.is_admin = not user.is_admin
+            
+            # Pobierz aktualny stan
+            current_state = bool(user.is_admin)
+            
+            # Ustaw uprawnienia administratora na True (wyraźnie)
+            user.is_admin = True
+            
+            # Log zmiany (bardzo szczegółowy)
+            print(f"Zmiana uprawnień użytkownika {user.username} (ID: {user_id}):")
+            print(f"  - Przed: {current_state} (typ: {type(current_state).__name__})")
+            print(f"  - Po: {bool(user.is_admin)} (typ: {type(user.is_admin).__name__})")
             
             # Zapisanie zmian w bazie danych
             db.session.commit()
+            print(f"Uprawnienia administratora przywrócone dla użytkownika {user.username}")
             
             return jsonify({
                 'status': 'success',
-                'message': f'Uprawnienia użytkownika {user.username} zostały {"nadane" if user.is_admin else "odebrane"}',
-                'is_admin': user.is_admin
+                'message': f'Uprawnienia administratora przywrócone dla użytkownika {user.username}',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'user_id': str(getattr(user, 'user_id', str(user.id))),
+                    'is_admin': bool(user.is_admin)
+                }
             })
         except Exception as e:
             db.session.rollback()
-            return jsonify({'status': 'error', 'message': f'Błąd podczas zmiany uprawnień: {str(e)}'}), 500
+            error_message = f"Błąd podczas naprawy uprawnień: {str(e)}"
+            print(error_message)
+            traceback_str = traceback.format_exc()
+            print(traceback_str)
+            return jsonify({'status': 'error', 'message': error_message}), 500
+    
+    # Endpoint do bezpośredniego przyznania uprawnień administratora użytkownikowi (dla łatwiejszej obsługi)
+    @app.route('/admin/repair_permissions/<int:user_id>')
+    @admin_required
+    def repair_permissions(user_id):
+        try:
+            # Znajdź użytkownika po id
+            user = User.query.get(user_id)
+            
+            if not user:
+                flash('Użytkownik nie istnieje', 'error')
+                return redirect(url_for('admin.index'))
+            
+            # Ustaw uprawnienia administratora
+            user.is_admin = True
+            
+            # Zapisz zmiany
+            db.session.commit()
+            
+            flash(f'Uprawnienia administratora dla użytkownika {user.username} zostały naprawione!', 'success')
+            return redirect(url_for('user.index_view'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Błąd podczas naprawy uprawnień: {str(e)}', 'error')
+            return redirect(url_for('admin.index'))
     
     # API do usuwania użytkownika
     @app.route('/api/users/<string:user_id>/delete', methods=['POST'])
@@ -452,7 +642,7 @@ def init_admin(app):
     @app.after_request
     def add_headers(response):
         # Nagłówki bezpieczeństwa
-        if request.path.startswith('/api/'):
+        if request.path.startswith('/api/') or request.path.startswith('/flask_admin/'):
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
