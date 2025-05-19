@@ -18,7 +18,7 @@ def send_friend_request():
     """Send a friend request to another user"""
     data = request.get_json()
     
-    if not data or 'recipient_id' not in data:
+    if not data or 'username' not in data:
         return jsonify({
             'status': 'error',
             'message': 'Brak wymaganego parametru recipient_id'
