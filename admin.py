@@ -163,10 +163,9 @@ class DiagnosticsView(BaseView):
             except Exception as db_err:
                 diagnostics['db_status']['connection'] = f"Błąd: {str(db_err)}"
             
-            response = render_template('diagnostics.html', diagnostics=diagnostics)
+            response = make_response(render_template('diagnostics.html', diagnostics=diagnostics))
             
             # Dodaj nagłówki no-cache
-            response.headers = {}
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
@@ -256,6 +255,30 @@ def init_admin(app):
             error_traceback = traceback.format_exc()
             return f"<h1>Error in admin_panel</h1><p>{str(e)}</p><pre>{error_traceback}</pre>"
     
+    # API do pobierania statystyk dla panelu administratora
+    @app.route('/api/admin/stats')
+    @admin_required
+    def get_admin_stats():
+        try:
+            # Pobierz liczby rekordów
+            users_count = User.query.count()
+            sessions_count = ChatSession.query.count()
+            messages_count = Message.query.count()
+            online_users_count = User.query.filter_by(is_online=True).count()
+            
+            return jsonify({
+                'users_count': users_count,
+                'sessions_count': sessions_count,
+                'messages_count': messages_count,
+                'online_users_count': online_users_count,
+                'timestamp': int(time.time())
+            })
+        except Exception as e:
+            print(f"Błąd API /api/admin/stats: {str(e)}")
+            traceback_str = traceback.format_exc()
+            print(traceback_str)
+            return jsonify({'error': f'Nie można pobrać statystyk: {str(e)}'}), 500
+    
     # API do pobierania listy użytkowników
     @app.route('/api/users')
     @admin_required
@@ -265,18 +288,25 @@ def init_admin(app):
             user_list = []
             
             for user in users:
-                # Bezpieczne pobieranie atrybutów
-                user_data = {
-                    'id': user.id,
-                    'username': user.username,
-                    'user_id': getattr(user, 'user_id', str(user.id)),  # Bezpieczne pobieranie user_id
-                    'is_admin': bool(getattr(user, 'is_admin', False)),  # Konwersja na bool
-                    'is_online': bool(getattr(user, 'is_online', False))  # Konwersja na bool
-                }
-                user_list.append(user_data)
-                
+                # Bezpieczne pobieranie atrybutów z obsługą błędów
+                try:
+                    user_data = {
+                        'id': user.id,
+                        'username': user.username,
+                        'user_id': str(getattr(user, 'user_id', str(user.id))),
+                        'is_admin': bool(getattr(user, 'is_admin', False)),
+                        'is_online': bool(getattr(user, 'is_online', False))
+                    }
+                    user_list.append(user_data)
+                except Exception as user_error:
+                    # Log błędu dla pojedynczego użytkownika nie powinien przerwać całej operacji
+                    print(f"Błąd podczas przetwarzania użytkownika {user.id}: {str(user_error)}")
+                    
             return jsonify(user_list)
         except Exception as e:
+            print(f"Błąd API /api/users: {str(e)}")
+            traceback_str = traceback.format_exc()
+            print(traceback_str)
             return jsonify({'error': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
     
     # API do zmiany uprawnień administratora
@@ -398,3 +428,14 @@ def init_admin(app):
                 db.session.rollback()
         
         return jsonify({'status': 'success'})
+    
+    # Dodanie nagłówków CORS i bezpieczeństwa
+    @app.after_request
+    def add_headers(response):
+        # Nagłówki bezpieczeństwa
+        if request.path.startswith('/api/'):
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        
+        return response
