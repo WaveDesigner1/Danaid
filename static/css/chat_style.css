@@ -94,7 +94,7 @@ body {
 }
 
 #add-friend-btn:hover {
-    background-color: #388E3C;
+    background-color: var(--primary-color);
 }
 
 #archive-btn {
