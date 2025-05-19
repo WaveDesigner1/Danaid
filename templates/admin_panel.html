@@ -14,7 +14,7 @@
         <nav class="admin-nav">
             <a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a>
             <a href="{{ url_for('admin.index') }}"><i class="fa fa-cogs"></i> Pełny Panel</a>
-            <a href="{{ url_for('chat') }}"><i class="fa fa-comments"></i> Czat</a>
+            <a href="{{ url_for('chat.chat') }}"><i class="fa fa-comments"></i> Czat</a>
             <a href="{{ url_for('auth.logout') }}"><i class="fa fa-sign-out"></i> Wyloguj</a>
         </nav>
     </header>
@@ -90,7 +90,7 @@
                                 <a href="{{ url_for('admin.index') }}" class="admin-btn primary btn-lg">
                                     <i class="fa fa-cogs"></i> Przejdź do pełnego panelu administracyjnego
                                 </a>
-                                <a href="{{ url_for('chat') }}" class="admin-btn success btn-lg ml-2">
+                                <a href="{{ url_for('chat.chat') }}" class="admin-btn success btn-lg ml-2">
                                     <i class="fa fa-comments"></i> Powrót do czatu
                                 </a>
                             </div>
