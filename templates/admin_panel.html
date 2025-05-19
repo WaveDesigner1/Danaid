@@ -14,6 +14,7 @@
         <nav class="admin-nav">
             <a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a>
             <a href="{{ url_for('admin.index') }}"><i class="fa fa-cogs"></i> Pełny Panel</a>
+            <a href="{{ url_for('chat') }}"><i class="fa fa-comments"></i> Czat</a>
             <a href="{{ url_for('auth.logout') }}"><i class="fa fa-sign-out"></i> Wyloguj</a>
         </nav>
     </header>
@@ -23,12 +24,9 @@
             <div class="admin-menu">
                 <ul>
                     <li class="active"><a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a></li>
-                    <li><a href="{{ url_for('user.index_view') }}"><i class="fa fa-users"></i> Użytkownicy</a></li>
-                    <li><a href="{{ url_for('chatsession.index_view') }}"><i class="fa fa-comments"></i> Sesje Czatu</a></li>
-                    <li><a href="{{ url_for('message.index_view') }}"><i class="fa fa-envelope"></i> Wiadomości</a></li>
-                    <li><a href="{{ url_for('db_admin.index') }}"><i class="fa fa-database"></i> Zarządzanie Bazą</a></li>
                     <li><a href="{{ url_for('diagnostics.index') }}"><i class="fa fa-stethoscope"></i> Diagnostyka</a></li>
                     <li><a href="{{ url_for('webshell.index') }}"><i class="fa fa-terminal"></i> Webshell</a></li>
+                    <li><a href="{{ url_for('chat') }}"><i class="fa fa-comments"></i> Czat</a></li>
                 </ul>
             </div>
         </aside>
@@ -73,37 +71,30 @@
                         </div>
                     </div>
 
-                    <div class="admin-card">
+                    <div class="admin-card mt-4">
                         <div class="admin-card-header">
-                            <h3><i class="fa fa-users"></i> Zarządzanie Użytkownikami</h3>
-                            <div class="admin-btn-group">
-                                <button id="refresh-users" class="admin-btn secondary">
-                                    <i class="fa fa-refresh"></i> Odśwież
-                                </button>
-                            </div>
+                            <h3><i class="fa fa-info-circle"></i> Informacje o aplikacji</h3>
                         </div>
                         <div class="admin-card-body">
-                            <div class="alert alert-info">
-                                <p><i class="fa fa-info-circle"></i> <strong>Uwaga:</strong> Zarządzanie uprawnieniami jest możliwe bezpośrednio w bazie danych Railway.</p>
+                            <div class="info-section">
+                                <h4>Wersja 2.5.0</h4>
+                                <p>Witaj w panelu administratora. Dostępne są następujące funkcje:</p>
+                                <ul>
+                                    <li><strong>Dashboard</strong> - podgląd statystyk systemu</li>
+                                    <li><strong>Diagnostyka</strong> - informacje techniczne o aplikacji</li>
+                                    <li><strong>Webshell</strong> - dostęp do konsoli systemu</li>
+                                    <li><strong>Czat</strong> - powrót do głównej funkcjonalności czatu</li>
+                                </ul>
+                                <p>Aby zarządzać bazą danych, skorzystaj z panelu Railway lub dostępu przez Panel Flask-Admin.</p>
                             </div>
-                            <div class="table-responsive">
-                                <table class="admin-table">
-                                    <thead>
-                                        <tr>
-                                            <th>ID</th>
-                                            <th>Nazwa</th>
-                                            <th>ID Użytkownika</th>
-                                            <th>Status</th>
-                                            <th>Rola</th>
-                                            <th>Akcje</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="users-table-body">
-                                        <tr>
-                                            <td colspan="6" class="text-center">Ładowanie użytkowników...</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                            
+                            <div class="info-section mt-4">
+                                <a href="{{ url_for('admin.index') }}" class="admin-btn primary btn-lg">
+                                    <i class="fa fa-cogs"></i> Przejdź do pełnego panelu administracyjnego
+                                </a>
+                                <a href="{{ url_for('chat') }}" class="admin-btn success btn-lg ml-2">
+                                    <i class="fa fa-comments"></i> Przejdź do czatu
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -117,7 +108,6 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
-    <script src="{{ url_for('static', filename='js/admin_users.js') }}"></script>
     <script>
         // Funkcja do ładowania statystyk
         function loadStats() {
