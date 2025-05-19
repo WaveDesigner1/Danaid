@@ -34,12 +34,14 @@ function checkSession() {
         credentials: 'same-origin'
     })
     .then(response => {
+        console.log("Odpowiedź sesji status:", response.status);
         if (!response.ok) {
             throw new Error('Status: ' + response.status);
         }
         return response.json();
     })
     .then(data => {
+        console.log("Dane sesji:", data);
         if (data.authenticated) {
             // Zapisz ID użytkownika w sessionStorage
             sessionStorage.setItem('current_user_id', data.user_id);
@@ -53,6 +55,7 @@ function checkSession() {
     })
     .catch(error => {
         console.error('Błąd podczas sprawdzania sesji:', error);
+        showNotification('Błąd sesji: ' + error.message, 'error');
     });
 }
 
@@ -84,37 +87,46 @@ function loadUsers() {
         credentials: 'same-origin'
     })
     .then(response => {
+        console.log("Odpowiedź API status:", response.status);
         if (!response.ok) {
             throw new Error('Status: ' + response.status);
         }
-        return response.json();
+        return response.json().catch(error => {
+            console.error("Błąd parsowania JSON:", error);
+            throw new Error('Problem z formatem danych: ' + error.message);
+        });
     })
-    .then(users => {
-        console.log("Received users data:", users);
+    .then(data => {
+        console.log("Received data:", data);
         
-        // Sprawdź, czy mamy tablicę
-        if (!Array.isArray(users)) {
-            if (users && users.error) {
-                throw new Error(users.error);
-            } else {
-                throw new Error('Nieprawidłowy format danych z API');
-            }
+        // Sprawdź, czy mamy tablicę lub obiekt z błędem
+        if (!data) {
+            throw new Error('Otrzymano puste dane');
+        }
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        if (!Array.isArray(data)) {
+            throw new Error('Nieprawidłowy format danych z API: ' + JSON.stringify(data));
+        }
+        
+        // Jeśli lista jest pusta
+        if (data.length === 0) {
+            usersTable.innerHTML = '<tr><td colspan="6" class="text-center">Brak użytkowników</td></tr>';
+            return;
         }
         
         // Wyczyść tabelę
         usersTable.innerHTML = '';
         
-        // Jeśli lista jest pusta
-        if (users.length === 0) {
-            usersTable.innerHTML = '<tr><td colspan="6" class="text-center">Brak użytkowników</td></tr>';
-            return;
-        }
-        
         // Pobierz ID aktualnego użytkownika z sessionStorage
         const currentUserId = sessionStorage.getItem('current_user_id');
+        console.log("Aktualny user_id:", currentUserId);
         
         // Wyświetl użytkowników
-        users.forEach(user => {
+        data.forEach(user => {
             // Upewnij się, że wszystkie pola istnieją (użyj domyślnych wartości jeśli brakuje)
             const userData = {
                 id: user.id || 0,
@@ -210,17 +222,20 @@ function toggleAdmin(userId, username) {
             method: 'POST',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
             },
             credentials: 'same-origin'
         })
         .then(response => {
+            console.log("Odpowiedź toggle admin status:", response.status);
             if (!response.ok) {
                 throw new Error('Status: ' + response.status);
             }
             return response.json();
         })
         .then(data => {
+            console.log("Odpowiedź toggle admin:", data);
             if (data.status === 'success') {
                 showNotification(data.message, 'success');
                 loadUsers(); // Odśwież listę użytkowników
@@ -252,17 +267,20 @@ function deleteUser(userId, username) {
             method: 'POST',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
             },
             credentials: 'same-origin'
         })
         .then(response => {
+            console.log("Odpowiedź usuwania status:", response.status);
             if (!response.ok) {
                 throw new Error('Status: ' + response.status);
             }
             return response.json();
         })
         .then(data => {
+            console.log("Odpowiedź usuwania:", data);
             if (data.status === 'success') {
                 showNotification(data.message, 'success');
                 loadUsers(); // Odśwież listę użytkowników
