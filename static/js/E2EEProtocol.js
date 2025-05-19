@@ -307,6 +307,7 @@ def get_friends():
 
 @secure_messaging.route('/api/session/init', methods=['POST'])
 @login_required
+    
 def initialize_session():
     """Inicjalizuje nową sesję czatu z szyfrowaniem E2EE"""
     data = request.get_json()
