@@ -90,11 +90,12 @@ body {
 
 #add-friend-btn {
     background-color: var(--success-color);
-    color: var(--text-color);
+    color: var(--bg-dark);
 }
 
 #add-friend-btn:hover {
     background-color: var(--primary-color);
+    
 }
 
 #archive-btn {
