@@ -11,7 +11,10 @@ import time
 import flask
 import werkzeug
 import traceback
+# Nowe importy
 import wtforms
+from wtforms import fields as wtf_fields
+from flask_wtf import FlaskForm
 
 # Dekorator sprawdzający uprawnienia administratora
 def admin_required(f):
