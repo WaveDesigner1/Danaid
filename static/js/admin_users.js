@@ -1,6 +1,6 @@
 /**
  * Admin Users - skrypt do zarządzania użytkownikami w panelu administratora
- * Wersja dostosowana do korzystania z user_id
+ * Wersja z rozszerzoną diagnostyką
  */
 
 // Inicjalizacja sesji administracyjnej
@@ -91,29 +91,91 @@ function loadUsers() {
         if (!response.ok) {
             throw new Error('Status: ' + response.status);
         }
-        return response.json().catch(error => {
-            console.error("Błąd parsowania JSON:", error);
-            throw new Error('Problem z formatem danych: ' + error.message);
+        
+        // Klonujemy odpowiedź, żeby móc ją wyświetlić jako tekst i jednocześnie sparsować jako JSON
+        return response.clone().text().then(rawText => {
+            console.log("Surowa odpowiedź API:", rawText);
+            return response.json().catch(error => {
+                console.error("Błąd parsowania JSON:", error);
+                throw new Error('Problem z formatem danych: ' + error.message);
+            });
         });
     })
     .then(result => {
-        console.log("Received data:", result);
+        console.log("Sparsowane dane:", result);
         
-        // Sprawdź, czy otrzymaliśmy status błędu
-        if (result.status === 'error') {
-            throw new Error(result.message || 'Nieznany błąd API');
-        }
+        // Wyświetl surowy JSON w tabeli (tylko dla celów diagnostycznych)
+        usersTable.innerHTML = `<tr><td colspan="6" class="text-center">
+            <div style="text-align: left; max-height: 200px; overflow-y: auto; background-color: #333; padding: 10px; border-radius: 4px;">
+                <pre style="color: white;">${JSON.stringify(result, null, 2)}</pre>
+            </div>
+            <button id="continue-parsing" class="admin-btn primary" style="margin-top: 10px;">
+                Przetwórz dane
+            </button>
+        </td></tr>`;
+        
+        // Dodaj przycisk kontynuacji parsowania
+        document.getElementById('continue-parsing').addEventListener('click', function() {
+            processUsers(result, usersTable);
+        });
+    })
+    .catch(error => {
+        console.error('Błąd podczas pobierania użytkowników:', error);
+        usersTable.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Błąd ładowania danych: ${error.message}</td></tr>`;
+        showNotification('Błąd podczas pobierania użytkowników: ' + error.message, 'error');
+    });
+}
 
-        // Sprawdź, czy mamy poprawny format danych
-        if (result.status !== 'success') {
-            throw new Error('Nieprawidłowy format odpowiedzi: brak statusu "success"');
+/**
+ * Funkcja do przetwarzania danych użytkowników (oddzielona dla lepszej diagnostyki)
+ */
+function processUsers(result, usersTable) {
+    try {
+        console.log("Przetwarzanie danych użytkowników...");
+        
+        // Pokaż loader podczas przetwarzania
+        usersTable.innerHTML = '<tr><td colspan="6" class="text-center"><i class="fa fa-spinner fa-spin"></i> Przetwarzanie danych...</td></tr>';
+        
+        // Sprawdź wszystkie możliwe formaty danych
+        let users = [];
+        
+        // Przypadek 1: Odpowiedź to tablica
+        if (Array.isArray(result)) {
+            console.log("Znaleziono format: tablica");
+            users = result;
+        } 
+        // Przypadek 2: Odpowiedź to obiekt ze statusem i users
+        else if (result && typeof result === 'object') {
+            if (result.status === 'error') {
+                throw new Error(result.message || 'Nieznany błąd API');
+            }
+            
+            // Przypadek 2.1: Klucz "users"
+            if (Array.isArray(result.users)) {
+                console.log("Znaleziono format: {status, users[]}");
+                users = result.users;
+            } 
+            // Przypadek 2.2: Klucz "data"
+            else if (Array.isArray(result.data)) {
+                console.log("Znaleziono format: {status, data[]}");
+                users = result.data;
+            }
+            // Przypadek 2.3: Właściwość jest bezpośrednio tablicą
+            else {
+                for (const key in result) {
+                    if (Array.isArray(result[key])) {
+                        console.log(`Znaleziono tablicę w kluczu: ${key}`);
+                        users = result[key];
+                        break;
+                    }
+                }
+            }
         }
-
-        // Pobierz listę użytkowników, jeśli istnieje
-        const users = result.users || [];
+        
+        console.log("Przetworzeni użytkownicy:", users);
         
         // Jeśli lista jest pusta
-        if (users.length === 0) {
+        if (!users || users.length === 0) {
             usersTable.innerHTML = '<tr><td colspan="6" class="text-center">Brak użytkowników</td></tr>';
             return;
         }
@@ -172,12 +234,11 @@ function loadUsers() {
         
         // Dodaj obsługę zdarzeń dla przycisków
         attachButtonHandlers();
-    })
-    .catch(error => {
-        console.error('Błąd podczas pobierania użytkowników:', error);
-        usersTable.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Błąd ładowania danych: ${error.message}</td></tr>`;
-        showNotification('Błąd podczas pobierania użytkowników: ' + error.message, 'error');
-    });
+    } catch (error) {
+        console.error('Błąd podczas przetwarzania danych użytkowników:', error);
+        usersTable.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Błąd przetwarzania danych: ${error.message}</td></tr>`;
+        showNotification('Błąd podczas przetwarzania danych: ' + error.message, 'error');
+    }
 }
 
 /**
