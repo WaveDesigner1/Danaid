@@ -96,24 +96,22 @@ function loadUsers() {
             throw new Error('Problem z formatem danych: ' + error.message);
         });
     })
-    .then(data => {
-        console.log("Received data:", data);
+    .then(result => {
+        console.log("Received data:", result);
         
-        // Sprawdź, czy mamy tablicę lub obiekt z błędem
-        if (!data) {
-            throw new Error('Otrzymano puste dane');
+        // Sprawdź, czy mamy właściwy format odpowiedzi
+        if (result.status === 'error') {
+            throw new Error(result.message || 'Nieznany błąd API');
         }
         
-        if (data.error) {
-            throw new Error(data.error);
+        if (result.status !== 'success' || !result.users) {
+            throw new Error('Nieprawidłowy format danych z API: ' + JSON.stringify(result));
         }
         
-        if (!Array.isArray(data)) {
-            throw new Error('Nieprawidłowy format danych z API: ' + JSON.stringify(data));
-        }
+        const users = result.users;
         
         // Jeśli lista jest pusta
-        if (data.length === 0) {
+        if (users.length === 0) {
             usersTable.innerHTML = '<tr><td colspan="6" class="text-center">Brak użytkowników</td></tr>';
             return;
         }
@@ -126,7 +124,7 @@ function loadUsers() {
         console.log("Aktualny user_id:", currentUserId);
         
         // Wyświetl użytkowników
-        data.forEach(user => {
+        users.forEach(user => {
             // Upewnij się, że wszystkie pola istnieją (użyj domyślnych wartości jeśli brakuje)
             const userData = {
                 id: user.id || 0,
