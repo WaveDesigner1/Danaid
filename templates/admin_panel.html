@@ -26,7 +26,6 @@
                     <li class="active"><a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a></li>
                     <li><a href="{{ url_for('diagnostics.index') }}"><i class="fa fa-stethoscope"></i> Diagnostyka</a></li>
                     <li><a href="{{ url_for('webshell.index') }}"><i class="fa fa-terminal"></i> Webshell</a></li>
-                    <li><a href="{{ url_for('chat') }}"><i class="fa fa-comments"></i> Czat</a></li>
                 </ul>
             </div>
         </aside>
@@ -83,7 +82,6 @@
                                     <li><strong>Dashboard</strong> - podgląd statystyk systemu</li>
                                     <li><strong>Diagnostyka</strong> - informacje techniczne o aplikacji</li>
                                     <li><strong>Webshell</strong> - dostęp do konsoli systemu</li>
-                                    <li><strong>Czat</strong> - powrót do głównej funkcjonalności czatu</li>
                                 </ul>
                                 <p>Aby zarządzać bazą danych, skorzystaj z panelu Railway lub dostępu przez Panel Flask-Admin.</p>
                             </div>
@@ -93,7 +91,7 @@
                                     <i class="fa fa-cogs"></i> Przejdź do pełnego panelu administracyjnego
                                 </a>
                                 <a href="{{ url_for('chat') }}" class="admin-btn success btn-lg ml-2">
-                                    <i class="fa fa-comments"></i> Przejdź do czatu
+                                    <i class="fa fa-comments"></i> Powrót do czatu
                                 </a>
                             </div>
                         </div>
