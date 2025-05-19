@@ -16,20 +16,15 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Bazowy widok admina z zabezpieczeniami
+# Bazowy widok admina
 class SecureModelView(ModelView):
     def is_accessible(self):
         return current_user.is_authenticated and current_user.is_admin
     
     def inaccessible_callback(self, name, **kwargs):
         return redirect(url_for('auth.index', next=request.url))
-    
-    def on_model_change(self, form, model, is_created):
-        if isinstance(model, User) and model.is_admin not in (True, False):
-            model.is_admin = bool(model.is_admin)
-        super(SecureModelView, self).on_model_change(form, model, is_created)
 
-# Rozszerzona klasa dla modelu User
+# Użytkownicy - usunięto wszystkie automatyczne konwersje typów
 class UserModelView(SecureModelView):
     column_exclude_list = ['password_hash']
     form_excluded_columns = ['password_hash', 'sessions_initiated', 'sessions_received', 'messages']
@@ -38,21 +33,8 @@ class UserModelView(SecureModelView):
         'is_admin': lambda v, c, m, p: 'Tak' if m.is_admin else 'Nie',
         'is_online': lambda v, c, m, p: 'Tak' if m.is_online else 'Nie',
     }
-    
-    def update_model(self, form, model):
-        try:
-            form.populate_obj(model)
-            model.is_admin = bool(model.is_admin)
-            model.is_online = bool(model.is_online)
-            self.session.commit()
-            return True
-        except Exception as ex:
-            if not self.handle_view_exception(ex): 
-                flash(f'Nie można zaktualizować rekordu: {str(ex)}', 'error')
-            self.session.rollback()
-            return False
 
-# Nowy widok administratora do zarządzania bazą danych
+# Widok bazy danych
 class DatabaseView(BaseView):
     def is_accessible(self):
         return current_user.is_authenticated and current_user.is_admin
@@ -77,16 +59,12 @@ class DatabaseView(BaseView):
             response = make_response(render_template('database.html', 
                           tables=tables, structure=table_structure, record_counts=record_counts))
             
-            # Nagłówki no-cache
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
-            
             return response
         except Exception as e:
             return render_template('database.html', error=str(e))
 
-# Klasa widoku diagnostyki
+# Diagnostyka
 class DiagnosticsView(BaseView):
     def is_accessible(self): return current_user.is_authenticated and current_user.is_admin
     def inaccessible_callback(self, name, **kwargs): return redirect(url_for('auth.index', next=request.url))
@@ -130,7 +108,7 @@ class DiagnosticsView(BaseView):
         except Exception as e:
             return render_template('diagnostics.html', error=str(e))
 
-# Klasa widoku webshell
+# Webshell
 class WebshellView(BaseView):
     def is_accessible(self): return current_user.is_authenticated and current_user.is_admin
     def inaccessible_callback(self, name, **kwargs): return redirect(url_for('auth.index', next=request.url))
@@ -180,7 +158,7 @@ def init_admin(app):
         try: return render_template('admin_panel.html')
         except Exception as e: return f"<h1>Error in admin_panel</h1><p>{str(e)}</p><pre>{traceback.format_exc()}</pre>"
     
-    # API statystyk
+    # API statystyk - tylko odczyt
     @app.route('/api/admin/stats')
     @admin_required
     def get_admin_stats():
@@ -209,116 +187,34 @@ def init_admin(app):
         except Exception as e:
             return jsonify({'status': 'error', 'message': f'Nie można pobrać statystyk: {str(e)}'}), 500
     
-    # API użytkowników - pobieranie bezpośrednio z PostgreSQL
+    # API użytkowników - tylko odczyt bez konwersji
     @app.route('/api/users')
     @admin_required
     def get_users():
         try:
-            # Pobierz dane bezpośrednio z bazy przez SQL zamiast ORM
-            users_query = 'SELECT id, username, user_id, is_admin, is_online FROM "user"'
+            # Pobierz dane bezpośrednio z bazy bez konwersji typów
+            users_query = 'SELECT * FROM "user"'
             raw_users = db.session.execute(text(users_query)).fetchall()
             
             user_list = []
             
             for user in raw_users:
+                # Mapowanie kolumn na indeksy
+                column_map = {col: idx for idx, col in enumerate(user._mapping.keys())}
+                
+                # Pobierz wartości dokładnie takie jakie są w bazie, bez konwersji
                 user_data = {
-                    'id': user[0],
-                    'username': user[1],
-                    'user_id': str(user[2]),
-                    'is_admin': bool(user[3]),
-                    'is_online': bool(user[4])
+                    'id': str(user[column_map['id']]),
+                    'username': user[column_map['username']],
+                    'user_id': str(user[column_map['user_id']]),
+                    'is_admin': user[column_map['is_admin']],  # Bez konwersji
+                    'is_online': user[column_map['is_online']]  # Bez konwersji
                 }
                 user_list.append(user_data)
             
             return jsonify({'status': 'success', 'users': user_list})
         except Exception as e:
             return jsonify({'status': 'error', 'message': f'Nie można pobrać listy użytkowników: {str(e)}'}), 500
-    
-    # API zmiany uprawnień - prosta wersja bez zbędnych funkcji
-    @app.route('/api/users/<string:user_id>/toggle_admin', methods=['POST'])
-    @admin_required
-    def toggle_admin(user_id):
-        try:
-            # Znajdź użytkownika przez SQL
-            user_query = 'SELECT id, username, user_id, is_admin FROM "user" WHERE user_id = :user_id'
-            user = db.session.execute(text(user_query), {'user_id': user_id}).fetchone()
-            
-            if not user:
-                return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
-            
-            # Nie możemy zmienić własnych uprawnień
-            if str(user[2]) == current_user.user_id:
-                return jsonify({'status': 'error', 'message': 'Nie możesz zmienić własnych uprawnień'}), 400
-            
-            # Zmień uprawnienia administratora (odwróć obecny stan)
-            current_admin_state = bool(user[3])
-            new_admin_state = not current_admin_state
-            
-            # Aktualizuj bezpośrednio przez SQL
-            update_query = 'UPDATE "user" SET is_admin = :new_state WHERE user_id = :user_id'
-            db.session.execute(text(update_query), {'new_state': new_admin_state, 'user_id': user_id})
-            db.session.commit()
-            
-            return jsonify({
-                'status': 'success',
-                'message': f'Uprawnienia użytkownika {user[1]} zostały {"nadane" if new_admin_state else "odebrane"}',
-                'is_admin': new_admin_state
-            })
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({'status': 'error', 'message': f'Błąd podczas zmiany uprawnień: {str(e)}'}), 500
-    
-    # API usuwania użytkownika
-    @app.route('/api/users/<string:user_id>/delete', methods=['POST'])
-    @admin_required
-    def delete_user(user_id):
-        try:
-            # Znajdź użytkownika przez SQL
-            user_query = 'SELECT id, username, user_id FROM "user" WHERE user_id = :user_id'
-            user = db.session.execute(text(user_query), {'user_id': user_id}).fetchone()
-            
-            if not user:
-                return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
-            
-            # Nie możemy usunąć własnego konta
-            if str(user[2]) == current_user.user_id:
-                return jsonify({'status': 'error', 'message': 'Nie możesz usunąć własnego konta'}), 400
-            
-            # Usuń powiązane dane w jednej transakcji
-            user_id_value = user[0]  # ID użytkownika w bazie (klucz główny)
-            username = user[1]
-            
-            try:
-                # Usuń wiadomości powiązane z sesjami użytkownika
-                db.session.execute(text("""
-                    DELETE FROM "message" 
-                    WHERE session_id IN (
-                        SELECT id FROM "chat_session" 
-                        WHERE initiator_id = :user_id OR recipient_id = :user_id
-                    )
-                """), {'user_id': user_id_value})
-                
-                # Usuń sesje czatu użytkownika
-                db.session.execute(text("""
-                    DELETE FROM "chat_session" 
-                    WHERE initiator_id = :user_id OR recipient_id = :user_id
-                """), {'user_id': user_id_value})
-                
-                # Usuń użytkownika
-                db.session.execute(text('DELETE FROM "user" WHERE id = :user_id'), 
-                                   {'user_id': user_id_value})
-                
-                db.session.commit()
-                
-                return jsonify({
-                    'status': 'success',
-                    'message': f'Użytkownik {username} został usunięty'
-                })
-            except Exception as e:
-                db.session.rollback()
-                return jsonify({'status': 'error', 'message': f'Błąd podczas usuwania użytkownika: {str(e)}'}), 500
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': f'Błąd podczas usuwania użytkownika: {str(e)}'}), 500
     
     # Sprawdzenie sesji
     @app.route('/check_session')
@@ -333,19 +229,9 @@ def init_admin(app):
         else:
             return jsonify({'authenticated': False})
     
-    # Ciche wylogowanie
+    # Ciche wylogowanie - usunięto aktualizację stanu
     @app.route('/silent-logout', methods=['POST'])
     def silent_logout():
-        if current_user.is_authenticated:
-            try:
-                # Aktualizacja statusu bezpośrednio w bazie
-                db.session.execute(text("""
-                    UPDATE "user" SET is_online = FALSE 
-                    WHERE user_id = :user_id
-                """), {'user_id': current_user.user_id})
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
         return jsonify({'status': 'success'})
     
     # Nagłówki bezpieczeństwa
