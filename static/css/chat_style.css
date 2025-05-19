@@ -89,7 +89,7 @@ body {
 }
 
 #add-friend-btn {
-    background-color: var(--success-color);
+    background-color: var(--primary-color);
     color: var(--bg-dark);
 }
 
