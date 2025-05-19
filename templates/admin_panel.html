@@ -37,6 +37,9 @@
             <div class="admin-card">
                 <div class="admin-card-header">
                     <h3><i class="fa fa-dashboard"></i> Dashboard</h3>
+                    <button id="refresh-stats" class="admin-btn secondary">
+                        <i class="fa fa-refresh"></i> Odśwież statystyki
+                    </button>
                 </div>
                 <div class="admin-card-body">
                     <div class="admin-stats-container">
@@ -113,8 +116,8 @@
     <script>
         // Funkcja do ładowania statystyk
         function loadStats() {
-            // Użytkownicy - dodajemy timestamp i nagłówki no-cache
-            fetch('/api/users?' + new Date().getTime(), {
+            // Pobierz wszystkie statystyki za jednym razem
+            fetch('/api/admin/stats?' + new Date().getTime(), {
                 method: 'GET',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
@@ -130,31 +133,132 @@
                 }
                 return response.json();
             })
-            .then(users => {
-                if (Array.isArray(users)) {
-                    document.getElementById('users-count').textContent = users.length;
-                    const onlineCount = users.filter(user => user && user.is_online).length;
-                    document.getElementById('online-count').textContent = onlineCount;
-                } else if (users && users.error) {
-                    console.error('API error:', users.error);
+            .then(result => {
+                console.log("Pobrane statystyki:", result);
+                
+                // Sprawdź format odpowiedzi
+                if (result.status === 'error') {
+                    console.error('API error:', result.message);
                     document.getElementById('users-count').textContent = '-';
+                    document.getElementById('sessions-count').textContent = '-';
+                    document.getElementById('messages-count').textContent = '-';
                     document.getElementById('online-count').textContent = '-';
+                    showNotification('Błąd podczas pobierania statystyk: ' + result.message, 'error');
+                    return;
+                }
+                
+                if (result.status === 'success' && result.data) {
+                    // Aktualizuj wszystkie liczniki
+                    const stats = result.data;
+                    document.getElementById('users-count').textContent = stats.users_count;
+                    document.getElementById('sessions-count').textContent = stats.sessions_count;
+                    document.getElementById('messages-count').textContent = stats.messages_count;
+                    document.getElementById('online-count').textContent = stats.online_users_count;
+                } else {
+                    console.error('Nieprawidłowy format danych:', result);
+                    document.getElementById('users-count').textContent = '-';
+                    document.getElementById('sessions-count').textContent = '-';
+                    document.getElementById('messages-count').textContent = '-';
+                    document.getElementById('online-count').textContent = '-';
+                    showNotification('Błąd: Nieprawidłowy format danych statystyk', 'error');
                 }
             })
             .catch(error => {
-                console.error('Błąd podczas pobierania użytkowników:', error);
+                console.error('Błąd podczas pobierania statystyk:', error);
                 document.getElementById('users-count').textContent = '-';
+                document.getElementById('sessions-count').textContent = '-';
+                document.getElementById('messages-count').textContent = '-';
                 document.getElementById('online-count').textContent = '-';
+                showNotification('Błąd podczas pobierania statystyk: ' + error.message, 'error');
             });
-
-            // Sesje i wiadomości
-            document.getElementById('sessions-count').textContent = '-';
-            document.getElementById('messages-count').textContent = '-';
+        }
+        
+        // Funkcja do wyświetlania powiadomień (zaimplementowana w admin_users.js, ale dodana również tutaj dla kompletności)
+        function showNotification(message, type = 'info') {
+            // Mapowanie typów na klasy
+            const typeClass = {
+                'success': 'success',
+                'error': 'danger',
+                'info': 'info',
+                'warning': 'warning'
+            };
+            
+            // Wybór ikony
+            const iconClass = {
+                'success': 'check-circle',
+                'error': 'exclamation-circle',
+                'info': 'info-circle',
+                'warning': 'exclamation-triangle'
+            };
+            
+            // Domyślny typ, jeśli podany jest nieprawidłowy
+            const alertClass = typeClass[type] || 'info';
+            const icon = iconClass[type] || 'info-circle';
+            
+            // Sprawdź, czy kontener powiadomień istnieje
+            let notificationsContainer = document.getElementById('notifications-container');
+            
+            if (!notificationsContainer) {
+                // Utwórz kontener, jeśli nie istnieje
+                notificationsContainer = document.createElement('div');
+                notificationsContainer.id = 'notifications-container';
+                notificationsContainer.style.position = 'fixed';
+                notificationsContainer.style.top = '20px';
+                notificationsContainer.style.right = '20px';
+                notificationsContainer.style.zIndex = '9999';
+                document.body.appendChild(notificationsContainer);
+            }
+            
+            // Utwórz powiadomienie
+            const notification = document.createElement('div');
+            notification.className = `admin-card`;
+            notification.style.minWidth = '300px';
+            notification.style.marginBottom = '10px';
+            notification.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+            notification.style.backgroundColor = 'var(--admin-bg-medium)';
+            notification.style.padding = '15px';
+            notification.style.borderLeft = `4px solid var(--admin-${alertClass})`;
+            notification.innerHTML = `
+                <button type="button" class="close" style="color: var(--admin-text);">&times;</button>
+                <div>
+                    <i class="fa fa-${icon}" style="color: var(--admin-${alertClass}); margin-right: 8px;"></i>
+                    ${message}
+                </div>
+            `;
+            
+            // Dodaj powiadomienie do kontenera
+            notificationsContainer.appendChild(notification);
+            
+            // Automatycznie zamknij po 5 sekundach
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transition = 'opacity 0.5s';
+                setTimeout(() => {
+                    if (notification.parentNode === notificationsContainer) {
+                        notificationsContainer.removeChild(notification);
+                    }
+                }, 500);
+            }, 5000);
+            
+            // Obsługa przycisku zamknięcia
+            const closeButton = notification.querySelector('.close');
+            closeButton.addEventListener('click', function() {
+                notification.remove();
+            });
         }
 
         // Ładowanie statystyk przy załadowaniu strony
         document.addEventListener('DOMContentLoaded', function() {
             loadStats();
+            
+            // Obsługa kliknięcia przycisku odświeżenia statystyk
+            const refreshStatsButton = document.getElementById('refresh-stats');
+            if (refreshStatsButton) {
+                refreshStatsButton.addEventListener('click', function() {
+                    loadStats();
+                    showNotification('Odświeżanie statystyk...', 'info');
+                });
+            }
             
             // Odświeżanie statystyk co 30 sekund
             setInterval(loadStats, 30000);
