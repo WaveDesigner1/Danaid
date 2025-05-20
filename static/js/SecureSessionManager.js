@@ -1,6 +1,16 @@
 /**
  * Menedżer bezpiecznych sesji czatu
  */
+
+// Sprawdź czy klasa już istnieje w kontekście globalnym
+if (typeof E2EEProtocol === 'undefined') {
+  class E2EEProtocol {
+    // Reszta implementacji bez zmian...
+  }
+  
+  // Eksport globalny
+  window.e2eeProtocol = window.e2eeProtocol || new E2EEProtocol();
+}
 class SecureSessionManager {
   constructor() {
     this.activeSessions = [];
