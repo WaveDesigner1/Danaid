@@ -4,42 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Danaid - Bezpieczny Czat</title>
-    <!-- Poprawiona ścieżka do pliku CSS -->
     <link rel="stylesheet" href="static/css/chat_style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-    
-    <!-- Style dla wzmianek -->
-    <style>
-        /* Style dla systemu wzmianek */
-        .mention-suggestions {
-            position: absolute;
-            background-color: #444444;
-            border: 1px solid #555555;
-            border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
-            max-height: 200px;
-            overflow-y: auto;
-            width: 200px;
-        }
-
-        .mention-item {
-            padding: 8px 12px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            color: #FFFFFF;
-        }
-
-        .mention-item:hover,
-        .mention-item.selected {
-            background-color: #3a3a3a;
-        }
-
-        .mention {
-            color: #FF9800;
-            font-weight: bold;
-        }
-    </style>
 </head>
 <body>
     <div class="app-container">
@@ -371,6 +337,240 @@
 
     // Eksport globalny
     window.e2eeProtocol = new E2EEProtocol();
+    </script>
+
+    <!-- Implementacja podstawowych funkcji czatu -->
+    <script>
+    // Bezpośrednia obsługa interfejsu czatu
+    document.addEventListener('DOMContentLoaded', function() {
+      // Obsługa modalu dodawania znajomych
+      const addFriendBtn = document.getElementById('add-friend-btn');
+      const addFriendModal = document.getElementById('add-friend-modal');
+      const closeModalBtn = document.querySelector('.search-close');
+      const friendUserIdInput = document.getElementById('friend-user-id');
+      const sendFriendRequestBtn = document.getElementById('send-friend-request-btn');
+      const friendRequestStatus = document.getElementById('friend-request-status');
+      
+      // Otwórz modal dodawania znajomego
+      if (addFriendBtn) {
+        addFriendBtn.addEventListener('click', function() {
+          console.log('Otwieranie modalu dodawania znajomego');
+          if (addFriendModal) {
+            addFriendModal.style.display = 'block';
+            if (friendUserIdInput) {
+              friendUserIdInput.focus();
+            }
+          }
+        });
+      }
+      
+      // Zamknij modal
+      if (closeModalBtn) {
+        closeModalBtn.addEventListener('click', function() {
+          if (addFriendModal) {
+            addFriendModal.style.display = 'none';
+          }
+        });
+      }
+      
+      // Zamknij modal po kliknięciu poza nim
+      window.onclick = function(event) {
+        if (event.target === addFriendModal) {
+          addFriendModal.style.display = 'none';
+        }
+      };
+      
+      // Wysyłanie zaproszenia
+      if (sendFriendRequestBtn) {
+        sendFriendRequestBtn.addEventListener('click', sendFriendRequest);
+      }
+      
+      // Obsługa Enter w polu nazwy użytkownika
+      if (friendUserIdInput) {
+        friendUserIdInput.addEventListener('keypress', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            sendFriendRequest();
+          }
+        });
+      }
+      
+      // Obsługa przycisku wysyłania wiadomości
+      const sendButton = document.getElementById('send-button');
+      const messageInput = document.getElementById('message-input');
+      
+      if (sendButton) {
+        sendButton.addEventListener('click', function() {
+          sendMessage();
+        });
+      }
+      
+      // Obsługa Enter w polu wiadomości
+      if (messageInput) {
+        messageInput.addEventListener('keypress', function(e) {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+          }
+        });
+      }
+      
+      // Funkcja wysyłania zaproszenia
+      function sendFriendRequest() {
+        if (!friendUserIdInput || !friendRequestStatus) {
+          console.error('Brak elementów potrzebnych do wysłania zaproszenia');
+          return;
+        }
+        
+        const username = friendUserIdInput.value.trim();
+        if (!username) {
+          friendRequestStatus.textContent = 'Wprowadź nazwę użytkownika';
+          friendRequestStatus.className = 'search-status search-error';
+          friendRequestStatus.style.display = 'block';
+          return;
+        }
+        
+        // Pokazanie stanu ładowania
+        friendRequestStatus.textContent = 'Wysyłanie zaproszenia...';
+        friendRequestStatus.className = 'search-status';
+        friendRequestStatus.style.display = 'block';
+        
+        // Wyślij zapytanie do API
+        fetch('/api/friend_requests', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({ username: username })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`Błąd HTTP: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data.status === 'success') {
+            friendRequestStatus.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
+            friendRequestStatus.className = 'search-status search-success';
+            friendUserIdInput.value = '';
+            
+            // Zamknij modal po 3 sekundach
+            setTimeout(() => {
+              if (addFriendModal) {
+                addFriendModal.style.display = 'none';
+              }
+              
+              // Odśwież listę znajomych
+              if (window.chatInterface && typeof window.chatInterface.loadFriends === 'function') {
+                window.chatInterface.loadFriends();
+              }
+            }, 3000);
+          } else {
+            friendRequestStatus.textContent = data.message || 'Wystąpił błąd';
+            friendRequestStatus.className = 'search-status search-error';
+          }
+        })
+        .catch(error => {
+          console.error('Błąd wysyłania zaproszenia:', error);
+          friendRequestStatus.textContent = 'Wystąpił błąd sieciowy: ' + error.message;
+          friendRequestStatus.className = 'search-status search-error';
+        });
+      }
+      
+      // Funkcja wysyłania wiadomości
+      function sendMessage() {
+        if (!messageInput) {
+          console.error('Brak pola wprowadzania wiadomości');
+          return;
+        }
+        
+        const content = messageInput.value.trim();
+        if (!content) {
+          return;
+        }
+        
+        // Sprawdź, czy chatInterface jest dostępny
+        if (window.chatInterface && typeof window.chatInterface.sendMessage === 'function') {
+          // Użyj metody sendMessage z chatInterface
+          window.chatInterface.sendMessage();
+        } else {
+          // Alternatywnie, użyj bezpośrednio SecureSessionManager
+          if (window.sessionManager && typeof window.sessionManager.sendMessage === 'function') {
+            const currentSessionToken = window.sessionManager.currentSessionId || 
+                                       (window.chatInterface ? window.chatInterface.currentSessionToken : null);
+            
+            if (currentSessionToken) {
+              window.sessionManager.sendMessage(currentSessionToken, content)
+                .then(result => {
+                  if (result.status === 'success') {
+                    messageInput.value = '';
+                    
+                    // Dodaj wiadomość do interfejsu, jeśli możliwe
+                    if (document.getElementById('messages')) {
+                      const messageDiv = document.createElement('div');
+                      messageDiv.className = 'message sent';
+                      messageDiv.innerHTML = `
+                        <div class="message-content">${content}</div>
+                        <div class="message-info">
+                          <span class="message-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      `;
+                      document.getElementById('messages').appendChild(messageDiv);
+                      
+                      // Przewiń na dół
+                      document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+                    }
+                  } else {
+                    showNotification(result.message || 'Błąd wysyłania wiadomości', 'error');
+                  }
+                })
+                .catch(error => {
+                  console.error('Błąd wysyłania wiadomości:', error);
+                  showNotification('Wystąpił błąd podczas wysyłania wiadomości', 'error');
+                });
+            } else {
+              showNotification('Wybierz rozmowę, aby wysłać wiadomość', 'info');
+            }
+          } else {
+            // Ostatecznie, jeśli nic nie działa, pokaż komunikat
+            console.error('Brak dostępnych metod do wysyłania wiadomości');
+            showNotification('Wybierz rozmowę, aby wysłać wiadomość', 'info');
+          }
+        }
+      }
+      
+      // Funkcja pokazująca powiadomienie
+      function showNotification(message, type = 'info') {
+        const template = document.getElementById('notification-template');
+        if (!template) {
+          console.log(type, message);
+          return;
+        }
+        
+        const notificationElement = document.importNode(template.content, true).querySelector('.notification');
+        
+        notificationElement.classList.add(type);
+        const contentElement = notificationElement.querySelector('.notification-content');
+        if (contentElement) {
+          contentElement.textContent = message;
+        }
+        
+        document.body.appendChild(notificationElement);
+        
+        // Automatyczne zamknięcie po 5 sekundach
+        setTimeout(() => {
+          notificationElement.classList.add('closing');
+          setTimeout(() => {
+            if (document.body.contains(notificationElement)) {
+              document.body.removeChild(notificationElement);
+            }
+          }, 500);
+        }, 5000);
+      }
+    });
     </script>
 
     <!-- Ładowanie skryptów -->
