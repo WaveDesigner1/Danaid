@@ -779,12 +779,41 @@ class ChatInterface {
       statusDiv.className = 'search-no-results';
       statusDiv.style.display = 'block';
       
+      // Używamy menedżera sesji do wysłania zaproszenia
+      if (this.sessionManager && this.sessionManager.sendFriendRequest) {
+        const result = await this.sessionManager.sendFriendRequest(username);
+        
+        if (result.success) {
+          statusDiv.textContent = result.message || 'Zaproszenie wysłane pomyślnie';
+          statusDiv.className = 'search-no-results search-success';
+          usernameInput.value = '';
+          
+          // Zamknij modal po 3 sekundach
+          setTimeout(() => {
+            const modal = document.getElementById('add-friend-modal');
+            if (modal) modal.style.display = 'none';
+            
+            // Odśwież listę zaproszeń i znajomych
+            this.loadFriends();
+          }, 3000);
+        } else {
+          statusDiv.textContent = result.message || 'Wystąpił błąd';
+          statusDiv.className = 'search-error';
+        }
+        return;
+      }
+      
+      // Jeśli nie ma menedżera sesji, użyj fetch API bezpośrednio
       const response = await fetch('/api/friend_requests', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
         },
-        body: JSON.stringify({ username: username })
+        credentials: 'same-origin',
+        body: JSON.stringify({ 
+          username: username 
+        })
       });
       
       if (!response.ok) {
@@ -816,7 +845,6 @@ class ChatInterface {
       statusDiv.className = 'search-error';
     }
   }
-}
 
 /**
    * Obsługuje wprowadzanie tekstu z potencjalnymi wzmiankami
