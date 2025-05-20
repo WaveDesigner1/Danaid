@@ -147,4 +147,355 @@
         if (!this.userId) return false;
         
         this.connectionAttempts++;
-        const protocol = window.location.protocol === 'https:' ? 'wss:'
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        const wsUrl = `${protocol}//${host}/ws/chat/${this.userId}`;
+        
+        try {
+          this.socket = new WebSocket(wsUrl);
+          this.socket.onopen = () => {
+            console.log('WebSocket połączony');
+            this.isConnected = true;
+            this.connectionAttempts = 0;
+            this.send({
+              type: 'connection_established',
+              user_id: this.userId
+            });
+          };
+          
+          this.socket.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              if (data.type === 'ping') {
+                this.send({ type: 'pong' });
+                return;
+              }
+              if (data.type && this.handlers[data.type]) {
+                this.handlers[data.type](data);
+              }
+            } catch (error) {
+              console.error('Błąd obsługi wiadomości WebSocket:', error);
+            }
+          };
+          
+          this.socket.onclose = (event) => {
+            this.isConnected = false;
+            console.log(`WebSocket rozłączony: ${event.code}`);
+            if (event.code !== 1000) {
+              setTimeout(() => this.connect(), this.reconnectInterval);
+            }
+          };
+          
+          this.socket.onerror = (error) => {
+            console.error('Błąd WebSocket:', error);
+            this.isConnected = false;
+          };
+          
+          return true;
+        } catch (error) {
+          console.error('Błąd tworzenia połączenia WebSocket:', error);
+          setTimeout(() => this.connect(), this.reconnectInterval);
+          return false;
+        }
+      }
+      
+      send(data) {
+        if (!this.isConnected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+          this.pendingMessages.push(data);
+          if (!this.isConnected) {
+            this.connect();
+          }
+          return false;
+        }
+        
+        try {
+          this.socket.send(JSON.stringify(data));
+          return true;
+        } catch (error) {
+          console.error('Błąd wysyłania wiadomości WebSocket:', error);
+          return false;
+        }
+      }
+      
+      on(type, callback) {
+        this.handlers[type] = callback;
+      }
+      
+      close() {
+        if (this.socket) {
+          this.socket.close(1000, 'Zamknięcie przez użytkownika');
+        }
+      }
+    }
+
+    // Inicjalizacja
+    window.wsHandler = new WebSocketHandler();
+    </script>
+
+    <!-- Implementacja E2EE Protocol -->
+    <script>
+    /**
+     * Protokół E2EE - Obsługa szyfrowanej komunikacji end-to-end
+     */
+    class E2EEProtocol {
+      constructor() {
+        this.crypto = window.crypto.subtle;
+        this.keys = {};
+      }
+
+      /**
+       * Generuje parę kluczy RSA
+       */
+      async generateKeyPair() {
+        return await this.crypto.generateKey(
+          {
+            name: "RSA-OAEP",
+            modulusLength: 2048,
+            publicExponent: new Uint8Array([1, 0, 1]),
+            hash: "SHA-256"
+          },
+          true,
+          ["encrypt", "decrypt"]
+        );
+      }
+
+      /**
+       * Generuje klucz symetryczny AES-GCM
+       */
+      async generateSessionKey() {
+        return await this.crypto.generateKey(
+          {
+            name: "AES-GCM",
+            length: 256
+          },
+          true,
+          ["encrypt", "decrypt"]
+        );
+      }
+
+      /**
+       * Szyfruje wiadomość
+       */
+      async encryptMessage(sessionKey, message) {
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const encoded = new TextEncoder().encode(message);
+        
+        const encrypted = await this.crypto.encrypt(
+          {
+            name: "AES-GCM",
+            iv: iv
+          },
+          sessionKey,
+          encoded
+        );
+
+        return {
+          iv: this.arrayBufferToBase64(iv),
+          data: this.arrayBufferToBase64(encrypted)
+        };
+      }
+
+      /**
+       * Deszyfruje wiadomość
+       */
+      async decryptMessage(sessionKey, encryptedMsg) {
+        const iv = this.base64ToArrayBuffer(encryptedMsg.iv);
+        const data = this.base64ToArrayBuffer(encryptedMsg.data);
+        
+        const decrypted = await this.crypto.decrypt(
+          {
+            name: "AES-GCM",
+            iv: iv
+          },
+          sessionKey,
+          data
+        );
+
+        return new TextDecoder().decode(decrypted);
+      }
+
+      /**
+       * Importuje klucz prywatny z formatu PEM
+       */
+      async importPrivateKeyFromPEM(pem) {
+        const pemContents = pem
+          .replace("-----BEGIN PRIVATE KEY-----", "")
+          .replace("-----END PRIVATE KEY-----", "")
+          .replace(/\s+/g, "");
+
+        const binaryDer = this.base64ToArrayBuffer(pemContents);
+
+        return await this.crypto.importKey(
+          "pkcs8",
+          binaryDer,
+          {
+            name: "RSA-OAEP",
+            hash: "SHA-256"
+          },
+          true,
+          ["decrypt"]
+        );
+      }
+
+      /**
+       * Importuje klucz sesji
+       */
+      async importSessionKey(base64Key) {
+        const keyData = this.base64ToArrayBuffer(base64Key);
+        return await this.crypto.importKey(
+          "raw",
+          keyData,
+          {
+            name: "AES-GCM",
+            length: 256
+          },
+          true,
+          ["encrypt", "decrypt"]
+        );
+      }
+
+      // Funkcje pomocnicze
+      arrayBufferToBase64(buffer) {
+        return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      }
+
+      base64ToArrayBuffer(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+      }
+    }
+
+    // Eksport globalny
+    window.e2eeProtocol = new E2EEProtocol();
+    </script>
+
+    <!-- Ładowanie skryptów -->
+    <script>
+    // Funkcja do sekwencyjnego ładowania skryptów
+    function loadScript(url, callback) {
+      const script = document.createElement('script');
+      script.type = 'text/javascript';
+      script.src = url;
+      script.onload = callback;
+      script.onerror = function() {
+        console.error('Błąd ładowania skryptu:', url);
+        callback();
+      };
+      document.head.appendChild(script);
+    }
+
+    // Lista skryptów do załadowania (kolejność ma znaczenie)
+    const scriptsToLoad = [
+      'static/js/chat_crypto.js',
+      'static/js/SecureSessionManager.js',
+      'static/js/ChatInterface.js'
+    ];
+
+    // Funkcja ładująca skrypty sekwencyjnie
+    function loadScriptsSequentially(index) {
+      if (index >= scriptsToLoad.length) {
+        // Wszystkie skrypty załadowane, inicjalizuj aplikację
+        initApp();
+        return;
+      }
+
+      loadScript(scriptsToLoad[index], function() {
+        loadScriptsSequentially(index + 1);
+      });
+    }
+
+    // Inicjalizacja aplikacji po załadowaniu wszystkich skryptów
+    function initApp() {
+      try {
+        console.log('Inicjalizacja aplikacji...');
+        
+        // Sprawdź dane logowania
+        const userId = sessionStorage.getItem('user_id');
+        const username = sessionStorage.getItem('username');
+        
+        if (!userId || !username) {
+          console.warn('Brak danych logowania');
+          const promptId = prompt("Podaj ID użytkownika");
+          if (promptId) {
+            sessionStorage.setItem('user_id', promptId);
+            fetch(`/api/user/${promptId}/info`)
+              .then(res => res.json())
+              .then(data => {
+                if (data.status === 'success') {
+                  sessionStorage.setItem('username', data.user.username);
+                  sessionStorage.setItem('isLoggedIn', 'true');
+                  window.location.reload();
+                }
+              })
+              .catch(err => console.error(err));
+          } else {
+            window.location.href = '/';
+            return;
+          }
+        }
+        
+        // Ustaw nazwę użytkownika w UI
+        const usernameElement = document.getElementById('username');
+        if (usernameElement) {
+          usernameElement.textContent = username;
+        }
+        
+        // Obsługa wylogowania
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+          logoutBtn.addEventListener('click', function() {
+            sessionStorage.clear();
+            localStorage.removeItem('isLoggedIn');
+            window.location.href = '/logout';
+          });
+        }
+        
+        // Inicjalizacja interfejsu czatu
+        if (!window.chatInterface && typeof ChatInterface === 'function') {
+          console.log('Inicjalizacja ChatInterface...');
+          window.chatInterface = new ChatInterface(window.sessionManager);
+        }
+      } catch (error) {
+        console.error('Błąd inicjalizacji aplikacji:', error);
+        showError(error.message);
+      }
+    }
+
+    function showError(message) {
+      const errorDiv = document.createElement('div');
+      errorDiv.style.position = 'fixed';
+      errorDiv.style.top = '20%';
+      errorDiv.style.left = '50%';
+      errorDiv.style.transform = 'translate(-50%, -50%)';
+      errorDiv.style.background = '#ff5722';
+      errorDiv.style.color = 'white';
+      errorDiv.style.padding = '20px';
+      errorDiv.style.borderRadius = '8px';
+      errorDiv.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+      errorDiv.style.zIndex = '9999';
+      errorDiv.style.textAlign = 'center';
+      
+      errorDiv.innerHTML = `
+        <h3 style="margin-top:0;">Błąd inicjalizacji</h3>
+        <p>${message}</p>
+        <button onclick="window.location.reload()" 
+                style="background:#fff; color:#ff5722; border:none; padding:8px 15px; 
+                       border-radius:4px; margin-top:10px; cursor:pointer;">
+          Odśwież stronę
+        </button>
+      `;
+      
+      document.body.appendChild(errorDiv);
+    }
+
+    // Rozpocznij ładowanie skryptów
+    document.addEventListener('DOMContentLoaded', function() {
+      loadScriptsSequentially(0);
+    });
+    </script>
+</body>
+</html>
