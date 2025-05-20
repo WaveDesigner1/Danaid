@@ -59,12 +59,15 @@
         </div>
 
         <div id="chat">
+            <div id="chat-header">
+                <h2>Wybierz rozmówcę</h2>
+            </div>
             <div id="messages">
                 <!-- wiadomości będą się tu pojawiać -->
                 <div class="welcome-message">
                     <h3>Witaj w czacie z szyfrowaniem end-to-end!</h3>
                     <p>Wybierz istniejącą konwersację z listy po lewej stronie lub dodaj nowego znajomego, aby rozpocząć czat.</p>
-                   
+                    <p>Wszystkie wiadomości są szyfrowane i chronione przed podsłuchem!</p>
                 </div>
             </div>
             <div id="input-area">
@@ -113,7 +116,7 @@
             <div id="friend-request-form">
                 <div class="search-result-item">
                     <div class="result-info">
-                        <div class="result-message">Wprowadź nazwe użytkownika, którego chcesz dodać do znajomych</div>
+                        <div class="result-message">Wprowadź nazwę użytkownika, którego chcesz dodać do znajomych</div>
                     </div>
                     <button id="send-friend-request-btn" class="result-action-btn">Wyślij zaproszenie</button>
                 </div>
@@ -130,34 +133,50 @@
         const addFriendBtn = document.getElementById('add-friend-btn');
         const closeBtn = modal.querySelector('.search-close');
         const sendRequestBtn = document.getElementById('send-friend-request-btn');
-        const friendIdInput = document.getElementById('friend-username');
+        const friendUserIdInput = document.getElementById('friend-user-id');
         const statusDiv = document.getElementById('friend-request-status');
+        
+        console.log('Elementy modala:', {
+            modal: modal,
+            addFriendBtn: addFriendBtn,
+            closeBtn: closeBtn,
+            sendRequestBtn: sendRequestBtn,
+            friendUserIdInput: friendUserIdInput,
+            statusDiv: statusDiv
+        });
         
         // Otwórz modal po kliknięciu przycisku
         addFriendBtn.addEventListener('click', function() {
+            console.log('Przycisk "Dodaj znajomego" kliknięty');
             modal.style.display = 'block';
-            friendIdInput.value = '';
+            friendUserIdInput.value = '';
             statusDiv.style.display = 'none';
             statusDiv.className = 'search-no-results';
         });
         
         // Zamknij modal po kliknięciu na X
         closeBtn.addEventListener('click', function() {
+            console.log('Przycisk zamknięcia kliknięty');
             modal.style.display = 'none';
         });
         
         // Zamknij modal po kliknięciu poza nim
         window.addEventListener('click', function(event) {
             if (event.target === modal) {
+                console.log('Kliknięcie poza modalem');
                 modal.style.display = 'none';
             }
         });
         
         // Obsługa wysyłania zaproszenia
         sendRequestBtn.addEventListener('click', function() {
-           const friendUsername = friendIdInput.value.trim();
+            console.log('Przycisk "Wyślij zaproszenie" kliknięty');
+            const friendUsername = friendUserIdInput.value.trim();
+            
+            console.log('Wprowadzona nazwa użytkownika:', friendUsername);
             
             if (!friendUsername) {
+                console.log('Brak nazwy użytkownika');
                 statusDiv.textContent = 'Wprowadź nazwę użytkownika';
                 statusDiv.className = 'search-error';
                 statusDiv.style.display = 'block';
@@ -165,6 +184,8 @@
             }
             
             // Wyślij zapytanie do API
+            console.log('Wysyłanie żądania do API z danymi:', { username: friendUsername });
+            
             fetch('/api/friend_requests', {
                 method: 'POST',
                 headers: {
@@ -172,14 +193,19 @@
                 },
                 body: JSON.stringify({ username: friendUsername })
             })
-            .then(response => response.json())
+            .then(response => {
+                console.log('Odpowiedź otrzymana, status:', response.status);
+                return response.json();
+            })
             .then(data => {
+                console.log('Dane odpowiedzi:', data);
+                
                 if (data.status === 'success') {
                     statusDiv.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
                     statusDiv.className = 'search-no-results';
                     
                     // Wyczyść pole wprowadzania
-                    friendIdInput.value = '';
+                    friendUserIdInput.value = '';
                     
                     // Zamknij modal po 3 sekundach
                     setTimeout(function() {
@@ -198,6 +224,100 @@
                 statusDiv.className = 'search-error';
                 statusDiv.style.display = 'block';
             });
+        });
+    });
+    </script>
+
+    <!-- Skrypt dla emotikon -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const messageInput = document.getElementById('message-input');
+        if (!messageInput) return;
+
+        // Konwersja emotikon na emoji podczas pisania
+        messageInput.addEventListener('input', function() {
+            // Emotikony i ich odpowiedniki emoji
+            const emoticons = {
+                ':)': '😊',
+                ':-)': '😊',
+                ':D': '😀',
+                ':-D': '😀',
+                ':(': '☹️',
+                ':-(': '☹️',
+                ';)': '😉',
+                ';-)': '😉',
+                ':P': '😛',
+                ':-P': '😛',
+                ':p': '😛',
+                ':-p': '😛',
+                ':*': '😘',
+                ':-*': '😘',
+                ':|': '😐',
+                ':-|': '😐',
+                ':O': '😮',
+                ':-O': '😮',
+                ':o': '😮',
+                ':-o': '😮',
+                ':0': '😮',
+                ':-0': '😮',
+                ':3': '😊',
+                '<3': '❤️',
+                '</3': '💔',
+                '(y)': '👍',
+                '(n)': '👎',
+                '(Y)': '👍',
+                '(N)': '👎',
+                ':/)': '🤔',
+                ':\\': '😕',
+                ':-\\': '😕',
+                ':/': '😕',
+                ':-/': '😕',
+                ':S': '😖',
+                ':-S': '😖',
+                ':s': '😖',
+                ':-s': '😖',
+                ';P': '😜',
+                ';-P': '😜',
+                ';p': '😜',
+                ';-p': '😜',
+                'XD': '😂',
+                'xD': '😂'
+            };
+            
+            // Pobierz pozycję kursora
+            const cursorPos = messageInput.selectionStart;
+            
+            // Pobierz tekst
+            const text = messageInput.value;
+            
+            // Sprawdź, czy tekst zawiera emotikony
+            let newText = text;
+            let changes = 0;
+            
+            // Sprawdź każdą emotikonę
+            Object.keys(emoticons).forEach(emoticon => {
+                // Tylko jeśli emotikonka jest poprzedzona spacją lub jest na początku tekstu
+                const regex = new RegExp(`(^|\\s)${emoticon.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1")}`, 'g');
+                newText = newText.replace(regex, function(match, p1) {
+                    changes++;
+                    return p1 + emoticons[emoticon];
+                });
+            });
+            
+            // Aktualizuj tekst tylko jeśli były zmiany
+            if (changes > 0) {
+                // Zapamiętaj pozycję kursora
+                const oldLength = text.length;
+                const newLength = newText.length;
+                const newCursorPos = cursorPos + (newLength - oldLength);
+                
+                // Aktualizuj tekst
+                messageInput.value = newText;
+                
+                // Przywróć pozycję kursora
+                messageInput.selectionStart = newCursorPos;
+                messageInput.selectionEnd = newCursorPos;
+            }
         });
     });
     </script>
