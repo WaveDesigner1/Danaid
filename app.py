@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file
+from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, Response
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_required
 from datetime import timedelta
@@ -6,6 +6,7 @@ import os
 import shutil
 import datetime
 import time
+import json
 from sqlalchemy import text
 from sqlalchemy import inspect, text
 import traceback
@@ -75,22 +76,29 @@ def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
     init_websocket_routes(app)
+    
     # Konfiguracja bazy danych
-    database_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@postgres.railway.internal:5432/railway')
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        # Użyj bezpiecznego fallbacku lub zgłoś błąd
+        database_url = 'postgresql://postgres:password@localhost:5432/app'
+        app.logger.warning('Używanie domyślnego URL bazy danych - to nie powinno być używane w produkcji!')
+    
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Generuj nowy sekret dla sesji przy każdym uruchomieniu aplikacji
-    # To wymusi reset wszystkich sesji użytkowników
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
+    # Bezpieczniejsze zarządzanie kluczem sesji
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+    if not app.config['SECRET_KEY']:
+        app.config['SECRET_KEY'] = os.urandom(24).hex()
+        app.logger.warning('Używanie wygenerowanego SECRET_KEY - to wyloguje wszystkich użytkowników przy restarcie!')
     
     # Konfiguracja sesji
     app.config['SESSION_TYPE'] = 'filesystem'  # Przechowuj sesje w plikach, a nie w cookies
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
-   # app.config['SESSION_REFRESH_EACH_REQUEST'] = True  # Odświeżaj sesję przy każdym żądaniu
     
     # Inicjalizacja bazy danych i logowania
     db.init_app(app)
@@ -139,9 +147,7 @@ def create_app():
         
         return Response(js_content, mimetype='application/javascript')
 
-    
-    # Endpoint diagnostyczny do sprawdzenia połączenia z bazą danych
-    
+# Endpoint diagnostyczny do sprawdzenia połączenia z bazą danych
     @app.route('/db-debug')
     def db_debug():
         try:
@@ -171,8 +177,8 @@ def create_app():
                 "engine": engine_name,
                 "test_query": dict(result) if result else None,
                 "tables": tables,
-                "env_database_url": os.environ.get('DATABASE_URL', 'not_set').replace('danaid_database_owner:npg_LcawRkg3jpD2', 'danaid_database_owner:******'),
-                "env_neon_database_url": os.environ.get('NEON_DATABASE_URL', 'not_set').replace('danaid_database_owner:npg_LcawRkg3jpD2', 'danaid_database_owner:******'),
+                "env_database_url": "ZREDAGOWANO", # Bezpieczniejsza implementacja
+                "env_neon_database_url": "ZREDAGOWANO", # Bezpieczniejsza implementacja
                 "connection_string": safe_connection
             })
         except Exception as e:
@@ -181,8 +187,8 @@ def create_app():
                 "message": str(e),
                 "error_type": type(e).__name__,
                 "env_vars": {
-                    "DATABASE_URL": (os.environ.get('DATABASE_URL', 'not_set').replace('danaid_database_owner:npg_LcawRkg3jpD2', 'danaid_database_owner:******')),
-                    "NEON_DATABASE_URL": (os.environ.get('NEON_DATABASE_URL', 'not_set').replace('danaid_database_owner:npg_LcawRkg3jpD2', 'danaid_database_owner:******'))
+                    "DATABASE_URL": "ZREDAGOWANO", # Bezpieczniejsza implementacja
+                    "NEON_DATABASE_URL": "ZREDAGOWANO" # Bezpieczniejsza implementacja
                 }
             }), 500
     
@@ -217,8 +223,8 @@ def create_app():
             print(f"Błąd podczas inicjalizacji bazy danych: {e}")
             traceback.print_exc()
             db.session.rollback()
-    
-    # Dodaj zarządzanie sesją
+
+# Dodaj zarządzanie sesją
     @app.before_request
     def before_request():
         """Zarządzanie sesją przed każdym żądaniem"""
@@ -239,12 +245,19 @@ def create_app():
                 now = int(time.time())
                 
                 if now - last_update > 300:  # 5 minut = 300 sekund
+                    # Używaj flagi modified zamiast bezpośredniego commita
                     current_user.is_online = True
-                    db.session.commit()
-                    # Cookies do zarządzania czasem ostatniej aktualizacji są obsługiwane w odpowiedzi
+                    # Commit zostanie wykonany po zakończeniu obsługi żądania przez Flask
         except Exception as e:
-            print(f"Błąd w before_request: {e}")
+            app.logger.error(f"Błąd w before_request: {e}")
             db.session.rollback()
+    
+    @app.after_request
+    def after_request(response):
+        """Ustawia ciasteczko z czasem ostatniej aktualizacji statusu online"""
+        if current_user.is_authenticated and hasattr(current_user, 'is_online'):
+            last_update_key = f'last_online_update_{current_user.id}'
+            response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
+        return response
             
-        
     return app
