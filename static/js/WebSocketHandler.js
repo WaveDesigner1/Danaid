@@ -1,5 +1,6 @@
-// Zaktualizowany WebSocketHandler.js dla Railway.app
-
+/**
+ * WebSocketHandler - Zoptymalizowana obsługa połączeń WebSocket
+ */
 class WebSocketHandler {
   constructor() {
     this.socket = null;
@@ -19,7 +20,7 @@ class WebSocketHandler {
   }
   
   /**
-   * Nawiązuje połączenie WebSocket
+   * Nawiązuje połączenie WebSocket z autodetekcją konfiguracji
    */
   connect() {
     if (this.connectionAttempts >= this.maxConnectionAttempts) {
@@ -34,10 +35,17 @@ class WebSocketHandler {
     
     this.connectionAttempts++;
     
-    // Określ URL WebSocket - używamy tego samego hosta co strona
+    // Autodetekcja konfiguracji WebSocket
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/chat/${this.userId}`;
+    let wsHost = window.location.host;
+    let wsPath = `/ws/chat/${this.userId}`;
     
+    // Sprawdź, czy konfiguracja jest dostępna
+    if (window._env && window._env.wsUrl) {
+      wsHost = window._env.wsUrl;
+    }
+    
+    const wsUrl = `${protocol}//${wsHost}${wsPath}`;
     console.log(`Próba połączenia WebSocket: ${wsUrl}`);
     
     try {
@@ -80,22 +88,18 @@ class WebSocketHandler {
    */
   handleMessage(event) {
     try {
-      console.log('Otrzymano wiadomość WebSocket:', event.data);
       const data = JSON.parse(event.data);
+      console.log('Otrzymano wiadomość WebSocket:', data.type);
       
       // Odpowiedź na ping
       if (data.type === 'ping') {
-        console.log('Otrzymano ping, wysyłanie pong');
         this.send({ type: 'pong' });
         return;
       }
       
       // Wywołaj odpowiedni handler zdarzenia
       if (data.type && this.handlers[data.type]) {
-        console.log(`Wywołanie handlera dla typu: ${data.type}`);
         this.handlers[data.type](data);
-      } else {
-        console.log(`Brak handlera dla typu: ${data.type}`);
       }
     } catch (error) {
       console.error('Błąd obsługi wiadomości WebSocket:', error);
@@ -108,7 +112,7 @@ class WebSocketHandler {
   handleClose(event) {
     this.isConnected = false;
     this._running = false;
-    console.log(`WebSocket rozłączony: ${event.code} - ${event.reason}`);
+    console.log(`WebSocket rozłączony: ${event.code}`);
     
     if (event.code !== 1000) { // Jeśli to nie jest normalne zamknięcie
       this.scheduleReconnect();
@@ -138,7 +142,6 @@ class WebSocketHandler {
    */
   send(data) {
     if (!this.isConnected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      console.log('WebSocket nie jest połączony. Zapisano wiadomość do późniejszego wysłania:', data);
       // Zapisz wiadomość do wysłania później
       this.pendingMessages.push(data);
       
@@ -151,7 +154,6 @@ class WebSocketHandler {
     
     try {
       const messageStr = JSON.stringify(data);
-      console.log('Wysyłanie wiadomości WebSocket:', messageStr);
       this.socket.send(messageStr);
       return true;
     } catch (error) {
@@ -180,7 +182,6 @@ class WebSocketHandler {
    * Rejestruje obsługę typu wiadomości
    */
   on(type, callback) {
-    console.log(`Rejestracja handlera dla typu: ${type}`);
     this.handlers[type] = callback;
   }
   
@@ -188,14 +189,13 @@ class WebSocketHandler {
    * Sprawdza czy użytkownik jest online
    */
   is_user_online(user_id) {
-    return this.isConnected; // Uproszczona implementacja
+    return this.isConnected;
   }
   
   /**
    * Wysyła wiadomość do konkretnego użytkownika
    */
   send_to_user(user_id, message) {
-    console.log(`Wysyłanie wiadomości do użytkownika ${user_id}:`, message);
     return this.send({
       type: 'direct_message',
       recipient_id: user_id,
