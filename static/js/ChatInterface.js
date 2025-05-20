@@ -23,17 +23,20 @@ class ChatInterface {
         this.sessions = [];
         this.lastMessageTimes = {};
         
-        // Inicjalizacja
-        this.initializeEvents();
-        this.loadUserData();
-        this.loadFriends();
-        this.loadSessions();
-
         // System wzmianek
         this.mentionedUsers = [];
         this.mentionSuggestions = null;
         this.currentMentionPosition = -1;
         this.selectedMentionIndex = 0;
+        
+        // Inicjalizacja
+        this.initializeEvents();
+        this.loadUserData();
+        this.loadFriends();
+        this.loadSessions();
+        
+        // Sprawdź połączenie WebSocket
+        setTimeout(() => this.checkWebSocketConnection(), 1000);
     }
     
     /**
@@ -129,8 +132,8 @@ class ChatInterface {
             this.showNotification('Błąd ładowania znajomych', 'error');
         }
     }
-    
-    /**
+
+/**
      * Ładuje aktywne sesje czatu z serwera
      */
     async loadSessions() {
@@ -321,8 +324,8 @@ class ChatInterface {
             this.showNotification('Nie udało się rozpocząć rozmowy', 'error');
         }
     }
-    
-    /**
+
+/**
      * Przełącza aktywną sesję
      */
     switchSession(sessionToken) {
@@ -478,293 +481,108 @@ class ChatInterface {
     }
     
     /**
-     * Funkcja obsługująca wysyłanie wiadomości
-     * Poprawiona wersja z obsługą błędów i dodatkowym logowaniem
+     * Sprawdza, czy sesja jest gotowa do wysyłania wiadomości
      */
-    async sendMessage() {
-    const content = this.messageInput.value.trim();
-    if (!content || !this.currentSessionToken) {
-        console.error("Nie można wysłać wiadomości: pusty content lub brak tokenu sesji");
-        console.log("Content:", content);
-        console.log("Current session token:", this.currentSessionToken);
-        return;
+    async ensureSessionReady() {
+        if (!this.currentSessionToken) {
+            console.error("Brak aktywnej sesji");
+            this.showNotification("Brak aktywnej sesji", "error");
+            return false;
+        }
+        
+        // Sprawdź, czy klucz sesji istnieje w localStorage
+        const sessionKey = localStorage.getItem(`session_key_${this.currentSessionToken}`);
+        
+        if (!sessionKey) {
+            console.log("Brak klucza sesji, próba pobrania...");
+            
+            try {
+                // Znajdź sesję w liście
+                const session = this.sessions.find(s => s.token === this.currentSessionToken);
+                
+                if (!session) {
+                    this.showNotification("Sesja nie istnieje", "error");
+                    return false;
+                }
+                
+                // Sprawdź, czy sesja ma klucz
+                if (!session.has_key) {
+                    this.showNotification("Sesja nie ma ustalonego klucza szyfrowania", "error");
+                    return false;
+                }
+                
+                // Pobierz klucz z serwera
+                const result = await this.sessionManager.retrieveSessionKey(this.currentSessionToken);
+                
+                if (!result.success) {
+                    this.showNotification("Nie można pobrać klucza sesji: " + result.message, "error");
+                    return false;
+                }
+                
+                // Sprawdź, czy klucz został pobrany
+                if (!localStorage.getItem(`session_key_${this.currentSessionToken}`)) {
+                    this.showNotification("Nie udało się odszyfrować klucza sesji", "error");
+                    return false;
+                }
+                
+            } catch (error) {
+                console.error("Błąd podczas pobierania klucza sesji:", error);
+                this.showNotification("Błąd podczas pobierania klucza sesji", "error");
+                return false;
+            }
+        }
+        
+        return true;
     }
     
-    try {
-        console.log("Próba wysłania wiadomości");
-        console.log("Token sesji:", this.currentSessionToken);
-        
-        // Sprawdź klucz sesji w localStorage
-        const sessionKey = localStorage.getItem(`session_key_${this.currentSessionToken}`);
-        console.log("Klucz sesji istnieje:", !!sessionKey);
-        
-        // Sprawdź czy sessionManager jest poprawnie zainicjalizowany
-        if (!this.sessionManager) {
-            console.error("sessionManager nie jest dostępny");
-            this.showNotification('Błąd połączenia z menedżerem sesji', 'error');
+    /**
+     * Funkcja obsługująca wysyłanie wiadomości
+     */
+    async sendMessage() {
+        const content = this.messageInput.value.trim();
+        if (!content) {
+            console.error("Nie można wysłać pustej wiadomości");
             return;
         }
         
-        // Sprawdź czy chatCrypto jest dostępny
-        console.log("chatCrypto dostępny:", !!window.chatCrypto);
-        
-        // Wykrywanie wzmianek
-        const mentions = this.detectMentions(content);
-        
-        // Wyślij wiadomość przez menedżer sesji
-        const result = await this.sessionManager.sendMessage(this.currentSessionToken, content, mentions);
-        console.log("Wynik wysyłania wiadomości:", result);
-        
-        if (result.status === 'success') {
-            // Dodaj wiadomość do interfejsu
-            this.addMessageToUI(result.messageData);
-            
-            // Wyczyść pole wejściowe
-            this.messageInput.value = '';
-            
-            // Zamknij sugestie wzmianek, jeśli są otwarte
-            this.closeMentionSuggestions();
-        } else {
-            console.error("Błąd podczas wysyłania:", result.message);
-            this.showNotification(result.message || 'Błąd wysyłania wiadomości', 'error');
+        // Sprawdź gotowość sesji przed wysłaniem
+        const isSessionReady = await this.ensureSessionReady();
+        if (!isSessionReady) {
+            console.error("Sesja nie jest gotowa do wysyłania wiadomości");
+            return;
         }
-    } catch (error) {
-        console.error('Błąd wysyłania wiadomości:', error);
-        this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, 'error');
+        
+        try {
+            console.log("Próba wysłania wiadomości");
+            console.log("Token sesji:", this.currentSessionToken);
+            
+            // Wykrywanie wzmianek
+            const mentions = this.detectMentions(content);
+            
+            // Wyślij wiadomość przez menedżer sesji
+            const result = await this.sessionManager.sendMessage(this.currentSessionToken, content, mentions);
+            console.log("Wynik wysyłania wiadomości:", result);
+            
+            if (result.status === 'success') {
+                // Dodaj wiadomość do interfejsu
+                this.addMessageToUI(result.messageData);
+                
+                // Wyczyść pole wejściowe
+                this.messageInput.value = '';
+                
+                // Zamknij sugestie wzmianek, jeśli są otwarte
+                this.closeMentionSuggestions();
+            } else {
+                console.error("Błąd podczas wysyłania:", result.message);
+                this.showNotification(result.message || 'Błąd wysyłania wiadomości', "error");
+            }
+        } catch (error) {
+            console.error('Błąd wysyłania wiadomości:', error);
+            this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, "error");
+        }
     }
-}
 
 /**
- * Dodatkowa metoda debugowania do sprawdzania kluczy sesji
- */
-checkSessionKeys() {
-    if (this.currentSessionToken) {
-        const sessionKey = localStorage.getItem(`session_key_${this.currentSessionToken}`);
-        console.log("Klucz sesji dla tokenu", this.currentSessionToken, "istnieje:", !!sessionKey);
-    } else {
-        console.log("Brak aktywnej sesji");
-    }
-}
-    
-    /**
-     * Obsługuje nową wiadomość z WebSocket
-     */
-    displayNewMessage(sessionToken, message) {
-        // Sprawdź, czy to wiadomość dla aktualnie wyświetlanej sesji
-        if (sessionToken === this.currentSessionToken) {
-            // Dodaj wiadomość do interfejsu
-            this.addMessageToUI(message);
-            
-            // Oznacz wiadomość jako przeczytaną
-            this.markMessageAsRead(sessionToken, message.id);
-        } else {
-            // Zaktualizuj licznik nieprzeczytanych wiadomości w innej sesji
-            const sessionItem = document.querySelector(`.friend-item[data-session-token="${sessionToken}"]`);
-            if (sessionItem) {
-                let unreadBadge = sessionItem.querySelector('.unread-badge');
-                
-                if (!unreadBadge) {
-                    unreadBadge = document.createElement('div');
-                    unreadBadge.className = 'unread-badge';
-                    sessionItem.querySelector('.friend-info').appendChild(unreadBadge);
-                    unreadBadge.textContent = '1';
-                } else {
-                    const count = parseInt(unreadBadge.textContent);
-                    unreadBadge.textContent = (count + 1).toString();
-                }
-                
-                // Powiadomienie dźwiękowe
-                this.playNotificationSound();
-                
-                // Pokaż powiadomienie desktopowe, jeśli strona jest w tle
-                this.showDesktopNotification(sessionToken, message);
-            }
-        }
-    }
-    
-    /**
-     * Oznacza wiadomość jako przeczytaną
-     */
-    markMessageAsRead(sessionToken, messageId) {
-        if (!this.sessionManager) return;
-        this.sessionManager.markMessageAsRead(sessionToken, messageId);
-    }
-    
-    /**
-     * Wysyła zaproszenie do znajomych
-     */
-    async sendFriendRequest() {
-    // Pobierz nazwę użytkownika z pola
-    const usernameInput = document.getElementById('friend-user-id');
-    const statusDiv = document.getElementById('friend-request-status');
-    
-    if (!usernameInput || !statusDiv) {
-        console.error('Brak elementów UI dla wysyłania zaproszeń');
-        return;
-    }
-    
-    const username = usernameInput.value.trim();
-    if (!username) {
-        statusDiv.textContent = 'Wprowadź nazwę użytkownika';
-        statusDiv.className = 'search-error';
-        statusDiv.style.display = 'block';
-        return;
-    }
-    
-    try {
-        // Wyślij żądanie API
-        statusDiv.textContent = 'Wysyłanie zaproszenia...';
-        statusDiv.className = 'search-no-results';
-        statusDiv.style.display = 'block';
-        
-        console.log('Wysyłanie zaproszenia dla użytkownika:', username);
-        
-        const response = await fetch('/api/friend_requests', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ username: username })
-        });
-        
-        const data = await response.json();
-        console.log('Odpowiedź serwera:', data);
-        
-        if (data.status === 'success') {
-            statusDiv.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
-            statusDiv.className = 'search-no-results';
-            usernameInput.value = '';
-            
-            // Zamknij modal po 3 sekundach
-            setTimeout(() => {
-                const modal = document.getElementById('add-friend-modal');
-                if (modal) modal.style.display = 'none';
-            }, 3000);
-        } else {
-            statusDiv.textContent = data.message || 'Wystąpił błąd';
-            statusDiv.className = 'search-error';
-        }
-    } catch (error) {
-        console.error('Błąd wysyłania zaproszenia:', error);
-        statusDiv.textContent = 'Wystąpił błąd sieciowy: ' + error.message;
-        statusDiv.className = 'search-error';
-    }
-}
-
-// W models.py
-// Dodaj te dwie klasy do istniejącego pliku models.py
-
-"""
-class Friend(db.Model):
-    '''Friends relationship model'''
-    __tablename__ = 'friend'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    friend_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False)
-    
-    __table_args__ = (
-        db.UniqueConstraint('user_id', 'friend_id', name='uq_friend_user_friend'),
-    )
-    
-    user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('friends', lazy='dynamic'))
-    friend = db.relationship('User', foreign_keys=[friend_id], backref=db.backref('friended_by', lazy='dynamic'))
-    
-    def __repr__(self):
-        return f'<Friend {self.user_id} -> {self.friend_id}>'
-
-class FriendRequest(db.Model):
-    '''Friend request model'''
-    __tablename__ = 'friend_request'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    from_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    to_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    status = db.Column(db.String(20), default='pending', nullable=False)  # 'pending', 'accepted', 'rejected'
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
-    
-    __table_args__ = (
-        db.UniqueConstraint('from_user_id', 'to_user_id', name='uq_request_from_to'),
-    )
-    
-    from_user = db.relationship('User', foreign_keys=[from_user_id], backref=db.backref('sent_requests', lazy='dynamic'))
-    to_user = db.relationship('User', foreign_keys=[to_user_id], backref=db.backref('received_requests', lazy='dynamic'))
-    
-    def __repr__(self):
-        return f'<FriendRequest {self.from_user_id} -> {self.to_user_id} [{self.status}]>'
-"""
-
-# W chat.html
-# Dodaj skrypt inicjalizujący dla dodawania znajomych
-"""
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Inicjalizacja obsługi dodawania znajomych
-    const addFriendBtn = document.getElementById('add-friend-btn');
-    const friendUserIdInput = document.getElementById('friend-user-id');
-    const sendFriendRequestBtn = document.getElementById('send-friend-request-btn');
-    
-    if (addFriendBtn && friendUserIdInput && sendFriendRequestBtn) {
-        console.log('Inicjalizacja obsługi dodawania znajomych');
-        
-        // Obsługa przycisku dodawania znajomego
-        addFriendBtn.addEventListener('click', function() {
-            const modal = document.getElementById('add-friend-modal');
-            if (modal) {
-                modal.style.display = 'block';
-                friendUserIdInput.value = '';
-                const statusDiv = document.getElementById('friend-request-status');
-                if (statusDiv) statusDiv.style.display = 'none';
-            }
-        });
-        
-        // Obsługa przycisku zamknięcia modalu
-        const closeBtn = document.querySelector('.search-close');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', function() {
-                const modal = document.getElementById('add-friend-modal');
-                if (modal) modal.style.display = 'none';
-            });
-        }
-        
-        // Obsługa przycisku wysyłania zaproszenia
-        sendFriendRequestBtn.addEventListener('click', function() {
-            if (window.chatInterface && typeof window.chatInterface.sendFriendRequest === 'function') {
-                window.chatInterface.sendFriendRequest();
-            } else {
-                console.error('Brak metody sendFriendRequest w chatInterface');
-                const statusDiv = document.getElementById('friend-request-status');
-                if (statusDiv) {
-                    statusDiv.textContent = 'Błąd inicjalizacji interfejsu';
-                    statusDiv.className = 'search-error';
-                    statusDiv.style.display = 'block';
-                }
-            }
-        });
-    } else {
-        console.warn('Brak elementów UI dla dodawania znajomych');
-    }
-});
-</script>
-    
-    /**
-     * Wykrywa wzmianki w wiadomości
-     */
-    detectMentions(message) {
-        const mentionRegex = /@(\w+)/g;
-        const mentions = [];
-        let match;
-        
-        while ((match = mentionRegex.exec(message)) !== null) {
-            mentions.push(match[1]); // Pobierz nazwę użytkownika bez @
-        }
-        
-        return mentions;
-    }
-    
-    /**
      * Obsługuje wprowadzanie tekstu z potencjalnymi wzmiankami
      */
     handleMentionInput() {
@@ -949,8 +767,17 @@ document.addEventListener('DOMContentLoaded', function() {
      * Odtwarza dźwięk powiadomienia
      */
     playNotificationSound() {
-        // Implementacja odtwarzania dźwięku powiadomienia
-        // np. nowy element audio odtwarzający plik
+        try {
+            // Tworzenie elementu audio i odtworzenie dźwięku
+            const audio = new Audio('/static/sounds/notification.mp3');
+            audio.volume = 0.5;
+            audio.play().catch(err => {
+                // Wycisz błędy odtwarzania (mogą wystąpić przez ustawienia przeglądarki)
+                console.log('Nie można odtworzyć dźwięku powiadomienia', err);
+            });
+        } catch (error) {
+            console.log('Błąd odtwarzania dźwięku', error);
+        }
     }
     
     /**
@@ -992,12 +819,28 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     /**
+     * Sprawdza klucze sesji - funkcja diagnostyczna
+     */
+    checkSessionKeys() {
+        if (this.currentSessionToken) {
+            const sessionKey = localStorage.getItem(`session_key_${this.currentSessionToken}`);
+            console.log("Klucz sesji dla tokenu", this.currentSessionToken, "istnieje:", !!sessionKey);
+        } else {
+            console.log("Brak aktywnej sesji");
+        }
+    }
+    
+    /**
      * Pokazuje powiadomienie w interfejsie
      */
     showNotification(message, type = 'info') {
         // Utwórz element powiadomienia na podstawie szablonu
         const template = document.getElementById('notification-template');
-        if (!template) return;
+        if (!template) {
+            // Fallback jeśli nie ma szablonu
+            console.log(`${type.toUpperCase()}: ${message}`);
+            return;
+        }
         
         const notification = document.importNode(template.content, true).querySelector('.notification');
         if (!notification) return;
@@ -1037,6 +880,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sessionStorage.getItem('isLoggedIn') === 'true' || localStorage.getItem('isLoggedIn') === 'true') {
         // Inicjalizuj interfejs czatu
         window.chatInterface = new ChatInterface(window.sessionManager);
+        
+        // Zapytaj o uprawnienia do powiadomień, jeśli jeszcze nie zostały udzielone
+        if ("Notification" in window && Notification.permission === "default") {
+            setTimeout(() => {
+                Notification.requestPermission();
+            }, 3000);
+        }
     }
 });
-       
