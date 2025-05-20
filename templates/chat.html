@@ -4,41 +4,47 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Danaid - Bezpieczny Czat</title>
-    <link rel="stylesheet" href="static/css/styles.css">
-    <link rel="stylesheet" href="static/css/chat_style.css">
+    <link rel="stylesheet" href="chat_style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 </head>
 <body>
     <div class="app-container">
-        <!-- Górny pasek nawigacji -->
-        <header class="top-bar">
+        <!-- Górny pasek -->
+        <div class="top-bar">
             <div class="logo">
                 <h1>Danaid</h1>
             </div>
-            <div class="user-info">
+            <div class="user-controls">
+                <!-- Ikona powiadomień o zaproszeniach -->
+                <div id="friend-request-notification" class="notification-icon">
+                    <i class="fas fa-user-plus"></i>
+                    <span id="friend-request-count" class="notification-badge" style="display: none;">0</span>
+                </div>
+                
                 <span id="username">Użytkownik</span>
-                <button id="logout-btn" class="action-button">
+                <button id="logout-btn">
                     <i class="fas fa-sign-out-alt"></i> Wyloguj
                 </button>
             </div>
-        </header>
+        </div>
 
-        <main class="chat-container">
+        <!-- Główny kontener -->
+        <div class="main-container">
             <!-- Panel boczny z listą znajomych -->
-            <aside class="sidebar">
+            <div class="sidebar">
                 <div class="sidebar-header">
-                    <h2>Kontakty</h2>
-                    <button id="add-friend-btn" class="action-button">
-                        <i class="fas fa-user-plus"></i> Dodaj znajomego
+                    <h2>Znajomi</h2>
+                    <button id="add-friend-btn">
+                        <i class="fas fa-user-plus"></i> Dodaj
                     </button>
                 </div>
                 <ul id="friend-list" class="friend-list">
                     <!-- Lista znajomych będzie tutaj -->
                 </ul>
-            </aside>
+            </div>
 
-            <!-- Główny obszar czatu -->
-            <section class="chat-area">
+            <!-- Obszar czatu -->
+            <div class="chat-area">
                 <!-- Nagłówek czatu -->
                 <div id="chat-header" class="chat-header">
                     <h2>Wybierz rozmowę</h2>
@@ -52,12 +58,12 @@
                 <!-- Pole wprowadzania wiadomości -->
                 <div class="message-input-container">
                     <textarea id="message-input" placeholder="Napisz wiadomość..."></textarea>
-                    <button id="send-button" class="send-button">
+                    <button id="send-button">
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
-            </section>
-        </main>
+            </div>
+        </div>
     </div>
 
     <!-- Modal dodawania znajomych -->
@@ -72,7 +78,7 @@
             <div id="friend-request-status" class="search-status" style="display: none;"></div>
         </div>
     </div>
-    
+
     <!-- Szablon powiadomień -->
     <template id="notification-template">
         <div class="notification">
