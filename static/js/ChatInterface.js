@@ -107,19 +107,19 @@ class ChatInterface {
      * Ładuje dane użytkownika
      */
     loadUserData() {
-        this.currentUser = {
-            id: sessionStorage.getItem('user_id'),
-            username: sessionStorage.getItem('username'),
-            isAdmin: sessionStorage.getItem('is_admin') === 'true'
-        };
-        
-        // Aktualizuj informacje w interfejsie
-        const usernameDisplay = document.getElementById('username');
-        if (usernameDisplay && this.currentUser.username) {
-            usernameDisplay.textContent = this.currentUser.username;
-        }
-    }
-
+    // Sprawdź, czy dane są poprawnie zapisane w sessionStorage
+    console.log('sessionStorage:', {
+        user_id: sessionStorage.getItem('user_id'),
+        username: sessionStorage.getItem('username'),
+        is_admin: sessionStorage.getItem('is_admin')
+    });
+    
+    this.currentUser = {
+        id: sessionStorage.getItem('user_id'),
+        user_id: sessionStorage.getItem('user_id'), // Dodaj user_id
+        username: sessionStorage.getItem('username'),
+        isAdmin: sessionStorage.getItem('is_admin') === 'true'
+    };
 /**
      * Ładuje listę znajomych z serwera
      */
