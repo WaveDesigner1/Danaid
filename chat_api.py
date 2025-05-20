@@ -635,3 +635,109 @@ def get_active_sessions(user_id):
 ChatSession.refresh_session = refresh_session
 ChatSession.create_session = staticmethod(create_session)
 ChatSession.get_active_sessions = staticmethod(get_active_sessions)
+
+@chat_api.route('/api/message/send', methods=['POST'])
+@login_required
+def send_message():
+    """Wysyła zaszyfrowaną wiadomość"""
+    try:
+        data = request.get_json()
+        
+        # Sprawdź wymagane pola
+        required_fields = ['session_token', 'content', 'iv']
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({
+                'status': 'error', 
+                'message': 'Brakujące wymagane dane'
+            }), 400
+            
+        session_token = data.get('session_token')
+        content = data.get('content')  # Zaszyfrowana treść
+        iv = data.get('iv')  # Wektor inicjalizacyjny
+        mentions = data.get('mentions', [])  # Lista wzmianek (@username)
+        
+        # Pobierz sesję
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        
+        if not session:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Nieprawidłowa sesja'
+            }), 404
+            
+        # Sprawdź, czy sesja jest aktywna
+        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
+            return jsonify({
+                'status': 'error', 
+                'message': 'Sesja wygasła'
+            }), 401
+            
+        # Sprawdź, czy klucz sesji został potwierdzony
+        if not session.key_acknowledged:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Wymiana kluczy nie została zakończona'
+            }), 400
+            
+        # Sprawdź, czy użytkownik jest uczestnikiem tej sesji
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Brak dostępu do tej sesji'
+            }), 403
+        
+        # Zapisz wiadomość
+        new_message = Message(
+            session_id=session.id,
+            sender_id=current_user.id,
+            content=content,
+            iv=iv
+        )
+        
+        db.session.add(new_message)
+        
+        # Odśwież sesję
+        session.last_activity = datetime.datetime.utcnow()
+        
+        # Powiadom odbiorcę o nowej wiadomości przez WebSocket
+        try:
+            recipient_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
+            recipient = User.query.get(recipient_id)
+            
+            from websocket_handler import ws_handler
+            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
+                ws_handler.send_to_user(recipient.user_id, {
+                    'type': 'new_message',
+                    'session_token': session_token,
+                    'message': {
+                        'id': new_message.id,
+                        'sender_id': current_user.id,
+                        'content': content,
+                        'iv': iv,
+                        'timestamp': datetime.datetime.utcnow().isoformat()
+                    }
+                })
+        except Exception as ws_error:
+            # Błędy WebSocket nie powinny przerwać zapisywania wiadomości
+            logger.error(f"Błąd WebSocket podczas wysyłania wiadomości: {ws_error}")
+        
+        # Zakończ transakcję
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': {
+                'id': new_message.id,
+                'timestamp': new_message.timestamp.isoformat()
+            }
+        })
+        
+    except Exception as e:
+        # Zawsze upewnij się, że transakcja jest cofnięta w przypadku błędu
+        db.session.rollback()
+        logger.error(f"Błąd wysyłania wiadomości: {e}")
+        
+        return jsonify({
+            'status': 'error', 
+            'message': f'Błąd: {str(e)}'
+        }), 500
