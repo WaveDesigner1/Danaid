@@ -613,118 +613,228 @@ def init_chat_session():
      * Wysyła wiadomość
      */
     async sendMessage(sessionToken, content, mentions = []) {
-        try {
-            this.log('Wysyłanie wiadomości dla sesji:', sessionToken);
+    try {
+        console.log('Wysyłanie wiadomości dla sesji:', sessionToken);
+        
+        // 1. Sprawdź czy mamy klucz sesji
+        const sessionKeyBase64 = localStorage.getItem(`session_key_${sessionToken}`);
+        if (!sessionKeyBase64) {
+            throw new Error('Brak klucza sesji w pamięci lokalnej');
+        }
+        
+        // 2. Sprawdź czy window.chatCrypto jest dostępny
+        if (!window.chatCrypto) {
+            console.error('window.chatCrypto nie jest dostępny');
             
-            // 1. Sprawdź czy mamy klucz sesji
-            const sessionKeyBase64 = localStorage.getItem(`session_key_${sessionToken}`);
-            if (!sessionKeyBase64) {
-                throw new Error('Brak klucza sesji w pamięci lokalnej');
+            // Próba inicjalizacji chatCrypto, jeśli nie jest dostępny
+            if (typeof ChatCrypto === 'function') {
+                window.chatCrypto = new ChatCrypto();
+                console.log('Zainicjalizowano ChatCrypto');
+            } else {
+                throw new Error('Moduł ChatCrypto nie jest dostępny');
             }
-            
-            // 2. Sprawdź czy window.chatCrypto jest dostępny
-            if (!window.chatCrypto) {
-                console.error('window.chatCrypto nie jest dostępny');
-                
-                // Próba inicjalizacji chatCrypto, jeśli nie jest dostępny
-                if (typeof ChatCrypto === 'function') {
-                    window.chatCrypto = new ChatCrypto();
-                    this.log('Zainicjalizowano ChatCrypto');
-                } else {
-                    throw new Error('Moduł ChatCrypto nie jest dostępny');
-                }
-            }
-            
-            // 3. Importuj klucz sesji
-            const sessionKey = await this.importSessionKey(sessionKeyBase64);
-            
-            // 4. Przygotuj dane wiadomości wraz z informacją o wzmiankach
-            const messageData = {
-                content: content,
-                timestamp: new Date().toISOString(),
-                sender_id: parseInt(sessionStorage.getItem('user_id')),
-                message_id: this.generateUUID(),
-                mentions: mentions
-            };
-            
-            // 5. Zaszyfruj dane wiadomości
-            const encoder = new TextEncoder();
-            const jsonData = JSON.stringify(messageData);
-            const messageBytes = encoder.encode(jsonData);
-            
-            // 6. Generuj wektor inicjalizacyjny
-            const iv = window.crypto.getRandomValues(new Uint8Array(12));
-            
-            // 7. Szyfruj
-            const encryptedMessage = await window.crypto.subtle.encrypt(
-                {
-                    name: "AES-GCM",
-                    iv: iv
-                },
-                sessionKey,
-                messageBytes
-            );
-            
-            this.log('Wiadomość zaszyfrowana, wysyłanie do serwera');
-            
-            // 8. Wyślij zaszyfrowaną wiadomość
-            const response = await fetch('/api/message/send', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session_token: sessionToken,
-                    content: this.arrayBufferToBase64(encryptedMessage),
-                    iv: this.arrayBufferToBase64(iv),
-                    mentions: mentions // Dodajemy informację o wzmiankach, które nie są szyfrowane
-                })
-            });
-            
-            if (!response.ok) {
-                const errorData = await response.json();
-                this.log('Błąd odpowiedzi serwera:', errorData);
-                throw new Error(`HTTP Error: ${response.status}, ${errorData.message || 'Brak szczegółów błędu'}`);
-            }
-            
-            const data = await response.json();
-            
-            if (data.status !== 'success') {
-                throw new Error(data.message || 'Błąd wysyłania wiadomości');
-            }
-            
-            this.log('Wiadomość wysłana pomyślnie');
-            
-            // 9. Zapisz wiadomość lokalnie
-            if (!this.messages[sessionToken]) {
-                this.messages[sessionToken] = [];
-            }
-            
-            const newMessage = {
-                id: data.message.id || messageData.message_id,
-                sender_id: parseInt(sessionStorage.getItem('user_id')),
-                content: content,
-                timestamp: messageData.timestamp,
-                mentions: mentions
-            };
-            
-            this.messages[sessionToken].push(newMessage);
-            
-            // 10. Zapisz do lokalnego magazynu
-            await this.storeMessage(sessionToken, newMessage);
-            
-            return {
-                status: 'success',
-                message: 'Wiadomość wysłana',
-                messageData: newMessage
-            };
-            
-        } catch (error) {
-            console.error('Błąd wysyłania wiadomości:', error);
-            return {
-                status: 'error',
-                message: error.message
+        }
+        
+        // 3. Importuj klucz sesji
+        const sessionKey = await this.importSessionKey(sessionKeyBase64);
+        
+        // 4. Przygotuj dane wiadomości wraz z informacją o wzmiankach
+        const messageData = {
+            content: content,
+            timestamp: new Date().toISOString(),
+            sender_id: parseInt(sessionStorage.getItem('user_id')),
+            message_id: this.generateUUID(),
+            mentions: mentions
+        };
+        
+        // 5. Zaszyfruj dane wiadomości
+        const encoder = new TextEncoder();
+        const jsonData = JSON.stringify(messageData);
+        const messageBytes = encoder.encode(jsonData);
+        
+        // 6. Generuj wektor inicjalizacyjny
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        
+        // 7. Szyfruj
+        const encryptedMessage = await window.crypto.subtle.encrypt(
+            {
+                name: "AES-GCM",
+                iv: iv
+            },
+            sessionKey,
+            messageBytes
+        );
+        
+        console.log('Wiadomość zaszyfrowana, wysyłanie do serwera');
+        
+        // 8. Wyślij zaszyfrowaną wiadomość
+        const response = await fetch('/api/message/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                session_token: sessionToken,
+                content: this.arrayBufferToBase64(encryptedMessage),
+                iv: this.arrayBufferToBase64(iv),
+                mentions: mentions // Dodajemy informację o wzmiankach, które nie są szyfrowane
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status !== 'success') {
+            throw new Error(data.message || 'Błąd wysyłania wiadomości');
+        }
+        
+        console.log('Wiadomość wysłana pomyślnie');
+        
+        // 9. Zapisz wiadomość lokalnie
+        if (!this.messages[sessionToken]) {
+            this.messages[sessionToken] = [];
+        }
+        
+        const newMessage = {
+            id: data.message.id || messageData.message_id,
+            sender_id: parseInt(sessionStorage.getItem('user_id')),
+            content: content,
+            timestamp: messageData.timestamp,
+            mentions: mentions
+        };
+        
+        this.messages[sessionToken].push(newMessage);
+        
+        // 10. Zapisz do lokalnego magazynu
+        await this.storeMessage(sessionToken, newMessage);
+        
+        return {
+            status: 'success',
+            message: 'Wiadomość wysłana',
+            messageData: newMessage
+        };
+        
+    } catch (error) {
+        console.error('Błąd wysyłania wiadomości:', error);
+        return {
+            status: 'error',
+            message: error.message
+        };
+    }
+}
+
+/**
+ * Importuje klucz sesji z formatu Base64
+ */
+async importSessionKey(base64Key) {
+    try {
+        const rawKey = this.base64ToArrayBuffer(base64Key);
+        return await window.crypto.subtle.importKey(
+            "raw",
+            rawKey,
+            {
+                name: "AES-GCM",
+                length: 256
+            },
+            true,
+            ["encrypt", "decrypt"]
+        );
+    } catch (error) {
+        console.error('Błąd importowania klucza sesji:', error);
+        throw new Error('Nie można zaimportować klucza sesji');
+    }
+}
+
+/**
+ * Generuje unikalny identyfikator UUID v4
+ */
+generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+/**
+ * Konwertuje ArrayBuffer na Base64
+ */
+arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+
+/**
+ * Konwertuje Base64 na ArrayBuffer
+ */
+base64ToArrayBuffer(base64) {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+/**
+ * Zapisuje wiadomość w lokalnej bazie danych
+ */
+async storeMessage(sessionToken, message) {
+    try {
+        const db = await this._openDatabase();
+        const tx = db.transaction('messages', 'readwrite');
+        const store = tx.objectStore('messages');
+        
+        // Pobierz istniejące wiadomości
+        let sessionMessages = await store.get(sessionToken);
+        
+        if (!sessionMessages) {
+            sessionMessages = {
+                sessionToken: sessionToken,
+                messages: [],
+                lastUpdated: new Date().toISOString()
             };
         }
+        
+        // Dodaj nową wiadomość
+        sessionMessages.messages.push(message);
+        sessionMessages.lastUpdated = new Date().toISOString();
+        
+        // Zapisz z powrotem do bazy
+        await store.put(sessionMessages);
+        
+        return true;
+    } catch (error) {
+        console.error('Błąd zapisywania wiadomości:', error);
+        return false;
     }
+}
+
+/**
+ * Otwiera połączenie z IndexedDB
+ */
+_openDatabase() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('SecureChatMessages', 1);
+        
+        request.onupgradeneeded = event => {
+            const db = event.target.result;
+            
+            // Magazyn wiadomości z kluczem sessionToken
+            if (!db.objectStoreNames.contains('messages')) {
+                db.createObjectStore('messages', { keyPath: 'sessionToken' });
+            }
+        };
+        
+        request.onsuccess = event => resolve(event.target.result);
+        request.onerror = event => reject(event.target.error);
+    });
+}
     
     /**
      * Oznacza wiadomość jako przeczytaną
