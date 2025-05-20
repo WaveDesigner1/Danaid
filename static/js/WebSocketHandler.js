@@ -1,6 +1,16 @@
 /**
  * WebSocketHandler.js - Zarządzanie połączeniami WebSocket
  */
+
+// Sprawdź czy klasa już istnieje w kontekście globalnym
+if (typeof WebSocketHandler === 'undefined') {
+  class WebSocketHandler {
+    // Reszta implementacji bez zmian...
+  }
+  
+  // Inicjalizacja globalnego handlara WebSocket
+  window.wsHandler = new WebSocketHandler();
+}
 class WebSocketHandler {
   constructor() {
     this.socket = null;
