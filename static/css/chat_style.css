@@ -1,318 +1,112 @@
-/* Główne style czatu */
-:root {
-    --primary-color: #4a89dc;
-    --secondary-color: #5d9cec;
-    --dark-color: #333333;
-    --light-color: #f7f7f7;
-    --success-color: #4CAF50;
-    --error-color: #F44336;
-    --warning-color: #FF9800;
-    --info-color: #2196F3;
-    --border-color: #e0e0e0;
-    --message-sent-bg: #e1f5fe;
-    --message-received-bg: #f5f5f5;
-    --online-color: #4CAF50;
-    --offline-color: #9e9e9e;
-    --sidebar-width: 280px;
-    --header-height: 60px;
-    --message-input-height: 80px;
-}
-
-body, html {
-    margin: 0;
-    padding: 0;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    height: 100%;
-}
-
-.app-container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    overflow: hidden;
-}
-
-/* Górny pasek */
-.top-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 20px;
-    height: var(--header-height);
-    background-color: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-
-.top-bar h1 {
-    margin: 0;
-    font-size: 1.5rem;
-}
-
-.user-info {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-/* Kontener główny czatu */
-.chat-container {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-}
-
-/* Panel boczny z listą znajomych */
-.sidebar {
-    width: var(--sidebar-width);
-    background-color: white;
-    border-right: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.sidebar-header {
-    padding: 15px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.sidebar-header h2 {
-    margin: 0;
-    font-size: 1.2rem;
-}
-
-.friends-header {
-    padding: 10px 15px;
-    font-weight: bold;
-    color: var(--dark-color);
-    background-color: #f5f5f5;
-    font-size: 0.9rem;
-}
-
-.friend-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    overflow-y: auto;
-    flex: 1;
-}
-
-.friend-item {
-    display: flex;
-    align-items: center;
-    padding: 10px 15px;
-    cursor: pointer;
-    border-bottom: 1px solid #f0f0f0;
-    transition: background-color 0.2s;
-}
-
-.friend-item:hover {
-    background-color: #f5f5f5;
-}
-
-.friend-item.active {
-    background-color: var(--message-sent-bg);
-}
-
-.friend-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background-color: var(--primary-color);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 10px;
-    position: relative;
-}
-
-.status-indicator {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    border: 2px solid white;
-}
-
-.status-indicator.online {
-    background-color: var(--online-color);
-}
-
-.status-indicator.offline {
-    background-color: var(--offline-color);
-}
-
-.friend-info {
-    flex: 1;
-    position: relative;
-}
-
-.friend-name {
-    font-weight: bold;
-}
-
-.unread-badge {
-    position: absolute;
-    top: 0;
-    right: 0;
-    background-color: var(--error-color);
-    color: white;
-    border-radius: 50%;
-    min-width: 18px;
-    height: 18px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 12px;
-    padding: 0 3px;
-}
-
-/* Obszar czatu */
-.chat-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background-color: var(--light-color);
-    overflow: hidden;
-}
-
-.chat-header {
-    padding: 15px 20px;
-    background-color: white;
-    border-bottom: 1px solid var(--border-color);
-    display: flex;
-    align-items: center;
-}
-
-.chat-header h2 {
-    margin: 0;
-    font-size: 1.2rem;
-}
-
-.messages {
-    flex: 1;
-    padding: 20px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-}
-
-.message {
-    max-width: 70%;
-    padding: 10px 15px;
-    border-radius: 18px;
-    margin-bottom: 10px;
-    position: relative;
-    animation: message-appear 0.3s ease-out;
-}
-
-.message.sent {
-    background-color: var(--message-sent-bg);
-    align-self: flex-end;
-    border-bottom-right-radius: 4px;
-}
-
-.message.received {
-    background-color: var(--message-received-bg);
-    align-self: flex-start;
-    border-bottom-left-radius: 4px;
-}
-
-.message-content {
-    word-wrap: break-word;
-    white-space: pre-wrap;
-}
-
-.message-info {
-    font-size: 0.75rem;
-    color: #888;
-    margin-top: 5px;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-}
-
-.message-time {
-    margin-left: 5px;
-}
-
-.message-status {
-    margin-right: 5px;
-}
-
-.message-status.delivered {
-    color: #888;
-}
-
-.message-status.read {
-    color: var(--primary-color);
-}
-
-.message-input-container {
-    padding: 15px;
-    background-color: white;
-    border-top: 1px solid var(--border-color);
-    display: flex;
-    align-items: center;
-}
-
-#message-input {
-    flex: 1;
-    height: 40px;
-    padding: 10px 15px;
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
-    resize: none;
-    font-family: inherit;
-    font-size: 1rem;
-}
-
-#message-input:focus {
-    outline: none;
-    border-color: var(--primary-color);
-}
-
-.send-button {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    margin-left: 10px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.2s;
-}
-
-.send-button:hover {
-    background-color: var(--secondary-color);
-}
-
-/* Wzmianki */
+ body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #333333;
+            color: #FFFFFF;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        
+        .container {
+            background-color: #444444;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            width: 400px;
+            max-width: 90%;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #FF9800;
+            margin-bottom: 25px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        
+        input[type="text"],
+        input[type="password"],
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #555555;
+            background-color: #3a3a3a;
+            color: #FFFFFF;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        input[type="file"] {
+            padding: 8px;
+        }
+        
+        button {
+            background-color: #FF9800;
+            color: #333333;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            width: 100%;
+            transition: background-color 0.3s, transform 0.2s;
+        }
+        
+        button:hover {
+            background-color: #F57C00;
+            transform: translateY(-2px);
+        }
+        
+        #login-status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #3a3a3a;
+            text-align: center;
+        }
+        
+        .register-link {
+            text-align: center;
+            margin-top: 15px;
+        }
+        
+        .register-link a {
+            color: #FF9800;
+            text-decoration: none;
+        }
+        
+        .register-link a:hover {
+            text-decoration: underline;
+        }
+/* Style dla wzmianek */
 .mention {
-    color: var(--primary-color);
+    color: #FF9800;
     font-weight: bold;
 }
 
 .mention-suggestions {
     position: absolute;
-    background-color: white;
-    border: 1px solid var(--border-color);
+    background-color: #444444;
+    border: 1px solid #555555;
     border-radius: 4px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 1000;
     max-height: 200px;
     overflow-y: auto;
+    color: #FFFFFF;
 }
 
 .mention-item {
@@ -323,40 +117,41 @@ body, html {
 
 .mention-item:hover,
 .mention-item.selected {
-    background-color: #f0f0f0;
+    background-color: #3a3a3a;
 }
 
-/* Powiadomienia */
+/* Style dla powiadomień */
 .notification {
     position: fixed;
     top: 20px;
     right: 20px;
-    background-color: #fff;
+    background-color: #444444;
     border-radius: 4px;
     padding: 10px 15px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     display: flex;
     align-items: center;
     justify-content: space-between;
     z-index: 1000;
     max-width: 300px;
     animation: slide-in 0.3s ease-out;
+    color: #FFFFFF;
 }
 
 .notification.info {
-    border-left: 4px solid var(--info-color);
+    border-left: 4px solid #2196F3;
 }
 
 .notification.success {
-    border-left: 4px solid var(--success-color);
+    border-left: 4px solid #4CAF50;
 }
 
 .notification.warning {
-    border-left: 4px solid var(--warning-color);
+    border-left: 4px solid #FF9800;
 }
 
 .notification.error {
-    border-left: 4px solid var(--error-color);
+    border-left: 4px solid #F44336;
 }
 
 .notification-content {
@@ -369,7 +164,7 @@ body, html {
     border: none;
     font-size: 18px;
     cursor: pointer;
-    color: #888;
+    color: #AAAAAA;
 }
 
 .notification.closing {
@@ -386,12 +181,7 @@ body, html {
     to { transform: translateX(100%); opacity: 0; }
 }
 
-@keyframes message-appear {
-    from { transform: translateY(20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
-/* Stylizacja modalu */
+/* Style dla modalu dodawania znajomych */
 .modal {
     display: none;
     position: fixed;
@@ -400,30 +190,30 @@ body, html {
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0,0,0,0.4);
+    background-color: rgba(0, 0, 0, 0.7);
 }
 
 .modal-content {
-    background-color: #fefefe;
-    margin: 10% auto;
+    background-color: #444444;
+    margin: 15% auto;
     padding: 20px;
     border-radius: 8px;
     width: 80%;
     max-width: 500px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    color: #FFFFFF;
 }
 
 .search-close {
-    color: #aaa;
+    color: #AAAAAA;
     float: right;
     font-size: 28px;
     font-weight: bold;
     cursor: pointer;
-    line-height: 1;
 }
 
 .search-close:hover {
-    color: #333;
+    color: #FFFFFF;
 }
 
 .search-form {
@@ -433,46 +223,49 @@ body, html {
 .search-form input {
     width: 70%;
     padding: 10px;
-    border: 1px solid #ddd;
     border-radius: 4px;
+    border: 1px solid #555555;
+    background-color: #3a3a3a;
+    color: #FFFFFF;
+    font-size: 16px;
 }
 
 .search-form button {
     padding: 10px 15px;
-    background-color: var(--success-color);
-    color: white;
+    background-color: #FF9800;
+    color: #333333;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     margin-left: 10px;
+    font-weight: bold;
+    transition: background-color 0.3s, transform 0.2s;
+    width: auto;
 }
 
 .search-form button:hover {
-    background-color: #45a049;
+    background-color: #F57C00;
+    transform: translateY(-2px);
 }
 
 .search-status {
     margin-top: 15px;
     padding: 10px;
     border-radius: 4px;
+    text-align: center;
 }
 
 .search-error {
-    background-color: #ffebee;
-    color: #d32f2f;
+    background-color: rgba(244, 67, 54, 0.2);
+    color: #F44336;
 }
 
 .search-no-results {
-    background-color: #e8f5e9;
-    color: #388e3c;
+    background-color: rgba(76, 175, 80, 0.2);
+    color: #4CAF50;
 }
 
-.search-success {
-    background-color: #e8f5e9;
-    color: #388e3c;
-}
-
-/* Style dla ikon powiadomień */
+/* Style dla ikony powiadomień o zaproszeniach */
 .notification-icon {
     position: relative;
     cursor: pointer;
@@ -494,7 +287,7 @@ body, html {
     position: absolute;
     top: -5px;
     right: -5px;
-    background-color: var(--error-color);
+    background-color: #F44336;
     color: white;
     border-radius: 50%;
     min-width: 18px;
@@ -506,35 +299,35 @@ body, html {
     padding: 0 3px;
 }
 
-/* Style dla przycisków */
-.action-button {
-    padding: 8px 12px;
-    background-color: rgba(255, 255, 255, 0.2);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    transition: background-color 0.2s;
-}
-
-.action-button:hover {
-    background-color: rgba(255, 255, 255, 0.3);
-}
-
-.action-button i {
-    font-size: 14px;
-}
-
 /* Style dla listy zaproszeń */
+#friend-requests-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.modal-header {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #555555;
+    padding-bottom: 10px;
+}
+
+.modal-header h2 {
+    color: #FF9800;
+    margin-top: 0;
+}
+
 .friend-request-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 10px 0;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid #555555;
 }
 
 .user-info {
@@ -544,11 +337,12 @@ body, html {
 
 .user-name {
     font-weight: bold;
+    color: #FFFFFF;
 }
 
 .request-time {
     font-size: 0.8em;
-    color: #666;
+    color: #AAAAAA;
 }
 
 .request-actions {
@@ -561,16 +355,29 @@ body, html {
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.3s, transform 0.2s;
+    width: auto;
 }
 
 .accept-btn {
-    background-color: var(--success-color);
-    color: white;
+    background-color: #4CAF50;
+    color: #FFFFFF;
+}
+
+.accept-btn:hover {
+    background-color: #43A047;
+    transform: translateY(-2px);
 }
 
 .reject-btn {
-    background-color: var(--error-color);
-    color: white;
+    background-color: #F44336;
+    color: #FFFFFF;
+}
+
+.reject-btn:hover {
+    background-color: #E53935;
+    transform: translateY(-2px);
 }
 
 .processing {
@@ -581,8 +388,8 @@ body, html {
     display: inline-block;
     width: 16px;
     height: 16px;
-    border: 2px solid rgba(0, 0, 0, 0.1);
-    border-top-color: #09f;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #FF9800;
     border-radius: 50%;
     animation: spin 1s infinite linear;
     margin-right: 8px;
@@ -592,20 +399,60 @@ body, html {
     to { transform: rotate(360deg); }
 }
 
-/* Responsywność */
-@media (max-width: 768px) {
-    .chat-container {
-        flex-direction: column;
-    }
-    
-    .sidebar {
-        width: 100%;
-        height: 30%;
-        border-right: none;
-        border-bottom: 1px solid var(--border-color);
-    }
-    
-    .chat-area {
-        height: 70%;
-    }
+/* Styl dla przycisku dodawania znajomych */
+#add-friend-btn {
+    background-color: #FF9800;
+    color: #333333;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: background-color 0.3s, transform 0.2s;
+    margin-bottom: 15px;
+}
+
+#add-friend-btn:hover {
+    background-color: #F57C00;
+    transform: translateY(-2px);
+}
+
+#add-friend-btn i {
+    font-size: 14px;
+}
+
+/* Dostosowanie stylów dla czatu */
+.unread-badge {
+    background-color: #F44336;
+    color: white;
+    border-radius: 50%;
+    min-width: 18px;
+    height: 18px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 12px;
+    padding: 0 3px;
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+
+.status-indicator.online {
+    background-color: #4CAF50;
+}
+
+.status-indicator.offline {
+    background-color: #9E9E9E;
+}
+
+.no-requests {
+    text-align: center;
+    padding: 15px;
+    color: #AAAAAA;
+    font-style: italic;
 }
