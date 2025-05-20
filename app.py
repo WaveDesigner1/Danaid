@@ -81,7 +81,7 @@ def create_app():
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
         # Użyj bezpiecznego fallbacku lub zgłoś błąd
-        database_url = 'postgresql://postgres:password@localhost:5432/app'
+        database_url = 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@turntable.proxy.rlwy.net:39432/railway'
         app.logger.warning('Używanie domyślnego URL bazy danych - to nie powinno być używane w produkcji!')
     
     if database_url.startswith('postgres://'):
