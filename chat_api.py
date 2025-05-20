@@ -170,6 +170,23 @@ def init_chat_session():
         db.session.add(new_session)
         db.session.commit()
         
+        # Powiadom drugiego użytkownika, jeśli jest online
+        try:
+            from websocket_handler import ws_handler
+            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
+                ws_handler.send_to_user(recipient.user_id, {
+                    'type': 'session_update',
+                    'session_token': session_token,
+                    'initiator': {
+                        'id': current_user.id,
+                        'user_id': current_user.user_id,
+                        'username': current_user.username
+                    },
+                    'timestamp': datetime.datetime.utcnow().isoformat()
+                })
+        except Exception as ws_error:
+            logger.error(f"Błąd WebSocket podczas inicjalizacji sesji: {ws_error}")
+        
         return jsonify({
             'status': 'success',
             'message': 'Sesja utworzona',
@@ -190,6 +207,7 @@ def init_chat_session():
             }
         })
     except Exception as e:
+        db.session.rollback()
         logger.error(f"Błąd inicjacji sesji: {e}")
         return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
 
@@ -267,6 +285,7 @@ def close_session(session_token):
             'message': 'Sesja zamknięta'
         })
     except Exception as e:
+        db.session.rollback()
         logger.error(f"Błąd zamykania sesji: {e}")
         return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
 
@@ -301,7 +320,7 @@ def exchange_session_key(session_token):
             recipient = User.query.get(recipient_id)
             
             from websocket_handler import ws_handler
-            if ws_handler.is_user_online(recipient.user_id):
+            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
                 ws_handler.send_to_user(recipient.user_id, {
                     'type': 'session_key_update',
                     'session_token': session_token,
@@ -366,6 +385,20 @@ def acknowledge_session_key(session_token):
         session.last_activity = datetime.datetime.utcnow()
         db.session.commit()
         
+        # Powiadom inicjatora o potwierdzeniu klucza
+        try:
+            from websocket_handler import ws_handler
+            initiator = User.query.get(session.initiator_id)
+            
+            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(initiator.user_id):
+                ws_handler.send_to_user(initiator.user_id, {
+                    'type': 'session_key_acknowledged',
+                    'session_token': session_token,
+                    'timestamp': datetime.datetime.utcnow().isoformat()
+                })
+        except Exception as ws_error:
+            logger.error(f"Błąd WebSocket podczas potwierdzania klucza: {ws_error}")
+        
         return jsonify({
             'status': 'success',
             'message': 'Klucz sesji potwierdzony'
@@ -382,36 +415,48 @@ def send_message():
     try:
         data = request.get_json()
         
+        # Sprawdź wymagane pola
+        required_fields = ['session_token', 'content', 'iv']
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({
+                'status': 'error', 
+                'message': 'Brakujące wymagane dane'
+            }), 400
+            
         session_token = data.get('session_token')
         content = data.get('content')  # Zaszyfrowana treść
         iv = data.get('iv')  # Wektor inicjalizacyjny
         mentions = data.get('mentions', [])  # Lista wzmianek (@username)
         
-        if not all([session_token, content, iv]):
-            logger.error(f"Brakujące dane w żądaniu: {data}")
-            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
-            
         # Pobierz sesję
         session = ChatSession.query.filter_by(session_token=session_token).first()
         
         if not session:
-            logger.error(f"Nieprawidłowa sesja: {session_token}")
-            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
+            return jsonify({
+                'status': 'error', 
+                'message': 'Nieprawidłowa sesja'
+            }), 404
             
         # Sprawdź, czy sesja jest aktywna
         if not session.is_active or session.expires_at < datetime.datetime.utcnow():
-            logger.error(f"Sesja wygasła: {session_token}")
-            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
+            return jsonify({
+                'status': 'error', 
+                'message': 'Sesja wygasła'
+            }), 401
             
         # Sprawdź, czy klucz sesji został potwierdzony
         if not session.key_acknowledged:
-            logger.error(f"Wymiana kluczy nie została zakończona dla sesji: {session_token}")
-            return jsonify({'status': 'error', 'message': 'Wymiana kluczy nie została zakończona'}), 400
+            return jsonify({
+                'status': 'error', 
+                'message': 'Wymiana kluczy nie została zakończona'
+            }), 400
             
         # Sprawdź, czy użytkownik jest uczestnikiem tej sesji
         if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            logger.error(f"Brak dostępu do sesji {session_token} dla użytkownika {current_user.id}")
-            return jsonify({'status': 'error', 'message': 'Brak dostępu do tej sesji'}), 403
+            return jsonify({
+                'status': 'error', 
+                'message': 'Brak dostępu do tej sesji'
+            }), 403
         
         # Zapisz wiadomość
         new_message = Message(
@@ -426,7 +471,7 @@ def send_message():
         # Odśwież sesję
         session.last_activity = datetime.datetime.utcnow()
         
-        # Obsługa wzmianek - powiadomienia dla wspomnianych użytkowników
+        # Obsługa wzmianek
         if mentions and len(mentions) > 0:
             for username in mentions:
                 # Znajdź użytkownika po nazwie
@@ -448,7 +493,7 @@ def send_message():
                                 'message_id': new_message.id,
                                 'timestamp': datetime.datetime.utcnow().isoformat()
                             })
-                    except (ImportError, AttributeError, Exception) as e:
+                    except Exception as e:
                         # Błędy związane z WebSocket nie powinny zatrzymywać całego procesu
                         logger.error(f"Ostrzeżenie: Nie można wysłać powiadomienia o wzmiance: {e}")
         
@@ -636,108 +681,289 @@ ChatSession.refresh_session = refresh_session
 ChatSession.create_session = staticmethod(create_session)
 ChatSession.get_active_sessions = staticmethod(get_active_sessions)
 
-@chat_api.route('/api/message/send', methods=['POST'])
+# Nowy endpoint do pobierania znajomych
+@chat_api.route('/api/friends', methods=['GET'])
 @login_required
-def send_message():
-    """Wysyła zaszyfrowaną wiadomość"""
+def get_friends():
+    """Pobiera listę znajomych użytkownika"""
+    try:
+        # Użyj metody z modelu User
+        if hasattr(current_user, 'get_friends'):
+            friends = current_user.get_friends()
+        else:
+            # Zapasowa implementacja jeśli metoda nie istnieje
+            from models import Friend
+            friend_records = Friend.query.filter_by(user_id=current_user.id).all()
+            friend_ids = [friend.friend_id for friend in friend_records]
+            friends = User.query.filter(User.id.in_(friend_ids)).all() if friend_ids else []
+        
+        friends_list = [{
+            'id': friend.id,
+            'user_id': friend.user_id,
+            'username': friend.username,
+            'is_online': friend.is_online if hasattr(friend, 'is_online') else False
+        } for friend in friends]
+        
+        return jsonify({
+            'status': 'success',
+            'friends': friends_list
+        })
+    except Exception as e:
+        logger.error(f"Błąd pobierania znajomych: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# Endpoint dla zaproszeń do znajomych
+@chat_api.route('/api/friend_requests', methods=['POST'])
+@login_required
+def send_friend_request():
+    """Wysyła zaproszenie do znajomych"""
     try:
         data = request.get_json()
         
-        # Sprawdź wymagane pola
-        required_fields = ['session_token', 'content', 'iv']
-        if not data or not all(field in data for field in required_fields):
+        if not data:
             return jsonify({
-                'status': 'error', 
-                'message': 'Brakujące wymagane dane'
+                'status': 'error',
+                'message': 'Brak danych w żądaniu'
             }), 400
-            
-        session_token = data.get('session_token')
-        content = data.get('content')  # Zaszyfrowana treść
-        iv = data.get('iv')  # Wektor inicjalizacyjny
-        mentions = data.get('mentions', [])  # Lista wzmianek (@username)
         
-        # Pobierz sesję
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        
-        if not session:
+        # Obsługa zarówno username jak i recipient_id
+        if 'username' in data:
+            username = data['username']
+            recipient = User.query.filter_by(username=username).first()
+        elif 'recipient_id' in data:
+            recipient_id = data['recipient_id']
+            recipient = User.query.filter_by(user_id=recipient_id).first()
+        else:
             return jsonify({
-                'status': 'error', 
-                'message': 'Nieprawidłowa sesja'
+                'status': 'error',
+                'message': 'Brak wymaganego parametru username lub recipient_id'
+            }), 400
+        
+        if not recipient:
+            return jsonify({
+                'status': 'error',
+                'message': 'Użytkownik nie został znaleziony'
             }), 404
-            
-        # Sprawdź, czy sesja jest aktywna
-        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
-            return jsonify({
-                'status': 'error', 
-                'message': 'Sesja wygasła'
-            }), 401
-            
-        # Sprawdź, czy klucz sesji został potwierdzony
-        if not session.key_acknowledged:
-            return jsonify({
-                'status': 'error', 
-                'message': 'Wymiana kluczy nie została zakończona'
-            }), 400
-            
-        # Sprawdź, czy użytkownik jest uczestnikiem tej sesji
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({
-                'status': 'error', 
-                'message': 'Brak dostępu do tej sesji'
-            }), 403
         
-        # Zapisz wiadomość
-        new_message = Message(
-            session_id=session.id,
-            sender_id=current_user.id,
-            content=content,
-            iv=iv
+        # Sprawdź czy nadawca i odbiorca to ta sama osoba
+        if recipient.id == current_user.id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Nie możesz wysłać zaproszenia do samego siebie'
+            }), 400
+        
+        # Sprawdź czy zaproszenie już istnieje
+        existing_request = FriendRequest.query.filter_by(
+            from_user_id=current_user.id,
+            to_user_id=recipient.id,
+            status='pending'
+        ).first()
+        
+        if existing_request:
+            return jsonify({
+                'status': 'error',
+                'message': 'Zaproszenie do znajomych już istnieje'
+            }), 400
+        
+        # Sprawdź czy już są znajomymi
+        if current_user.is_friend_with(recipient.id):
+            return jsonify({
+                'status': 'error',
+                'message': 'Użytkownicy są już znajomymi'
+            }), 400
+        
+        # Utwórz nowe zaproszenie
+        new_request = FriendRequest(
+            from_user_id=current_user.id,
+            to_user_id=recipient.id,
+            status='pending',
+            created_at=datetime.datetime.utcnow(),
+            updated_at=datetime.datetime.utcnow()
         )
         
-        db.session.add(new_message)
+        db.session.add(new_request)
+        db.session.commit()
         
-        # Odśwież sesję
-        session.last_activity = datetime.datetime.utcnow()
-        
-        # Powiadom odbiorcę o nowej wiadomości przez WebSocket
+        # Powiadom drugiego użytkownika (jeśli jest online)
         try:
-            recipient_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
-            recipient = User.query.get(recipient_id)
-            
             from websocket_handler import ws_handler
             if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
                 ws_handler.send_to_user(recipient.user_id, {
-                    'type': 'new_message',
-                    'session_token': session_token,
-                    'message': {
-                        'id': new_message.id,
-                        'sender_id': current_user.id,
-                        'content': content,
-                        'iv': iv,
-                        'timestamp': datetime.datetime.utcnow().isoformat()
-                    }
+                    'type': 'friend_request',
+                    'from_user': {
+                        'id': current_user.id,
+                        'user_id': current_user.user_id,
+                        'username': current_user.username
+                    },
+                    'request_id': new_request.id,
+                    'timestamp': datetime.datetime.utcnow().isoformat()
                 })
-        except Exception as ws_error:
-            # Błędy WebSocket nie powinny przerwać zapisywania wiadomości
-            logger.error(f"Błąd WebSocket podczas wysyłania wiadomości: {ws_error}")
+        except Exception as e:
+            logger.error(f"Błąd podczas wysyłania powiadomienia: {e}")
         
-        # Zakończ transakcję
+        return jsonify({
+            'status': 'success',
+            'message': 'Zaproszenie do znajomych wysłane',
+            'request_id': new_request.id
+        }), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Błąd podczas wysyłania zaproszenia: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Błąd serwera: {str(e)}'
+        }), 500
+
+@chat_api.route('/api/friend_requests/pending', methods=['GET'])
+@login_required
+def get_pending_requests():
+    """Pobiera listę oczekujących zaproszeń dla zalogowanego użytkownika"""
+    try:
+        # Pobierz oczekujące zaproszenia
+        pending_requests = FriendRequest.query.filter_by(
+            to_user_id=current_user.id,
+            status='pending'
+        ).all()
+        
+        requests_list = []
+        for req in pending_requests:
+            sender = User.query.get(req.from_user_id)
+            requests_list.append({
+                'id': req.id,
+                'sender_id': sender.user_id,
+                'username': sender.username,
+                'created_at': req.created_at.isoformat()
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'requests': requests_list
+        })
+    except Exception as e:
+        logger.error(f"Błąd pobierania oczekujących zaproszeń: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Błąd serwera: {str(e)}'
+        }), 500
+
+@chat_api.route('/api/friend_requests/<int:request_id>/accept', methods=['POST'])
+@login_required
+def accept_friend_request(request_id):
+    """Akceptuje zaproszenie do znajomych"""
+    try:
+        # Znajdź zaproszenie
+        friend_request = FriendRequest.query.filter_by(
+            id=request_id,
+            to_user_id=current_user.id
+        ).first()
+        
+        # Sprawdź czy zaproszenie istnieje
+        if not friend_request:
+            return jsonify({
+                'status': 'error',
+                'message': 'Zaproszenie nie zostało znalezione'
+            }), 404
+        
+        # Sprawdź czy zaproszenie nie zostało już przetworzone
+        if friend_request.status != 'pending':
+            return jsonify({
+                'status': 'error',
+                'message': 'Zaproszenie zostało już przetworzone'
+            }), 400
+        
+        # Aktualizuj status zaproszenia
+        friend_request.status = 'accepted'
+        friend_request.updated_at = datetime.datetime.utcnow()
+        
+        # Utwórz relacje znajomości (w obie strony)
+        friend1 = Friend(
+            user_id=current_user.id,
+            friend_id=friend_request.from_user_id,
+            created_at=datetime.datetime.utcnow()
+        )
+        
+        friend2 = Friend(
+            user_id=friend_request.from_user_id,
+            friend_id=current_user.id,
+            created_at=datetime.datetime.utcnow()
+        )
+        
+        db.session.add(friend1)
+        db.session.add(friend2)
+        db.session.commit()
+        
+        # Powiadom drugiego użytkownika
+        try:
+            from websocket_handler import ws_handler
+            sender = User.query.get(friend_request.from_user_id)
+            
+            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(sender.user_id):
+                ws_handler.send_to_user(sender.user_id, {
+                    'type': 'friend_added',
+                    'friend': {
+                        'id': current_user.id,
+                        'user_id': current_user.user_id,
+                        'username': current_user.username,
+                        'is_online': current_user.is_online if hasattr(current_user, 'is_online') else False
+                    },
+                    'timestamp': datetime.datetime.utcnow().isoformat()
+                })
+        except Exception as e:
+            logger.error(f"Błąd podczas wysyłania powiadomienia: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Zaproszenie zaakceptowane'
+        })
+    
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Błąd akceptacji zaproszenia: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Błąd podczas akceptacji zaproszenia'
+        }), 500
+
+@chat_api.route('/api/friend_requests/<int:request_id>/reject', methods=['POST'])
+@login_required
+def reject_friend_request(request_id):
+    """Odrzuca zaproszenie do znajomych"""
+    try:
+        # Znajdź zaproszenie
+        friend_request = FriendRequest.query.filter_by(
+            id=request_id,
+            to_user_id=current_user.id
+        ).first()
+        
+        # Sprawdź czy zaproszenie istnieje
+        if not friend_request:
+            return jsonify({
+                'status': 'error',
+                'message': 'Zaproszenie nie zostało znalezione'
+            }), 404
+        
+        # Sprawdź czy zaproszenie nie zostało już przetworzone
+        if friend_request.status != 'pending':
+            return jsonify({
+                'status': 'error',
+                'message': 'Zaproszenie zostało już przetworzone'
+            }), 400
+        
+        # Aktualizuj status zaproszenia
+        friend_request.status = 'rejected'
+        friend_request.updated_at = datetime.datetime.utcnow()
         db.session.commit()
         
         return jsonify({
             'status': 'success',
-            'message': {
-                'id': new_message.id,
-                'timestamp': new_message.timestamp.isoformat()
-            }
+            'message': 'Zaproszenie odrzucone'
         })
-        
     except Exception as e:
-        # Zawsze upewnij się, że transakcja jest cofnięta w przypadku błędu
         db.session.rollback()
-        logger.error(f"Błąd wysyłania wiadomości: {e}")
-        
+        logger.error(f"Błąd odrzucania zaproszenia: {e}")
         return jsonify({
-            'status': 'error', 
-            'message': f'Błąd: {str(e)}'
+            'status': 'error',
+            'message': f'Błąd podczas odrzucania zaproszenia: {str(e)}'
         }), 500
+
