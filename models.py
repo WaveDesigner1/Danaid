@@ -109,3 +109,107 @@ class Message(db.Model):
             (cls.sender_id != user_id) &
             (cls.read == False)
         ).count()
+
+class Friend(db.Model):
+    """Friends relationship model"""
+    __tablename__ = 'friend'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    friend_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False)
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'friend_id', name='uq_friend_user_friend'),
+    )
+    
+    user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('friends_rel', lazy='dynamic'))
+    friend = db.relationship('User', foreign_keys=[friend_id], backref=db.backref('friended_by_rel', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<Friend {self.user_id} -> {self.friend_id}>'
+
+class FriendRequest(db.Model):
+    """Friend request model"""
+    __tablename__ = 'friend_request'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    from_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    to_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending', nullable=False)  # 'pending', 'accepted', 'rejected'
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+    
+    __table_args__ = (
+        db.UniqueConstraint('from_user_id', 'to_user_id', name='uq_request_from_to'),
+    )
+    
+    from_user = db.relationship('User', foreign_keys=[from_user_id], backref=db.backref('sent_requests', lazy='dynamic'))
+    to_user = db.relationship('User', foreign_keys=[to_user_id], backref=db.backref('received_requests', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<FriendRequest {self.from_user_id} -> {self.to_user_id} [{self.status}]>'
+
+# Dodaj te metody do klasy User
+
+def get_friends(self):
+    """Pobiera listę znajomych użytkownika"""
+    try:
+        friend_records = Friend.query.filter_by(user_id=self.id).all()
+        friend_ids = [friend.friend_id for friend in friend_records]
+        return User.query.filter(User.id.in_(friend_ids)).all() if friend_ids else []
+    except Exception as e:
+        print(f"Błąd podczas pobierania znajomych: {e}")
+        return []
+
+def is_friend_with(self, user_id):
+    """Sprawdza czy użytkownik jest znajomym z danym użytkownikiem"""
+    try:
+        return Friend.query.filter(
+            ((Friend.user_id == self.id) & (Friend.friend_id == user_id)) |
+            ((Friend.user_id == user_id) & (Friend.friend_id == self.id))
+        ).first() is not None
+    except Exception as e:
+        print(f"Błąd podczas sprawdzania relacji znajomości: {e}")
+        return False
+
+def add_friend(self, friend_id):
+    """Dodaje użytkownika do znajomych"""
+    try:
+        # Sprawdź czy relacja już istnieje
+        existing = Friend.query.filter_by(user_id=self.id, friend_id=friend_id).first()
+        if existing:
+            return False
+        
+        # Dodaj znajomego (w obie strony)
+        friend1 = Friend(user_id=self.id, friend_id=friend_id)
+        friend2 = Friend(user_id=friend_id, friend_id=self.id)
+        
+        db.session.add(friend1)
+        db.session.add(friend2)
+        db.session.commit()
+        return True
+    except Exception as e:
+        db.session.rollback()
+        print(f"Błąd podczas dodawania znajomego: {e}")
+        return False
+
+def remove_friend(self, friend_id):
+    """Usuwa użytkownika ze znajomych"""
+    try:
+        Friend.query.filter(
+            ((Friend.user_id == self.id) & (Friend.friend_id == friend_id)) |
+            ((Friend.user_id == friend_id) & (Friend.friend_id == self.id))
+        ).delete()
+        db.session.commit()
+        return True
+    except Exception as e:
+        db.session.rollback()
+        print(f"Błąd podczas usuwania znajomego: {e}")
+        return False
+
+# Dodaj metody do klasy User
+User.get_friends = get_friends
+User.is_friend_with = is_friend_with
+User.add_friend = add_friend
+User.remove_friend = remove_friend
