@@ -281,17 +281,17 @@ def acknowledge_session_key(session_token):
     except Exception as e:
         db.session.rollback()
         return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
-
 @chat_api.route('/api/message/send', methods=['POST'])
 @login_required
 def send_message():
-    """Wysyła zaszyfrowaną wiadomość"""
+    """Wysyła zaszyfrowaną wiadomość z obsługą wzmianek"""
     try:
         data = request.get_json()
         
         session_token = data.get('session_token')
         content = data.get('content')  # Zaszyfrowana treść
         iv = data.get('iv')  # Wektor inicjalizacyjny
+        mentions = data.get('mentions', [])  # Lista wzmianek (@username)
         
         if not all([session_token, content, iv]):
             return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
@@ -326,6 +326,34 @@ def send_message():
         
         # Odśwież sesję
         session.last_activity = datetime.datetime.utcnow()
+        
+        # Obsługa wzmianek - powiadomienia dla wspomnianych użytkowników
+        if mentions and len(mentions) > 0:
+            for username in mentions:
+                # Znajdź użytkownika po nazwie
+                mentioned_user = User.query.filter_by(username=username).first()
+                
+                if mentioned_user:
+                    # Jeśli użytkownik istnieje i mamy dostęp do handlera WebSocket
+                    try:
+                        from websocket_handler import ws_handler
+                        if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(mentioned_user.user_id):
+                            ws_handler.send_to_user(mentioned_user.user_id, {
+                                'type': 'mention_notification',
+                                'from_user': {
+                                    'id': current_user.id,
+                                    'user_id': current_user.user_id,
+                                    'username': current_user.username
+                                },
+                                'session_token': session_token,
+                                'message_id': new_message.id,
+                                'timestamp': datetime.datetime.utcnow().isoformat()
+                            })
+                    except (ImportError, AttributeError, Exception) as e:
+                        # Błędy związane z WebSocket nie powinny zatrzymywać całego procesu
+                        print(f"Ostrzeżenie: Nie można wysłać powiadomienia o wzmiance: {e}")
+        
+        # Zakończ transakcję
         db.session.commit()
         
         return jsonify({
