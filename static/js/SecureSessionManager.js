@@ -1,16 +1,6 @@
 /**
- * Menedżer bezpiecznych sesji czatu
+ * SecureSessionManager - Poprawiona implementacja zarządzania sesją
  */
-
-// Sprawdź czy klasa już istnieje w kontekście globalnym
-if (typeof E2EEProtocol === 'undefined') {
-  class E2EEProtocol {
-    // Reszta implementacji bez zmian...
-  }
-  
-  // Eksport globalny
-  window.e2eeProtocol = window.e2eeProtocol || new E2EEProtocol();
-}
 class SecureSessionManager {
   constructor() {
     this.activeSessions = [];
@@ -28,7 +18,9 @@ class SecureSessionManager {
     // Inicjalizacja
     this.initDatabase();
     this.loadState();
-    this.connectWebSocket();
+    
+    // Wywołane tylko raz przy starcie
+    this.setupWebSocketHandlers();
 
     // Callbacks
     this.onMessageReceived = null;
@@ -36,73 +28,101 @@ class SecureSessionManager {
     this.onFriendsUpdated = null;
     this.onOnlineStatusChanged = null;
     this.onFriendRequestReceived = null;
-  }
-
-  // Inicjalizacja połączenia WebSocket
-  connectWebSocket() {
-    if (!this.user.id) return;
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.hostname}:8765/ws/chat/${this.user.id}`;
     
-    try {
-      this.socket = new WebSocket(wsUrl);
-      
-      this.socket.onopen = () => {
-        console.log('WebSocket połączony');
-        this.socket.send(JSON.stringify({
-          type: 'connection_established',
-          user_id: this.user.id
-        }));
-      };
-      
-      this.socket.onmessage = (event) => {
-        this.handleWebSocketMessage(event);
-      };
-      
-      this.socket.onclose = () => {
-        console.log('WebSocket zamknięty, próba ponownego połączenia za 5s');
-        setTimeout(() => this.connectWebSocket(), 5000);
-      };
-      
-      this.socket.onerror = (error) => {
-        console.error('Błąd WebSocket:', error);
-      };
-    } catch (error) {
-      console.error('Nie można utworzyć połączenia WebSocket:', error);
-    }
+    console.log("SecureSessionManager zainicjalizowany", this.user);
   }
 
-  // Obsługa wiadomości z WebSocket
-  handleWebSocketMessage(event) {
-    try {
-      const data = JSON.parse(event.data);
-      
-      switch(data.type) {
-        case 'new_message':
-          this.handleNewMessage(data);
-          break;
-        case 'session_update':
-          this.handleSessionUpdate(data);
-          break;
-        case 'friend_request':
-          this.handleFriendRequest(data);
-          break;
-        case 'user_status_change':
-          this.handleUserStatusChange(data);
-          break;
-        case 'ping':
-          this.socket.send(JSON.stringify({type: 'pong'}));
-          break;
-      }
-    } catch (error) {
-      console.error('Błąd przetwarzania wiadomości WebSocket:', error);
+  /**
+   * Konfiguruje handlery dla WebSocketHandler
+   */
+  setupWebSocketHandlers() {
+    // Upewnij się, że globalny wsHandler istnieje
+    if (!window.wsHandler) {
+      console.error("WebSocketHandler nie jest dostępny globalnie");
+      return;
     }
+    
+    console.log("Konfiguracja handlerów WebSocket...");
+    
+    // Obsługa nowych wiadomości
+    window.wsHandler.on('new_message', (data) => {
+      console.log("Otrzymano nową wiadomość:", data);
+      
+      if (this.onMessageReceived) {
+        this.onMessageReceived(data.session_token, data.message);
+      }
+    });
+    
+    // Obsługa aktualizacji sesji
+    window.wsHandler.on('session_update', (data) => {
+      console.log("Aktualizacja sesji:", data);
+      this.getActiveSessions();
+    });
+    
+    // Obsługa zaproszeń do znajomych
+    window.wsHandler.on('friend_request', (data) => {
+      console.log("Otrzymano zaproszenie do znajomych:", data);
+      
+      if (this.onFriendRequestReceived) {
+        this.onFriendRequestReceived(data);
+      }
+    });
+    
+    // Obsługa zmian statusu online
+    window.wsHandler.on('user_status_change', (data) => {
+      console.log("Zmiana statusu użytkownika:", data);
+      
+      const userId = data.user_id;
+      const isOnline = data.is_online;
+      
+      // Aktualizuj lokalny stan
+      this.updateOnlineStatus(userId, isOnline);
+      
+      if (this.onOnlineStatusChanged) {
+        this.onOnlineStatusChanged(this.onlineUsers);
+      }
+    });
+    
+    // Obsługa listy użytkowników online
+    window.wsHandler.on('online_users', (data) => {
+      console.log("Lista użytkowników online:", data);
+      
+      this.onlineUsers = data.users || [];
+      
+      if (this.onOnlineStatusChanged) {
+        this.onOnlineStatusChanged(this.onlineUsers);
+      }
+    });
+    
+    console.log("Handlery WebSocket skonfigurowane");
+  }
+
+  /**
+   * Aktualizuje status online użytkownika
+   */
+  updateOnlineStatus(userId, isOnline) {
+    // Aktualizuj listę użytkowników online
+    if (isOnline) {
+      if (!this.onlineUsers.includes(userId)) {
+        this.onlineUsers.push(userId);
+      }
+    } else {
+      this.onlineUsers = this.onlineUsers.filter(id => id !== userId);
+    }
+    
+    // Zaktualizuj status znajomych
+    this.friends = this.friends.map(friend => {
+      if (friend.user_id === userId) {
+        return { ...friend, is_online: isOnline };
+      }
+      return friend;
+    });
   }
 
   // Inicjalizuje bazę danych
   async initDatabase() {
     try {
+      console.log("Inicjalizacja bazy danych IndexedDB...");
       const request = indexedDB.open('SecureChatMessages', 1);
       
       request.onupgradeneeded = (event) => {
@@ -114,6 +134,7 @@ class SecureSessionManager {
       
       request.onsuccess = (event) => {
         this.db = event.target.result;
+        console.log("Baza danych IndexedDB zainicjalizowana");
         this.loadMessagesFromStorage();
       };
       
@@ -125,11 +146,15 @@ class SecureSessionManager {
     }
   }
 
-// Pobieranie wiadomości z lokalnego magazynu
+  // Pobieranie wiadomości z lokalnego magazynu
   async loadMessagesFromStorage() {
-    if (!this.db) return;
+    if (!this.db) {
+      console.error("Baza danych nie jest dostępna");
+      return;
+    }
     
     try {
+      console.log("Ładowanie wiadomości z IndexedDB...");
       const tx = this.db.transaction('messages', 'readonly');
       const store = tx.objectStore('messages');
       const allRecords = await new Promise((resolve, reject) => {
@@ -142,7 +167,7 @@ class SecureSessionManager {
         this.messages[record.sessionToken] = record.messages;
       });
       
-      console.log('Wiadomości załadowane z lokalnego magazynu');
+      console.log(`Załadowano wiadomości dla ${allRecords.length} sesji`);
     } catch (error) {
       console.error('Błąd podczas ładowania wiadomości:', error);
     }
@@ -150,9 +175,13 @@ class SecureSessionManager {
 
   // Zapisywanie wiadomości do lokalnego magazynu
   async storeMessage(sessionToken, message) {
-    if (!this.db) return false;
+    if (!this.db) {
+      console.error("Baza danych nie jest dostępna");
+      return false;
+    }
     
     try {
+      console.log(`Zapisywanie wiadomości dla sesji ${sessionToken}...`);
       const tx = this.db.transaction('messages', 'readwrite');
       const store = tx.objectStore('messages');
       
@@ -163,6 +192,7 @@ class SecureSessionManager {
       });
       
       if (!sessionMessages) {
+        console.log("Tworzenie nowego obiektu wiadomości dla sesji");
         sessionMessages = {
           sessionToken: sessionToken,
           messages: [],
@@ -179,6 +209,7 @@ class SecureSessionManager {
         request.onerror = () => reject(request.error);
       });
       
+      console.log("Wiadomość zapisana do IndexedDB");
       return true;
     } catch (error) {
       console.error('Błąd zapisywania wiadomości:', error);
@@ -189,21 +220,37 @@ class SecureSessionManager {
   // Inicjalizacja sesji czatu
   async initSession(recipientId) {
     try {
+      console.log(`Inicjalizacja sesji czatu z użytkownikiem ${recipientId}...`);
+      
+      if (!this.user.id) {
+        throw new Error("Użytkownik nie jest zalogowany");
+      }
+      
       const response = await fetch('/api/session/init', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
         body: JSON.stringify({ recipient_id: recipientId })
       });
       
-      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Błąd HTTP: ${response.status}`, errorText);
+        throw new Error(`Błąd inicjacji sesji: ${response.status}`);
+      }
       
       const data = await response.json();
+      console.log("Odpowiedź serwera:", data);
       
       if (data.status !== 'success') {
         throw new Error(data.message || 'Błąd inicjacji sesji');
       }
       
       const session = data.session;
+      console.log("Sesja zainicjowana pomyślnie:", session);
       
       // Aktualizuj listy
       await this.getActiveSessions();
@@ -224,17 +271,32 @@ class SecureSessionManager {
   // Pobieranie aktywnych sesji
   async getActiveSessions() {
     try {
-      const response = await fetch('/api/sessions/active');
+      console.log("Pobieranie aktywnych sesji...");
       
-      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+      if (!this.user.id) {
+        throw new Error("Użytkownik nie jest zalogowany");
+      }
+      
+      const response = await fetch('/api/sessions/active', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Błąd HTTP: ${response.status}`, errorText);
+        throw new Error(`Błąd pobierania sesji: ${response.status}`);
+      }
       
       const data = await response.json();
+      console.log("Odpowiedź serwera:", data);
       
       if (data.status !== 'success') {
         throw new Error(data.message || 'Błąd pobierania sesji');
       }
       
       this.activeSessions = data.sessions;
+      console.log(`Pobrano ${this.activeSessions.length} aktywnych sesji`);
       
       if (this.onSessionsUpdated) {
         this.onSessionsUpdated(this.activeSessions);
@@ -253,14 +315,24 @@ class SecureSessionManager {
     }
   }
 
-// Pobieranie klucza sesji
+  // Pobieranie klucza sesji
   async retrieveSessionKey(sessionToken) {
     try {
-      const response = await fetch(`/api/session/${sessionToken}/key`);
+      console.log(`Pobieranie klucza sesji dla ${sessionToken}...`);
       
-      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+      const response = await fetch(`/api/session/${sessionToken}/key`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Błąd HTTP: ${response.status}`, errorText);
+        throw new Error(`Błąd pobierania klucza sesji: ${response.status}`);
+      }
       
       const data = await response.json();
+      console.log("Odpowiedź serwera:", data);
       
       if (data.status !== 'success') {
         throw new Error(data.message || 'Błąd pobierania klucza sesji');
@@ -272,20 +344,34 @@ class SecureSessionManager {
         throw new Error('Brak klucza prywatnego w localStorage');
       }
       
+      console.log("Importowanie klucza prywatnego...");
       // Spróbuj zaimportować klucz prywatny
       const privateKey = await window.e2eeProtocol.importPrivateKeyFromPEM(privateKeyPEM);
       
       // Odszyfruj klucz sesji
+      console.log("Deszyfrowanie klucza sesji...");
       const sessionKey = await window.e2eeProtocol.decryptSessionKey(privateKey, data.encrypted_key);
       
       // Zapisz klucz sesji w localStorage
       localStorage.setItem(`session_key_${sessionToken}`, sessionKey);
+      console.log("Klucz sesji zapisany w localStorage");
       
       // Potwierdź odebranie klucza
-      await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
+      console.log("Potwierdzanie odebrania klucza...");
+      const ackResponse = await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
       });
+      
+      if (!ackResponse.ok) {
+        console.warn("Nie udało się potwierdzić odebrania klucza, ale sesja powinna działać");
+      } else {
+        console.log("Odebranie klucza potwierdzone pomyślnie");
+      }
       
       return {
         success: true,
@@ -303,6 +389,8 @@ class SecureSessionManager {
   // Wysyłanie wiadomości
   async sendMessage(sessionToken, content, mentions = []) {
     try {
+      console.log(`Wysyłanie wiadomości w sesji ${sessionToken}...`);
+      
       // Sprawdź czy mamy klucz sesji
       const sessionKeyBase64 = localStorage.getItem(`session_key_${sessionToken}`);
       if (!sessionKeyBase64) {
@@ -310,15 +398,22 @@ class SecureSessionManager {
       }
       
       // Importuj klucz
+      console.log("Importowanie klucza sesji...");
       const sessionKey = await window.e2eeProtocol.importSessionKey(sessionKeyBase64);
       
       // Szyfruj wiadomość
+      console.log("Szyfrowanie wiadomości...");
       const encrypted = await window.e2eeProtocol.encryptMessage(sessionKey, content);
       
       // Wyślij na serwer
+      console.log("Wysyłanie zaszyfrowanej wiadomości na serwer...");
       const response = await fetch('/api/message/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
         body: JSON.stringify({
           session_token: sessionToken,
           content: encrypted.data,
@@ -327,9 +422,14 @@ class SecureSessionManager {
         })
       });
       
-      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Błąd HTTP: ${response.status}`, errorText);
+        throw new Error(`Błąd wysyłania wiadomości: ${response.status}`);
+      }
       
       const data = await response.json();
+      console.log("Odpowiedź serwera:", data);
       
       if (data.status !== 'success') {
         throw new Error(data.message || 'Błąd wysyłania wiadomości');
@@ -338,9 +438,9 @@ class SecureSessionManager {
       // Dodaj wiadomość do lokalnego stanu
       const newMessage = {
         id: data.message_id || Date.now().toString(),
-        sender_id: parseInt(sessionStorage.getItem('user_id')),
+        sender_id: parseInt(this.user.id),
         content: content,
-        timestamp: new Date().toISOString()
+        timestamp: data.timestamp || new Date().toISOString()
       };
       
       if (!this.messages[sessionToken]) {
@@ -352,6 +452,7 @@ class SecureSessionManager {
       // Zapisz lokalnie
       await this.storeMessage(sessionToken, newMessage);
       
+      console.log("Wiadomość wysłana pomyślnie");
       return {
         status: 'success',
         message: 'Wiadomość wysłana',
@@ -368,47 +469,67 @@ class SecureSessionManager {
 
   // Pobieranie lokalnych wiadomości
   getLocalMessages(sessionToken) {
+    console.log(`Pobieranie lokalnych wiadomości dla sesji ${sessionToken}...`);
+    
     if (!this.messages[sessionToken]) {
+      console.log("Brak lokalnych wiadomości dla tej sesji");
       return {
         status: 'success',
         messages: []
       };
     }
     
+    console.log(`Znaleziono ${this.messages[sessionToken].length} wiadomości`);
     return {
       status: 'success',
       messages: this.messages[sessionToken]
     };
   }
 
-  // Ładowanie stanu z localStorage
-  loadState() {
+  // Pobieranie listy znajomych
+  async fetchFriends() {
     try {
-      const stateJSON = localStorage.getItem('chat_state');
-      if (stateJSON) {
-        const state = JSON.parse(stateJSON);
-        if (state.friends) this.friends = state.friends;
-        if (state.onlineUsers) this.onlineUsers = state.onlineUsers;
+      console.log("Pobieranie listy znajomych...");
+      
+      const response = await fetch('/api/friends', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Błąd HTTP: ${response.status}`, errorText);
+        throw new Error(`Błąd pobierania znajomych: ${response.status}`);
       }
+      
+      const data = await response.json();
+      console.log("Odpowiedź serwera:", data);
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'Błąd pobierania znajomych');
+      }
+      
+      this.friends = data.friends;
+      console.log(`Pobrano ${this.friends.length} znajomych`);
+      
+      if (this.onFriendsUpdated) {
+        this.onFriendsUpdated(this.friends);
+      }
+      
+      return {
+        status: 'success',
+        friends: this.friends
+      };
     } catch (error) {
-      console.error('Błąd ładowania stanu:', error);
+      console.error('Błąd pobierania znajomych:', error);
+      return {
+        status: 'error',
+        message: error.message
+      };
     }
   }
 
-  // Zapisywanie stanu do localStorage
-  saveState() {
-    try {
-      localStorage.setItem('chat_state', JSON.stringify({
-        friends: this.friends,
-        onlineUsers: this.onlineUsers
-      }));
-    } catch (error) {
-      console.error('Błąd zapisywania stanu:', error);
-    }
-  }
-}
-
-/**
+  /**
    * Wysyła zaproszenie do znajomych
    */
   async sendFriendRequest(username) {
@@ -428,20 +549,22 @@ class SecureSessionManager {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest' // Dodajemy to pole
+          'X-Requested-With': 'XMLHttpRequest'
         },
         credentials: 'same-origin',
-        body: JSON.stringify({ 
-          username: username.trim()
-          // Używamy samego username zamiast recipient_id
-        })
+        body: JSON.stringify({ username: username.trim() })
       });
       
+      console.log("Status odpowiedzi:", response.status);
+      
       if (!response.ok) {
-        throw new Error(`Błąd HTTP: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`Błąd HTTP: ${response.status}`, errorText);
+        throw new Error(`Błąd wysyłania zaproszenia: ${response.status}`);
       }
       
       const data = await response.json();
+      console.log("Odpowiedź serwera:", data);
       
       if (data.status === 'success') {
         console.log('Zaproszenie wysłane pomyślnie');
@@ -465,6 +588,38 @@ class SecureSessionManager {
     }
   }
 
+  // Ładowanie stanu z localStorage
+  loadState() {
+    try {
+      console.log("Ładowanie stanu z localStorage...");
+      const stateJSON = localStorage.getItem('chat_state');
+      if (stateJSON) {
+        const state = JSON.parse(stateJSON);
+        if (state.friends) this.friends = state.friends;
+        if (state.onlineUsers) this.onlineUsers = state.onlineUsers;
+        console.log("Stan załadowany z localStorage");
+      } else {
+        console.log("Brak zapisanego stanu w localStorage");
+      }
+    } catch (error) {
+      console.error('Błąd ładowania stanu:', error);
+    }
+  }
+
+  // Zapisywanie stanu do localStorage
+  saveState() {
+    try {
+      console.log("Zapisywanie stanu do localStorage...");
+      localStorage.setItem('chat_state', JSON.stringify({
+        friends: this.friends,
+        onlineUsers: this.onlineUsers
+      }));
+      console.log("Stan zapisany do localStorage");
+    } catch (error) {
+      console.error('Błąd zapisywania stanu:', error);
+    }
+  }
+}
+
 // Inicjalizacja
 window.sessionManager = new SecureSessionManager();
-
