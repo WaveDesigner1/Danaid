@@ -818,6 +818,196 @@ class ChatInterface {
   }
 }
 
+/**
+   * Obsługuje wprowadzanie tekstu z potencjalnymi wzmiankami
+   */
+  async handleMentionInput() {
+    if (!this.messageInput) return;
+    
+    // Pobierz tekst i pozycję kursora
+    const text = this.messageInput.value;
+    const cursorPosition = this.messageInput.selectionStart;
+    
+    // Resetuj stan wzmianek
+    this.closeMentionSuggestions();
+    
+    // Znajdź ostatnią wzmiankę przed kursorem
+    const textBeforeCursor = text.substring(0, cursorPosition);
+    const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+    
+    if (mentionMatch) {
+      console.log("Wykryto wzmiankę:", mentionMatch[0]);
+      
+      // Zapamiętaj pozycję wzmianki
+      this.currentMentionPosition = mentionMatch.index;
+      const query = mentionMatch[1].toLowerCase();
+      
+      // Upewnij się, że mamy załadowaną listę znajomych
+      if (!this.friends || this.friends.length === 0) {
+        try {
+          await this.loadFriends();
+        } catch (e) {
+          console.error("Błąd ładowania znajomych:", e);
+        }
+      }
+      
+      // Filtruj znajomych pasujących do zapytania
+      const filteredFriends = this.friends.filter(friend => 
+        friend.username.toLowerCase().includes(query)
+      );
+      
+      if (filteredFriends.length > 0) {
+        this.showMentionSuggestions(filteredFriends, query);
+      }
+    }
+  }
+  
+  /**
+   * Pokazuje sugestie wzmianek
+   */
+  showMentionSuggestions(users, query) {
+    // Utwórz lub pobierz kontener sugestii
+    if (!this.mentionSuggestions) {
+      this.mentionSuggestions = document.createElement('div');
+      this.mentionSuggestions.className = 'mention-suggestions';
+      document.body.appendChild(this.mentionSuggestions);
+    }
+    
+    // Wyczyść poprzednie sugestie
+    this.mentionSuggestions.innerHTML = '';
+    
+    // Dodaj nowe sugestie
+    users.forEach((user, index) => {
+      const suggestion = document.createElement('div');
+      suggestion.className = 'mention-item';
+      suggestion.textContent = user.username;
+      
+      if (index === this.selectedMentionIndex) {
+        suggestion.classList.add('selected');
+      }
+      
+      suggestion.addEventListener('click', () => {
+        this.insertMention(user.username);
+      });
+      
+      this.mentionSuggestions.appendChild(suggestion);
+    });
+    
+    // Ustaw pozycję kontenera sugestii pod wzmianką
+    const coords = this.getCaretCoordinates();
+    this.mentionSuggestions.style.top = `${coords.bottom}px`;
+    this.mentionSuggestions.style.left = `${coords.left}px`;
+    
+    // Zapamiętaj użytkowników
+    this.mentionedUsers = users;
+    this.selectedMentionIndex = 0;
+  }
+  
+  /**
+   * Pobiera pozycję kursora
+   */
+  getCaretCoordinates() {
+    const inputRect = this.messageInput.getBoundingClientRect();
+    return {
+      left: inputRect.left,
+      bottom: inputRect.bottom + window.scrollY
+    };
+  }
+  
+  /**
+   * Obsługuje nawigację po sugestiach wzmianek
+   */
+  handleMentionNavigation(e) {
+    if (!this.mentionSuggestions || this.mentionedUsers.length === 0) return;
+    
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        this.selectedMentionIndex = (this.selectedMentionIndex + 1) % this.mentionedUsers.length;
+        this.updateSelectedMention();
+        break;
+        
+      case 'ArrowUp':
+        e.preventDefault();
+        this.selectedMentionIndex = (this.selectedMentionIndex - 1 + this.mentionedUsers.length) % this.mentionedUsers.length;
+        this.updateSelectedMention();
+        break;
+        
+      case 'Tab':
+      case 'Enter':
+        if (this.mentionSuggestions) {
+          e.preventDefault();
+          this.insertMention(this.mentionedUsers[this.selectedMentionIndex].username);
+        }
+        break;
+        
+      case 'Escape':
+        this.closeMentionSuggestions();
+        break;
+    }
+  }
+  
+  /**
+   * Aktualizuje zaznaczoną wzmiankę w sugestiach
+   */
+  updateSelectedMention() {
+    const items = this.mentionSuggestions.querySelectorAll('.mention-item');
+    
+    items.forEach((item, index) => {
+      if (index === this.selectedMentionIndex) {
+        item.classList.add('selected');
+      } else {
+        item.classList.remove('selected');
+      }
+    });
+  }
+  
+  /**
+   * Wstawia wybraną wzmiankę do pola wejściowego
+   */
+  insertMention(username) {
+    if (!this.messageInput || this.currentMentionPosition === -1) return;
+    
+    const text = this.messageInput.value;
+    const cursorPosition = this.messageInput.selectionStart;
+    
+    // Znajdź początek i koniec wzmianki
+    const textBeforeCursor = text.substring(0, cursorPosition);
+    const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
+    
+    if (mentionMatch) {
+      const mentionStart = mentionMatch.index;
+      const mentionEnd = cursorPosition;
+      
+      // Wstaw wzmiankę
+      const newText = text.substring(0, mentionStart) + '@' + username + ' ' + text.substring(mentionEnd);
+      this.messageInput.value = newText;
+      
+      // Ustaw kursor za wstawioną wzmianką
+      const newPosition = mentionStart + username.length + 2; // +2 for @ and space
+      this.messageInput.setSelectionRange(newPosition, newPosition);
+      
+      // Zamknij sugestie
+      this.closeMentionSuggestions();
+      
+      // Ustaw focus z powrotem na pole wejściowe
+      this.messageInput.focus();
+    }
+  }
+  
+  /**
+   * Zamyka sugestie wzmianek
+   */
+  closeMentionSuggestions() {
+    if (this.mentionSuggestions) {
+      this.mentionSuggestions.remove();
+      this.mentionSuggestions = null;
+    }
+    
+    this.currentMentionPosition = -1;
+    this.mentionedUsers = [];
+    this.selectedMentionIndex = 0;
+  }
 // Inicjalizacja interfejsu po załadowaniu dokumentu
 document.addEventListener('DOMContentLoaded', () => {
   // Sprawdź, czy użytkownik jest zalogowany
