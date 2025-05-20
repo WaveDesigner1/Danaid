@@ -594,56 +594,160 @@ checkSessionKeys() {
      * Wysyła zaproszenie do znajomych
      */
     async sendFriendRequest() {
-        // Pobierz nazwę użytkownika z pola
-        const usernameInput = document.getElementById('friend-user-id');
-        const statusDiv = document.getElementById('friend-request-status');
-        
-        if (!usernameInput || !statusDiv) return;
-        
-        const username = usernameInput.value.trim();
-        if (!username) {
-            statusDiv.textContent = 'Wprowadź nazwę użytkownika';
-            statusDiv.className = 'search-error';
-            statusDiv.style.display = 'block';
-            return;
-        }
-        
-        try {
-            // Wyślij żądanie API
-            statusDiv.textContent = 'Wysyłanie zaproszenia...';
-            statusDiv.className = 'search-no-results';
-            statusDiv.style.display = 'block';
-            
-            const response = await fetch('/api/friend_requests', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username: username })
-            });
-            
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                statusDiv.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
-                statusDiv.className = 'search-no-results';
-                usernameInput.value = '';
-                
-                // Zamknij modal po 3 sekundach
-                setTimeout(() => {
-                    const modal = document.getElementById('add-friend-modal');
-                    if (modal) modal.style.display = 'none';
-                }, 3000);
-            } else {
-                statusDiv.textContent = data.message || 'Wystąpił błąd';
-                statusDiv.className = 'search-error';
-            }
-        } catch (error) {
-            console.error('Błąd wysyłania zaproszenia:', error);
-            statusDiv.textContent = 'Wystąpił błąd sieciowy';
-            statusDiv.className = 'search-error';
-        }
+    // Pobierz nazwę użytkownika z pola
+    const usernameInput = document.getElementById('friend-user-id');
+    const statusDiv = document.getElementById('friend-request-status');
+    
+    if (!usernameInput || !statusDiv) {
+        console.error('Brak elementów UI dla wysyłania zaproszeń');
+        return;
     }
+    
+    const username = usernameInput.value.trim();
+    if (!username) {
+        statusDiv.textContent = 'Wprowadź nazwę użytkownika';
+        statusDiv.className = 'search-error';
+        statusDiv.style.display = 'block';
+        return;
+    }
+    
+    try {
+        // Wyślij żądanie API
+        statusDiv.textContent = 'Wysyłanie zaproszenia...';
+        statusDiv.className = 'search-no-results';
+        statusDiv.style.display = 'block';
+        
+        console.log('Wysyłanie zaproszenia dla użytkownika:', username);
+        
+        const response = await fetch('/api/friend_requests', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username: username })
+        });
+        
+        const data = await response.json();
+        console.log('Odpowiedź serwera:', data);
+        
+        if (data.status === 'success') {
+            statusDiv.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
+            statusDiv.className = 'search-no-results';
+            usernameInput.value = '';
+            
+            // Zamknij modal po 3 sekundach
+            setTimeout(() => {
+                const modal = document.getElementById('add-friend-modal');
+                if (modal) modal.style.display = 'none';
+            }, 3000);
+        } else {
+            statusDiv.textContent = data.message || 'Wystąpił błąd';
+            statusDiv.className = 'search-error';
+        }
+    } catch (error) {
+        console.error('Błąd wysyłania zaproszenia:', error);
+        statusDiv.textContent = 'Wystąpił błąd sieciowy: ' + error.message;
+        statusDiv.className = 'search-error';
+    }
+}
+
+// W models.py
+// Dodaj te dwie klasy do istniejącego pliku models.py
+
+"""
+class Friend(db.Model):
+    '''Friends relationship model'''
+    __tablename__ = 'friend'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    friend_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False)
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'friend_id', name='uq_friend_user_friend'),
+    )
+    
+    user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('friends', lazy='dynamic'))
+    friend = db.relationship('User', foreign_keys=[friend_id], backref=db.backref('friended_by', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<Friend {self.user_id} -> {self.friend_id}>'
+
+class FriendRequest(db.Model):
+    '''Friend request model'''
+    __tablename__ = 'friend_request'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    from_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    to_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending', nullable=False)  # 'pending', 'accepted', 'rejected'
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+    
+    __table_args__ = (
+        db.UniqueConstraint('from_user_id', 'to_user_id', name='uq_request_from_to'),
+    )
+    
+    from_user = db.relationship('User', foreign_keys=[from_user_id], backref=db.backref('sent_requests', lazy='dynamic'))
+    to_user = db.relationship('User', foreign_keys=[to_user_id], backref=db.backref('received_requests', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<FriendRequest {self.from_user_id} -> {self.to_user_id} [{self.status}]>'
+"""
+
+# W chat.html
+# Dodaj skrypt inicjalizujący dla dodawania znajomych
+"""
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Inicjalizacja obsługi dodawania znajomych
+    const addFriendBtn = document.getElementById('add-friend-btn');
+    const friendUserIdInput = document.getElementById('friend-user-id');
+    const sendFriendRequestBtn = document.getElementById('send-friend-request-btn');
+    
+    if (addFriendBtn && friendUserIdInput && sendFriendRequestBtn) {
+        console.log('Inicjalizacja obsługi dodawania znajomych');
+        
+        // Obsługa przycisku dodawania znajomego
+        addFriendBtn.addEventListener('click', function() {
+            const modal = document.getElementById('add-friend-modal');
+            if (modal) {
+                modal.style.display = 'block';
+                friendUserIdInput.value = '';
+                const statusDiv = document.getElementById('friend-request-status');
+                if (statusDiv) statusDiv.style.display = 'none';
+            }
+        });
+        
+        // Obsługa przycisku zamknięcia modalu
+        const closeBtn = document.querySelector('.search-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function() {
+                const modal = document.getElementById('add-friend-modal');
+                if (modal) modal.style.display = 'none';
+            });
+        }
+        
+        // Obsługa przycisku wysyłania zaproszenia
+        sendFriendRequestBtn.addEventListener('click', function() {
+            if (window.chatInterface && typeof window.chatInterface.sendFriendRequest === 'function') {
+                window.chatInterface.sendFriendRequest();
+            } else {
+                console.error('Brak metody sendFriendRequest w chatInterface');
+                const statusDiv = document.getElementById('friend-request-status');
+                if (statusDiv) {
+                    statusDiv.textContent = 'Błąd inicjalizacji interfejsu';
+                    statusDiv.className = 'search-error';
+                    statusDiv.style.display = 'block';
+                }
+            }
+        });
+    } else {
+        console.warn('Brak elementów UI dla dodawania znajomych');
+    }
+});
+</script>
     
     /**
      * Wykrywa wzmianki w wiadomości
