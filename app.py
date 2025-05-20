@@ -74,7 +74,7 @@ def apply_migration(inspector, table, column, sql_statement):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
-    
+    init_websocket_routes(app)
     # Konfiguracja bazy danych
     database_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@postgres.railway.internal:5432/railway')
     if database_url.startswith('postgres://'):
@@ -214,5 +214,5 @@ def create_app():
             print(f"Błąd w before_request: {e}")
             db.session.rollback()
             
-        init_websocket_routes(app)
+        
     return app
