@@ -629,21 +629,44 @@ def start_websocket_server():
     """Start WebSocket server in a separate thread"""
     import threading
     import asyncio
-    from websocket_handler import start_websocket_server
+    from websocket_handler import start_websocket_server, ws_handler
+    
+    # Sprawdź, czy WebSocket jest już uruchomiony
+    if hasattr(ws_handler, '_running') and ws_handler._running:
+        logger.info("WebSocket server is already running")
+        return
+    
+    # Oznacz jako uruchomiony
+    ws_handler._running = True
     
     # Create a new event loop for the thread
     def run_websocket_server():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(start_websocket_server())
-        loop.close()
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            logger.info("Starting WebSocket server...")
+            loop.run_until_complete(start_websocket_server())
+            loop.close()
+        except Exception as e:
+            logger.error(f"Error in WebSocket server thread: {e}")
+            ws_handler._running = False
     
     # Start the server in a separate thread
     thread = threading.Thread(target=run_websocket_server)
     thread.daemon = True
     thread.start()
     
-    logger.info("WebSocket server started in separate thread")
+    logger.info("WebSocket server thread started")
+
+def initialize_app(app):
+    """Initialize the secure messaging module"""
+    # Register the blueprint
+    app.register_blueprint(secure_messaging)
+    
+    # Start WebSocket server
+    app.before_first_request(start_websocket_server)
+    
+    logger.info("Secure messaging module initialized")
 
 def initialize_app(app):
     """Initialize the secure messaging module"""
@@ -654,3 +677,123 @@ def initialize_app(app):
     start_websocket_server()
     
     logger.info("Secure messaging module initialized")
+@secure_messaging.route('/api/message/send', methods=['POST'])
+@login_required
+def send_message():
+    """Wysyła wiadomość do innego użytkownika"""
+    try:
+        data = request.get_json()
+        
+        if not data or not all(k in data for k in ['session_token', 'content', 'iv']):
+            return jsonify({
+                'status': 'error',
+                'message': 'Brak wymaganych parametrów'
+            }), 400
+        
+        session_token = data['session_token']
+        content = data['content']
+        iv = data['iv']
+        header = data.get('header')  # Optional for Double Ratchet
+        
+        from models import db, ChatSession, Message, User
+        
+        # Pobierz sesję
+        session = ChatSession.query.filter_by(
+            session_token=session_token,
+            is_active=True
+        ).first()
+        
+        if not session:
+            return jsonify({
+                'status': 'error',
+                'message': 'Sesja nie istnieje lub wygasła'
+            }), 404
+        
+        # Sprawdź czy użytkownik jest uczestnikiem sesji
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Brak dostępu do sesji'
+            }), 403
+        
+        # Sprawdź, czy wymiana kluczy została zakończona
+        if not session.encrypted_session_key or not session.key_acknowledged:
+            return jsonify({
+                'status': 'error',
+                'message': 'Wymiana kluczy nie została zakończona'
+            }), 400
+        
+        # Określ odbiorcę
+        recipient_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
+        recipient = User.query.get(recipient_id)
+        
+        if not recipient:
+            return jsonify({
+                'status': 'error',
+                'message': 'Odbiorca nie istnieje'
+            }), 404
+        
+        # Utwórz nową wiadomość
+        new_message = Message(
+            session_id=session.id,
+            sender_id=current_user.id,
+            content=content,
+            iv=iv,
+            header=header,
+            timestamp=datetime.utcnow(),
+            read=False
+        )
+        
+        db.session.add(new_message)
+        
+        # Aktualizuj czas ostatniej aktywności sesji
+        session.last_activity = datetime.utcnow()
+        db.session.commit()
+        
+        # Powiadom odbiorcę przez WebSocket
+        try:
+            from websocket_handler import ws_handler
+            
+            message_data = {
+                'id': new_message.id,
+                'session_token': session_token,
+                'sender_id': current_user.id,
+                'content': content,
+                'iv': iv,
+                'header': header,
+                'timestamp': new_message.timestamp.isoformat(),
+                'read': False
+            }
+            
+            # Sprawdź, czy WebSocket jest zainicjalizowany
+            if hasattr(ws_handler, 'is_user_online') and hasattr(ws_handler, 'send_to_user'):
+                if ws_handler.is_user_online(recipient.user_id):
+                    logger.info(f"Sending message notification to user {recipient.user_id}")
+                    ws_handler.send_to_user(recipient.user_id, {
+                        'type': 'new_message',
+                        'session_token': session_token,
+                        'message': message_data
+                    })
+                else:
+                    logger.info(f"User {recipient.user_id} is offline, message will be delivered when they connect")
+            else:
+                logger.warning("WebSocket handler not properly initialized")
+                
+        except Exception as e:
+            # Błędy związane z WebSocket nie powinny zatrzymywać procesu
+            logger.error(f"Error sending WebSocket notification: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Wiadomość wysłana',
+            'message_id': new_message.id,
+            'timestamp': new_message.timestamp.isoformat()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error sending message: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Server error: {str(e)}'
+        }), 500
