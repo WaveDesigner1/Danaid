@@ -658,3 +658,32 @@ body, html {
         height: 70%;
     }
 }
+/* Style dla systemu wzmianek */
+.mention-suggestions {
+  position: absolute;
+  background-color: #444444;
+  border: 1px solid #555555;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+  width: 200px;
+}
+
+.mention-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  color: #FFFFFF;
+}
+
+.mention-item:hover,
+.mention-item.selected {
+  background-color: #3a3a3a;
+}
+
+.mention {
+  color: #FF9800;
+  font-weight: bold;
+}
