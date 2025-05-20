@@ -1008,6 +1008,57 @@ class ChatInterface {
     this.mentionedUsers = [];
     this.selectedMentionIndex = 0;
   }
+
+ /**
+   * Inicjalizacja nasłuchiwania zdarzeń
+   */
+  initializeEvents() {
+    // Sprawdź, czy wszystkie elementy DOM istnieją
+    if (!this.friendsList || !this.messagesContainer || !this.messageInput || 
+        !this.sendButton || !this.addFriendBtn || !this.chatHeader) {
+      console.error('Brak wymaganych elementów DOM');
+      return;
+    }
+
+    // Przycisk wysyłania wiadomości
+    this.sendButton.addEventListener('click', () => this.sendMessage());
+    
+    // Obsługa Enter do wysyłania wiadomości
+    this.messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.sendMessage();
+      }
+    });
+    
+    // Detekcja wzmianek i nawigacja
+    this.messageInput.addEventListener('input', () => this.handleMentionInput());
+    this.messageInput.addEventListener('keydown', (e) => this.handleMentionNavigation(e));
+    
+    // Zamykanie sugestii wzmianek po kliknięciu poza nimi
+    document.addEventListener('click', (e) => {
+      if (this.mentionSuggestions && !this.mentionSuggestions.contains(e.target) && e.target !== this.messageInput) {
+        this.closeMentionSuggestions();
+      }
+    });
+    
+    // Obsługa modalu dodawania znajomych
+    this.addFriendBtn.addEventListener('click', () => {
+      const modal = document.getElementById('add-friend-modal');
+      if (modal) modal.style.display = 'block';
+    });
+    
+    // Przycisk wysyłania zaproszenia
+    const sendFriendRequestBtn = document.getElementById('send-friend-request-btn');
+    if (sendFriendRequestBtn) {
+      sendFriendRequestBtn.addEventListener('click', () => this.sendFriendRequest());
+    }
+
+    // Nasłuchiwanie na zdarzenia z menedżera sesji
+    if (this.sessionManager) {
+      // Inne handlery...
+    }
+  }
 // Inicjalizacja interfejsu po załadowaniu dokumentu
 document.addEventListener('DOMContentLoaded', () => {
   // Sprawdź, czy użytkownik jest zalogowany
