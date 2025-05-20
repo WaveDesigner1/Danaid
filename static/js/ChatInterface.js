@@ -478,36 +478,73 @@ class ChatInterface {
     }
     
     /**
-     * Wysyła wiadomość
+     * Funkcja obsługująca wysyłanie wiadomości
+     * Poprawiona wersja z obsługą błędów i dodatkowym logowaniem
      */
     async sendMessage() {
-        const content = this.messageInput.value.trim();
-        if (!content || !this.currentSessionToken) return;
-        
-        try {
-            // Wykrywanie wzmianek
-            const mentions = this.detectMentions(content);
-            
-            // Wyślij wiadomość przez menedżer sesji
-            const result = await this.sessionManager.sendMessage(this.currentSessionToken, content, mentions);
-            
-            if (result.status === 'success') {
-                // Dodaj wiadomość do interfejsu
-                this.addMessageToUI(result.messageData);
-                
-                // Wyczyść pole wejściowe
-                this.messageInput.value = '';
-                
-                // Zamknij sugestie wzmianek, jeśli są otwarte
-                this.closeMentionSuggestions();
-            } else {
-                this.showNotification(result.message || 'Błąd wysyłania wiadomości', 'error');
-            }
-        } catch (error) {
-            console.error('Błąd wysyłania wiadomości:', error);
-            this.showNotification('Nie udało się wysłać wiadomości', 'error');
-        }
+    const content = this.messageInput.value.trim();
+    if (!content || !this.currentSessionToken) {
+        console.error("Nie można wysłać wiadomości: pusty content lub brak tokenu sesji");
+        console.log("Content:", content);
+        console.log("Current session token:", this.currentSessionToken);
+        return;
     }
+    
+    try {
+        console.log("Próba wysłania wiadomości");
+        console.log("Token sesji:", this.currentSessionToken);
+        
+        // Sprawdź klucz sesji w localStorage
+        const sessionKey = localStorage.getItem(`session_key_${this.currentSessionToken}`);
+        console.log("Klucz sesji istnieje:", !!sessionKey);
+        
+        // Sprawdź czy sessionManager jest poprawnie zainicjalizowany
+        if (!this.sessionManager) {
+            console.error("sessionManager nie jest dostępny");
+            this.showNotification('Błąd połączenia z menedżerem sesji', 'error');
+            return;
+        }
+        
+        // Sprawdź czy chatCrypto jest dostępny
+        console.log("chatCrypto dostępny:", !!window.chatCrypto);
+        
+        // Wykrywanie wzmianek
+        const mentions = this.detectMentions(content);
+        
+        // Wyślij wiadomość przez menedżer sesji
+        const result = await this.sessionManager.sendMessage(this.currentSessionToken, content, mentions);
+        console.log("Wynik wysyłania wiadomości:", result);
+        
+        if (result.status === 'success') {
+            // Dodaj wiadomość do interfejsu
+            this.addMessageToUI(result.messageData);
+            
+            // Wyczyść pole wejściowe
+            this.messageInput.value = '';
+            
+            // Zamknij sugestie wzmianek, jeśli są otwarte
+            this.closeMentionSuggestions();
+        } else {
+            console.error("Błąd podczas wysyłania:", result.message);
+            this.showNotification(result.message || 'Błąd wysyłania wiadomości', 'error');
+        }
+    } catch (error) {
+        console.error('Błąd wysyłania wiadomości:', error);
+        this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Dodatkowa metoda debugowania do sprawdzania kluczy sesji
+ */
+checkSessionKeys() {
+    if (this.currentSessionToken) {
+        const sessionKey = localStorage.getItem(`session_key_${this.currentSessionToken}`);
+        console.log("Klucz sesji dla tokenu", this.currentSessionToken, "istnieje:", !!sessionKey);
+    } else {
+        console.log("Brak aktywnej sesji");
+    }
+}
     
     /**
      * Obsługuje nową wiadomość z WebSocket
