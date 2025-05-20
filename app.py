@@ -213,5 +213,6 @@ def create_app():
         except Exception as e:
             print(f"Błąd w before_request: {e}")
             db.session.rollback()
-    
+            
+        init_websocket_routes(app)
     return app
