@@ -1,6 +1,4 @@
-/**
- * WebSocketHandler.js - Zarządzanie połączeniami WebSocket
- */
+// Poprawiona implementacja WebSocketHandler.js
 class WebSocketHandler {
   constructor() {
     this.socket = null;
@@ -11,6 +9,7 @@ class WebSocketHandler {
     this.userId = sessionStorage.getItem('user_id');
     this.isConnected = false;
     this.pendingMessages = [];
+    this._running = false;
     
     // Automatyczne łączenie po inicjalizacji
     if (this.userId) {
@@ -34,11 +33,14 @@ class WebSocketHandler {
     
     this.connectionAttempts++;
     
-    // Określ odpowiedni URL WebSocket
+    // Określ odpowiedni URL WebSocket - UWAGA: Dodajemy obsługę portu 8765
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Używamy tego samego hosta co aktualny serwer
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/chat/${this.userId}`;
+    // Ważne: używamy konkretnego portu 8765 zgodnie z kodem serwera
+    const host = window.location.hostname;
+    const port = "8765"; // Serwer WebSocket działa na porcie 8765
+    const wsUrl = `${protocol}//${host}:${port}/ws/chat/${this.userId}`;
+    
+    console.log(`Próba połączenia WebSocket: ${wsUrl}`);
     
     try {
       this.socket = new WebSocket(wsUrl);
@@ -60,8 +62,9 @@ class WebSocketHandler {
    * Obsługuje otwarcie połączenia
    */
   handleOpen() {
-    console.log('WebSocket połączony');
+    console.log('WebSocket połączony pomyślnie');
     this.isConnected = true;
+    this._running = true;
     this.connectionAttempts = 0;
     
     // Wyślij wiadomość inicjalizującą
@@ -79,17 +82,22 @@ class WebSocketHandler {
    */
   handleMessage(event) {
     try {
+      console.log('Otrzymano wiadomość WebSocket:', event.data);
       const data = JSON.parse(event.data);
       
       // Odpowiedź na ping
       if (data.type === 'ping') {
+        console.log('Otrzymano ping, wysyłanie pong');
         this.send({ type: 'pong' });
         return;
       }
       
       // Wywołaj odpowiedni handler zdarzenia
       if (data.type && this.handlers[data.type]) {
+        console.log(`Wywołanie handlera dla typu: ${data.type}`);
         this.handlers[data.type](data);
+      } else {
+        console.log(`Brak handlera dla typu: ${data.type}`);
       }
     } catch (error) {
       console.error('Błąd obsługi wiadomości WebSocket:', error);
@@ -101,6 +109,7 @@ class WebSocketHandler {
    */
   handleClose(event) {
     this.isConnected = false;
+    this._running = false;
     console.log(`WebSocket rozłączony: ${event.code} - ${event.reason}`);
     
     if (event.code !== 1000) { // Jeśli to nie jest normalne zamknięcie
@@ -131,6 +140,7 @@ class WebSocketHandler {
    */
   send(data) {
     if (!this.isConnected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      console.log('WebSocket nie jest połączony. Zapisano wiadomość do późniejszego wysłania:', data);
       // Zapisz wiadomość do wysłania później
       this.pendingMessages.push(data);
       
@@ -142,7 +152,9 @@ class WebSocketHandler {
     }
     
     try {
-      this.socket.send(JSON.stringify(data));
+      const messageStr = JSON.stringify(data);
+      console.log('Wysyłanie wiadomości WebSocket:', messageStr);
+      this.socket.send(messageStr);
       return true;
     } catch (error) {
       console.error('Błąd wysyłania wiadomości WebSocket:', error);
@@ -157,6 +169,7 @@ class WebSocketHandler {
   processPendingMessages() {
     if (this.pendingMessages.length === 0 || !this.isConnected) return;
     
+    console.log(`Przetwarzanie ${this.pendingMessages.length} oczekujących wiadomości`);
     const pending = [...this.pendingMessages];
     this.pendingMessages = [];
     
@@ -169,7 +182,27 @@ class WebSocketHandler {
    * Rejestruje obsługę typu wiadomości
    */
   on(type, callback) {
+    console.log(`Rejestracja handlera dla typu: ${type}`);
     this.handlers[type] = callback;
+  }
+  
+  /**
+   * Sprawdza czy użytkownik jest online
+   */
+  is_user_online(user_id) {
+    return this.isConnected; // Uproszczona implementacja
+  }
+  
+  /**
+   * Wysyła wiadomość do konkretnego użytkownika
+   */
+  send_to_user(user_id, message) {
+    console.log(`Wysyłanie wiadomości do użytkownika ${user_id}:`, message);
+    return this.send({
+      type: 'direct_message',
+      recipient_id: user_id,
+      message: message
+    });
   }
   
   /**
