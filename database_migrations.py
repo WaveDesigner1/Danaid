@@ -34,36 +34,18 @@ def create_friends_tables(inspector) -> None:
     """Create tables for friends functionality if they don't exist"""
     tables = inspector.get_table_names()
     
-    # Create FriendRequest table if it doesn't exist
+    # Sprawdź, czy tabele istnieją i stwórz je używając SQLAlchemy ORM
     if 'friend_request' not in tables:
-        logger.info("Creating 'friend_request' table")
-        
-        try:
-            db.session.execute(text("""
-                CREATE TABLE friend_request (
-                    id SERIAL PRIMARY KEY,
-                    from_user_id INTEGER NOT NULL REFERENCES "user" (id),
-                    to_user_id INTEGER NOT NULL REFERENCES "user" (id),
-                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE (from_user_id, to_user_id)
-                )
-            """))
-            
-            # Create indexes
-            db.session.execute(text("""
-                CREATE INDEX idx_friend_request_from_user_id ON friend_request (from_user_id);
-                CREATE INDEX idx_friend_request_to_user_id ON friend_request (to_user_id);
-                CREATE INDEX idx_friend_request_status ON friend_request (status);
-            """))
-            
-            db.session.commit()
-            logger.info("Created 'friend_request' table successfully")
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Error creating 'friend_request' table: {e}")
-            raise
+        logger.info("Creating 'friend_request' table using model")
+        # Wykorzystujemy fakt, że model jest już zaimportowany (from models import)
+        FriendRequest.__table__.create(db.engine)
+        logger.info("Created 'friend_request' table successfully")
+    
+    if 'friend' not in tables:
+        logger.info("Creating 'friend' table using model")
+        # Wykorzystujemy fakt, że model jest już zaimportowany (from models import)
+        Friend.__table__.create(db.engine)
+        logger.info("Created 'friend' table successfully")
     
     # Create Friend table if it doesn't exist
     if 'friend' not in tables:
