@@ -1,6 +1,12 @@
 /**
  * ChatInterface.js - Interfejs użytkownika dla aplikacji czatu
  */
+// Sprawdź czy klasa już istnieje w kontekście globalnym
+if (typeof ChatInterface === 'undefined') {
+  class ChatInterface {
+    // Reszta implementacji bez zmian...
+  }
+
 class ChatInterface {
   constructor(sessionManager) {
     // Inicjalizacja menedżera sesji i elementów DOM
