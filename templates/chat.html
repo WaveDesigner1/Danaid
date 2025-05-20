@@ -321,5 +321,105 @@
         });
     });
     </script>
+    <script>
+// Skrypt diagnostyczny do zidentyfikowania problemów z komunikacją
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("=== DIAGNOSTYKA DANAID ===");
+    
+    // Sprawdź status zalogowania
+    const isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true' || localStorage.getItem('isLoggedIn') === 'true';
+    const userId = sessionStorage.getItem('user_id') || localStorage.getItem('user_id');
+    const username = sessionStorage.getItem('username') || localStorage.getItem('username');
+    
+    console.log("Status zalogowania:", isLoggedIn);
+    console.log("ID użytkownika:", userId);
+    console.log("Nazwa użytkownika:", username);
+    
+    // Sprawdź dostępność kluczowych modułów
+    console.log("Moduł ChatCrypto dostępny:", typeof window.chatCrypto !== 'undefined');
+    console.log("Moduł SecureSessionManager dostępny:", typeof window.sessionManager !== 'undefined');
+    console.log("Moduł ChatInterface dostępny:", typeof window.chatInterface !== 'undefined');
+    
+    // Jeśli brakuje jakiegoś z modułów, inicjalizuj je
+    if (typeof window.chatCrypto === 'undefined' && typeof ChatCrypto === 'function') {
+        console.log("Inicjalizacja ChatCrypto");
+        window.chatCrypto = new ChatCrypto();
+    }
+    
+    if (typeof window.sessionManager === 'undefined' && typeof SecureSessionManager === 'function') {
+        console.log("Inicjalizacja SecureSessionManager");
+        window.sessionManager = new SecureSessionManager();
+    }
+    
+    if (typeof window.chatInterface === 'undefined' && typeof ChatInterface === 'function') {
+        console.log("Inicjalizacja ChatInterface");
+        window.chatInterface = new ChatInterface(window.sessionManager);
+    }
+    
+    // Sprawdź klucze sesji
+    const checkSessionKeys = function() {
+        if (localStorage) {
+            console.log("=== KLUCZE SESJI ===");
+            let sessionKeysFound = false;
+            
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('session_key_')) {
+                    console.log("Znaleziono klucz sesji:", key);
+                    sessionKeysFound = true;
+                }
+            }
+            
+            if (!sessionKeysFound) {
+                console.warn("Nie znaleziono żadnych kluczy sesji w localStorage");
+            }
+        }
+    };
+    
+    checkSessionKeys();
+    
+    // Nasłuchuj na kliknięcie przycisku Wyślij
+    const sendButton = document.getElementById('send-button');
+    if (sendButton) {
+        const originalClick = sendButton.onclick;
+        
+        sendButton.onclick = function(e) {
+            console.log("=== WYSYŁANIE WIADOMOŚCI ===");
+            console.log("Przycisk Wyślij kliknięty");
+            
+            const messageInput = document.getElementById('message-input');
+            if (messageInput) {
+                console.log("Treść wiadomości:", messageInput.value);
+            }
+            
+            if (window.chatInterface) {
+                console.log("Aktywna sesja:", window.chatInterface.currentSessionToken);
+                
+                // Sprawdź klucz sesji jeśli jest aktywna sesja
+                if (window.chatInterface.currentSessionToken) {
+                    const sessionKey = localStorage.getItem(`session_key_${window.chatInterface.currentSessionToken}`);
+                    console.log("Klucz sesji istnieje:", !!sessionKey);
+                }
+            }
+            
+            // Wywołaj oryginalny handler, jeśli istnieje
+            if (typeof originalClick === 'function') {
+                return originalClick.call(this, e);
+            }
+        };
+    }
+    
+    // Dodaj globalny handler błędów do debugowania
+    window.addEventListener('error', function(event) {
+        console.error("=== BŁĄD JAVASCRIPT ===");
+        console.error("Plik:", event.filename);
+        console.error("Linia:", event.lineno, "Kolumna:", event.colno);
+        console.error("Komunikat:", event.message);
+        console.error("Stack trace:", event.error && event.error.stack);
+    });
+    
+    console.log("=== KONIEC DIAGNOSTYKI ===");
+});
+</script>
 </body>
 </html>
