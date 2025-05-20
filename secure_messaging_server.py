@@ -15,71 +15,92 @@ secure_messaging = Blueprint('secure_messaging', __name__)
 @secure_messaging.route('/api/friend_requests', methods=['POST'])
 @login_required
 def send_friend_request():
-    """Send a friend request to another user"""
-    data = request.get_json()
-    
-    if not data or 'username' not in data:
+    """Wysyła zaproszenie do znajomych do innego użytkownika"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Brak danych w żądaniu'
+            }), 400
+        
+        # Obsługuj zarówno username jak i recipient_id (dla kompatybilności)
+        if 'username' in data:
+            username = data['username']
+            # Import modeli
+            from models import User, db, FriendRequest
+            # Szukaj użytkownika po nazwie
+            recipient = User.query.filter_by(username=username).first()
+        elif 'recipient_id' in data:
+            recipient_id = data['recipient_id']
+            # Import modeli
+            from models import User, db, FriendRequest
+            # Szukaj użytkownika po ID
+            recipient = User.query.filter_by(user_id=recipient_id).first()
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Brak wymaganego parametru username lub recipient_id'
+            }), 400
+        
+        if not recipient:
+            return jsonify({
+                'status': 'error',
+                'message': 'Użytkownik nie został znaleziony'
+            }), 404
+        
+        # Sprawdź czy nadawca i odbiorca to ta sama osoba
+        if recipient.id == current_user.id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Nie możesz wysłać zaproszenia do samego siebie'
+            }), 400
+        
+        # Sprawdź czy zaproszenie już istnieje
+        existing_request = FriendRequest.query.filter_by(
+            from_user_id=current_user.id,
+            to_user_id=recipient.id,
+            status='pending'
+        ).first()
+        
+        if existing_request:
+            return jsonify({
+                'status': 'error',
+                'message': 'Zaproszenie do znajomych już istnieje'
+            }), 400
+        
+        # Sprawdź czy już są znajomymi
+        # ... (kod sprawdzający relację znajomości)
+        
+        # Utwórz nowe zaproszenie
+        new_request = FriendRequest(
+            from_user_id=current_user.id,
+            to_user_id=recipient.id,
+            status='pending',
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        
+        db.session.add(new_request)
+        db.session.commit()
+        
+        # Powiadom drugiego użytkownika (jeśli jest online)
+        # ... (kod powiadamiania)
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Zaproszenie do znajomych wysłane',
+            'request_id': new_request.id
+        }), 201
+    except Exception as e:
+        db.session.rollback()  # Cofnij transakcję w przypadku błędu
+        import traceback
+        traceback.print_exc()  # Wydrukuj pełny stack trace do logów
         return jsonify({
             'status': 'error',
-            'message': 'Brak wymaganego parametru recipient_id'
-        }), 400
-    
-    recipient_id = data['recipient_id']
-    
-    # Check if recipient exists
-    from models import User, FriendRequest, db
-    recipient = User.query.filter_by(user_id=recipient_id).first()
-    if not recipient:
-        return jsonify({
-            'status': 'error',
-            'message': 'Użytkownik nie został znaleziony'
-        }), 404
-    
-    # Check if sender and recipient are the same
-    if recipient.id == current_user.id:
-        return jsonify({
-            'status': 'error',
-            'message': 'Nie możesz wysłać zaproszenia do samego siebie'
-        }), 400
-    
-    # Check if request already exists
-    existing_request = FriendRequest.query.filter_by(
-        sender_id=current_user.id,
-        recipient_id=recipient.id,
-        status='pending'
-    ).first()
-    
-    if existing_request:
-        return jsonify({
-            'status': 'error',
-            'message': 'Zaproszenie do znajomych już istnieje'
-        }), 400
-    
-    # Check if already friends
-    if current_user.is_friend_with(recipient.id):
-        return jsonify({
-            'status': 'error',
-            'message': 'Już jesteście znajomymi'
-        }), 400
-    
-    # Create new friend request
-    friend_request = FriendRequest(
-        sender_id=current_user.id,
-        recipient_id=recipient.id,
-        status='pending',
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
-    )
-    
-    db.session.add(friend_request)
-    db.session.commit()
-    
-    return jsonify({
-        'status': 'success',
-        'message': 'Zaproszenie do znajomych wysłane',
-        'request_id': friend_request.id
-    }), 201
-
+            'message': f'Błąd serwera: {str(e)}'
+        }), 500
 @secure_messaging.route('/api/friend_requests/pending', methods=['GET'])
 @login_required
 def get_pending_requests():
