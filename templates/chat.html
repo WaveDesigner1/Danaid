@@ -2,424 +2,115 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Czat szyfrowany</title>
-    
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/chat_style.css') }}">
-    <script src="{{ url_for('static', filename='js/E2EEProtocol.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/SecureSessionManager.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/ChatInterface.js') }}"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Danaid - Bezpieczny Czat</title>
+    <link rel="stylesheet" href="static/css/styles.css">
+    <link rel="stylesheet" href="static/css/chat_style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 </head>
 <body>
-    <!-- Skrypt sprawdzania sesji -->
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Sprawdź, czy jesteśmy na stronie, która wymaga logowania
-        const isLoginPage = window.location.pathname === '/' || window.location.pathname === '/login';
-        
-        if (!isLoginPage) {
-            // Sprawdź, czy mamy informację o zalogowaniu w localStorage lub sessionStorage
-            const isLoggedIn = (
-                sessionStorage.getItem('isLoggedIn') === 'true' || 
-                localStorage.getItem('isLoggedIn') === 'true'
-            );
-            
-            if (!isLoggedIn) {
-                console.log('Brak danych o logowaniu w pamięci przeglądarki');
-                // Nie przekierowujemy automatycznie - pozwalamy serwerowi obsłużyć autoryzację
-            } else {
-                console.log('Znaleziono dane o logowaniu w pamięci przeglądarki');
-            }
-        }
-    });
-    </script>
-    
-    <!-- Panel użytkownika -->
-    <div id="user-panel">
-        <div id="user-info">
-            <span id="username">{{ current_user.username }}</span>
-        </div>
-        <div id="user-actions">
-            {% if current_user.is_admin %}
-            <a href="{{ url_for('admin_panel') }}" class="action-btn">Panel Admina</a>
-            {% endif %}
-            <button class="action-btn" id="settings-btn">Ustawienia</button>
-            <a href="{{ url_for('auth.logout') }}" class="action-btn" id="logout-btn">Wyloguj</a>
-        </div>
-    </div>
-    
-    <!-- Główny kontener -->
-    <div id="main-container">
-        <div id="friends">
-            <h3>Konwersacje i Znajomi</h3>
-            <!-- Dodany przycisk "Dodaj znajomego" -->
-            <button id="add-friend-btn" class="action-btn">Dodaj znajomego</button>
-            <ul id="friend-list">
-                <!-- tutaj będą znajomi i sesje czatu -->
-            </ul>
-        </div>
-
-        <div id="chat">
-            <div id="chat-header">
-                <h2>Wybierz rozmówcę</h2>
+    <div class="app-container">
+        <!-- Górny pasek nawigacji -->
+        <header class="top-bar">
+            <div class="logo">
+                <h1>Danaid</h1>
             </div>
-            <div id="messages">
-                <!-- wiadomości będą się tu pojawiać -->
-                <div class="welcome-message">
-                    <h3>Witaj w czacie z szyfrowaniem end-to-end!</h3>
-                    <p>Wybierz istniejącą konwersację z listy po lewej stronie lub dodaj nowego znajomego, aby rozpocząć czat.</p>
-                    <p>Wszystkie wiadomości są szyfrowane i chronione przed podsłuchem!</p>
+            <div class="user-info">
+                <span id="username">Użytkownik</span>
+                <button id="logout-btn" class="action-button">
+                    <i class="fas fa-sign-out-alt"></i> Wyloguj
+                </button>
+            </div>
+        </header>
+
+        <main class="chat-container">
+            <!-- Panel boczny z listą znajomych -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>Kontakty</h2>
+                    <button id="add-friend-btn" class="action-button">
+                        <i class="fas fa-user-plus"></i> Dodaj znajomego
+                    </button>
                 </div>
-            </div>
-            <div id="input-area">
-                <textarea id="message-input" placeholder="Wpisz wiadomość..." rows="1"></textarea>
-                <button id="send-button">Wyślij</button>
-            </div>
-        </div>
+                <ul id="friend-list" class="friend-list">
+                    <!-- Lista znajomych będzie tutaj -->
+                </ul>
+            </aside>
+
+            <!-- Główny obszar czatu -->
+            <section class="chat-area">
+                <!-- Nagłówek czatu -->
+                <div id="chat-header" class="chat-header">
+                    <h2>Wybierz rozmowę</h2>
+                </div>
+
+                <!-- Obszar wiadomości -->
+                <div id="messages" class="messages">
+                    <!-- Wiadomości będą tutaj -->
+                </div>
+
+                <!-- Pole wprowadzania wiadomości -->
+                <div class="message-input-container">
+                    <textarea id="message-input" placeholder="Napisz wiadomość..."></textarea>
+                    <button id="send-button" class="send-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </section>
+        </main>
     </div>
 
-    <!-- Szablony dla dynamicznie tworzonych elementów -->
-    <template id="message-template">
-        <div class="message">
-            <div class="message-content"></div>
-            <div class="message-info">
-                <span class="message-time"></span>
-                <span class="message-status"></span>
+    <!-- Modal dodawania znajomych -->
+    <div id="add-friend-modal" class="modal">
+        <div class="modal-content">
+            <span class="search-close">&times;</span>
+            <h2>Dodaj znajomego</h2>
+            <div class="search-form">
+                <input type="text" id="friend-user-id" placeholder="Nazwa użytkownika" />
+                <button id="send-friend-request-btn">Wyślij zaproszenie</button>
             </div>
+            <div id="friend-request-status" class="search-status" style="display: none;"></div>
         </div>
-    </template>
-
-    <template id="friend-item-template">
-        <li class="friend-item">
-            <div class="friend-avatar">
-                <div class="status-indicator"></div>
-            </div>
-            <div class="friend-info">
-                <div class="friend-name"></div>
-            </div>
-        </li>
-    </template>
-
+    </div>
+    
+    <!-- Szablon powiadomień -->
     <template id="notification-template">
         <div class="notification">
-            <div class="notification-content"></div>
+            <span class="notification-content"></span>
             <button class="notification-close">&times;</button>
         </div>
     </template>
 
-    <!-- Modal do dodawania znajomych -->
-    <div id="add-friend-modal" class="friend-search-panel" style="display: none;">
-        <div class="search-header">
-            <input type="text" id="friend-user-id" placeholder="Wprowadź nazwę użytkownika">
-            <button class="search-close">&times;</button>
-        </div>
-        <div class="search-results">
-            <div id="friend-request-form">
-                <div class="search-result-item">
-                    <div class="result-info">
-                        <div class="result-message">Wprowadź nazwę użytkownika, którego chcesz dodać do znajomych</div>
-                    </div>
-                    <button id="send-friend-request-btn" class="result-action-btn">Wyślij zaproszenie</button>
-                </div>
-                <div id="friend-request-status" class="search-no-results" style="display: none;"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- JavaScript dla modala dodawania znajomych -->
+    <!-- Skrypty JavaScript -->
+    <script src="static/js/chat_crypto.js"></script>
+    <script src="static/js/SecureSessionManager.js"></script>
+    <script src="static/js/ChatInterface.js"></script>
     <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Pobierz elementy modala
-        const modal = document.getElementById('add-friend-modal');
-        const addFriendBtn = document.getElementById('add-friend-btn');
-        const closeBtn = modal.querySelector('.search-close');
-        const sendRequestBtn = document.getElementById('send-friend-request-btn');
-        const friendUserIdInput = document.getElementById('friend-user-id');
-        const statusDiv = document.getElementById('friend-request-status');
-        
-        console.log('Elementy modala:', {
-            modal: modal,
-            addFriendBtn: addFriendBtn,
-            closeBtn: closeBtn,
-            sendRequestBtn: sendRequestBtn,
-            friendUserIdInput: friendUserIdInput,
-            statusDiv: statusDiv
-        });
-        
-        // Otwórz modal po kliknięciu przycisku
-        addFriendBtn.addEventListener('click', function() {
-            console.log('Przycisk "Dodaj znajomego" kliknięty');
-            modal.style.display = 'block';
-            friendUserIdInput.value = '';
-            statusDiv.style.display = 'none';
-            statusDiv.className = 'search-no-results';
-        });
-        
-        // Zamknij modal po kliknięciu na X
-        closeBtn.addEventListener('click', function() {
-            console.log('Przycisk zamknięcia kliknięty');
-            modal.style.display = 'none';
-        });
-        
-        // Zamknij modal po kliknięciu poza nim
-        window.addEventListener('click', function(event) {
-            if (event.target === modal) {
-                console.log('Kliknięcie poza modalem');
-                modal.style.display = 'none';
-            }
-        });
-        
-        // Obsługa wysyłania zaproszenia
-        sendRequestBtn.addEventListener('click', function() {
-            console.log('Przycisk "Wyślij zaproszenie" kliknięty');
-            const friendUsername = friendUserIdInput.value.trim();
+        document.addEventListener('DOMContentLoaded', function() {
+            // Inicjalizuj menedżer sesji i interfejs czatu
+            window.sessionManager = new SecureSessionManager();
+            window.chatInterface = new ChatInterface(window.sessionManager);
             
-            console.log('Wprowadzona nazwa użytkownika:', friendUsername);
-            
-            if (!friendUsername) {
-                console.log('Brak nazwy użytkownika');
-                statusDiv.textContent = 'Wprowadź nazwę użytkownika';
-                statusDiv.className = 'search-error';
-                statusDiv.style.display = 'block';
-                return;
-            }
-            
-            // Wyślij zapytanie do API
-            console.log('Wysyłanie żądania do API z danymi:', { username: friendUsername });
-            
-            fetch('/api/friend_requests', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username: friendUsername })
-            })
-            .then(response => {
-                console.log('Odpowiedź otrzymana, status:', response.status);
-                return response.json();
-            })
-            .then(data => {
-                console.log('Dane odpowiedzi:', data);
-                
-                if (data.status === 'success') {
-                    statusDiv.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
-                    statusDiv.className = 'search-no-results';
+            // Obsługa wylogowania
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', function() {
+                    // Wyczyść dane sesji
+                    sessionStorage.clear();
+                    localStorage.removeItem('isLoggedIn');
                     
-                    // Wyczyść pole wprowadzania
-                    friendUserIdInput.value = '';
-                    
-                    // Zamknij modal po 3 sekundach
-                    setTimeout(function() {
-                        modal.style.display = 'none';
-                    }, 3000);
-                } else {
-                    statusDiv.textContent = data.message || 'Wystąpił błąd';
-                    statusDiv.className = 'search-error';
-                }
-                
-                statusDiv.style.display = 'block';
-            })
-            .catch(error => {
-                console.error('Błąd:', error);
-                statusDiv.textContent = 'Wystąpił błąd sieciowy';
-                statusDiv.className = 'search-error';
-                statusDiv.style.display = 'block';
-            });
-        });
-    });
-    </script>
-
-    <!-- Skrypt dla emotikon -->
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const messageInput = document.getElementById('message-input');
-        if (!messageInput) return;
-
-        // Konwersja emotikon na emoji podczas pisania
-        messageInput.addEventListener('input', function() {
-            // Emotikony i ich odpowiedniki emoji
-            const emoticons = {
-                ':)': '😊',
-                ':-)': '😊',
-                ':D': '😀',
-                ':-D': '😀',
-                ':(': '☹️',
-                ':-(': '☹️',
-                ';)': '😉',
-                ';-)': '😉',
-                ':P': '😛',
-                ':-P': '😛',
-                ':p': '😛',
-                ':-p': '😛',
-                ':*': '😘',
-                ':-*': '😘',
-                ':|': '😐',
-                ':-|': '😐',
-                ':O': '😮',
-                ':-O': '😮',
-                ':o': '😮',
-                ':-o': '😮',
-                ':0': '😮',
-                ':-0': '😮',
-                ':3': '😊',
-                '<3': '❤️',
-                '</3': '💔',
-                '(y)': '👍',
-                '(n)': '👎',
-                '(Y)': '👍',
-                '(N)': '👎',
-                ':/)': '🤔',
-                ':\\': '😕',
-                ':-\\': '😕',
-                ':/': '😕',
-                ':-/': '😕',
-                ':S': '😖',
-                ':-S': '😖',
-                ':s': '😖',
-                ':-s': '😖',
-                ';P': '😜',
-                ';-P': '😜',
-                ';p': '😜',
-                ';-p': '😜',
-                'XD': '😂',
-                'xD': '😂'
-            };
-            
-            // Pobierz pozycję kursora
-            const cursorPos = messageInput.selectionStart;
-            
-            // Pobierz tekst
-            const text = messageInput.value;
-            
-            // Sprawdź, czy tekst zawiera emotikony
-            let newText = text;
-            let changes = 0;
-            
-            // Sprawdź każdą emotikonę
-            Object.keys(emoticons).forEach(emoticon => {
-                // Tylko jeśli emotikonka jest poprzedzona spacją lub jest na początku tekstu
-                const regex = new RegExp(`(^|\\s)${emoticon.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1")}`, 'g');
-                newText = newText.replace(regex, function(match, p1) {
-                    changes++;
-                    return p1 + emoticons[emoticon];
+                    // Przekieruj na stronę logowania
+                    window.location.href = '/';
                 });
-            });
+            }
             
-            // Aktualizuj tekst tylko jeśli były zmiany
-            if (changes > 0) {
-                // Zapamiętaj pozycję kursora
-                const oldLength = text.length;
-                const newLength = newText.length;
-                const newCursorPos = cursorPos + (newLength - oldLength);
-                
-                // Aktualizuj tekst
-                messageInput.value = newText;
-                
-                // Przywróć pozycję kursora
-                messageInput.selectionStart = newCursorPos;
-                messageInput.selectionEnd = newCursorPos;
+            // Zapytaj o uprawnienia do powiadomień
+            if ("Notification" in window && Notification.permission === "default") {
+                setTimeout(() => {
+                    Notification.requestPermission();
+                }, 3000);
             }
         });
-    });
     </script>
-    <script>
-// Skrypt diagnostyczny do zidentyfikowania problemów z komunikacją
-document.addEventListener('DOMContentLoaded', function() {
-    console.log("=== DIAGNOSTYKA DANAID ===");
-    
-    // Sprawdź status zalogowania
-    const isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true' || localStorage.getItem('isLoggedIn') === 'true';
-    const userId = sessionStorage.getItem('user_id') || localStorage.getItem('user_id');
-    const username = sessionStorage.getItem('username') || localStorage.getItem('username');
-    
-    console.log("Status zalogowania:", isLoggedIn);
-    console.log("ID użytkownika:", userId);
-    console.log("Nazwa użytkownika:", username);
-    
-    // Sprawdź dostępność kluczowych modułów
-    console.log("Moduł ChatCrypto dostępny:", typeof window.chatCrypto !== 'undefined');
-    console.log("Moduł SecureSessionManager dostępny:", typeof window.sessionManager !== 'undefined');
-    console.log("Moduł ChatInterface dostępny:", typeof window.chatInterface !== 'undefined');
-    
-    // Jeśli brakuje jakiegoś z modułów, inicjalizuj je
-    if (typeof window.chatCrypto === 'undefined' && typeof ChatCrypto === 'function') {
-        console.log("Inicjalizacja ChatCrypto");
-        window.chatCrypto = new ChatCrypto();
-    }
-    
-    if (typeof window.sessionManager === 'undefined' && typeof SecureSessionManager === 'function') {
-        console.log("Inicjalizacja SecureSessionManager");
-        window.sessionManager = new SecureSessionManager();
-    }
-    
-    if (typeof window.chatInterface === 'undefined' && typeof ChatInterface === 'function') {
-        console.log("Inicjalizacja ChatInterface");
-        window.chatInterface = new ChatInterface(window.sessionManager);
-    }
-    
-    // Sprawdź klucze sesji
-    const checkSessionKeys = function() {
-        if (localStorage) {
-            console.log("=== KLUCZE SESJI ===");
-            let sessionKeysFound = false;
-            
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key.startsWith('session_key_')) {
-                    console.log("Znaleziono klucz sesji:", key);
-                    sessionKeysFound = true;
-                }
-            }
-            
-            if (!sessionKeysFound) {
-                console.warn("Nie znaleziono żadnych kluczy sesji w localStorage");
-            }
-        }
-    };
-    
-    checkSessionKeys();
-    
-    // Nasłuchuj na kliknięcie przycisku Wyślij
-    const sendButton = document.getElementById('send-button');
-    if (sendButton) {
-        const originalClick = sendButton.onclick;
-        
-        sendButton.onclick = function(e) {
-            console.log("=== WYSYŁANIE WIADOMOŚCI ===");
-            console.log("Przycisk Wyślij kliknięty");
-            
-            const messageInput = document.getElementById('message-input');
-            if (messageInput) {
-                console.log("Treść wiadomości:", messageInput.value);
-            }
-            
-            if (window.chatInterface) {
-                console.log("Aktywna sesja:", window.chatInterface.currentSessionToken);
-                
-                // Sprawdź klucz sesji jeśli jest aktywna sesja
-                if (window.chatInterface.currentSessionToken) {
-                    const sessionKey = localStorage.getItem(`session_key_${window.chatInterface.currentSessionToken}`);
-                    console.log("Klucz sesji istnieje:", !!sessionKey);
-                }
-            }
-            
-            // Wywołaj oryginalny handler, jeśli istnieje
-            if (typeof originalClick === 'function') {
-                return originalClick.call(this, e);
-            }
-        };
-    }
-    
-    // Dodaj globalny handler błędów do debugowania
-    window.addEventListener('error', function(event) {
-        console.error("=== BŁĄD JAVASCRIPT ===");
-        console.error("Plik:", event.filename);
-        console.error("Linia:", event.lineno, "Kolumna:", event.colno);
-        console.error("Komunikat:", event.message);
-        console.error("Stack trace:", event.error && event.error.stack);
-    });
-    
-    console.log("=== KONIEC DIAGNOSTYKI ===");
-});
-</script>
 </body>
 </html>
