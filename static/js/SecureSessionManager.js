@@ -398,6 +398,63 @@ class SecureSessionManager {
   }
 }
 
+/**
+   * Wysyła zaproszenie do znajomych
+   */
+  async sendFriendRequest(username) {
+    try {
+      // Sprawdź dane wejściowe
+      if (!username || !username.trim()) {
+        throw new Error('Podaj nazwę użytkownika');
+      }
+      
+      if (!this.user.id) {
+        throw new Error('Użytkownik nie jest zalogowany');
+      }
+      
+      console.log('Wysyłanie zaproszenia do znajomych dla:', username);
+      
+      const response = await fetch('/api/friend_requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest' // Dodajemy to pole
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ 
+          username: username.trim()
+          // Używamy samego username zamiast recipient_id
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd HTTP: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        console.log('Zaproszenie wysłane pomyślnie');
+        // Odśwież listę znajomych
+        await this.fetchFriends();
+        
+        return {
+          success: true,
+          message: data.message || 'Zaproszenie wysłane pomyślnie'
+        };
+      } else {
+        throw new Error(data.message || 'Błąd wysyłania zaproszenia');
+      }
+    } catch (error) {
+      console.error('Błąd wysyłania zaproszenia:', error);
+      
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
 // Inicjalizacja
 window.sessionManager = new SecureSessionManager();
 
