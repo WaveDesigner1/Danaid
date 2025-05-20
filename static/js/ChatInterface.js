@@ -764,73 +764,37 @@ class ChatInterface {
    * Wysyła zaproszenie do znajomych
    */
   async sendFriendRequest() {
-    const usernameInput = document.getElementById('friend-user-id');
-    const statusDiv = document.getElementById('friend-request-status');
+  const usernameInput = document.getElementById('friend-user-id');
+  const statusDiv = document.getElementById('friend-request-status');
+  
+  if (!usernameInput || !statusDiv) {
+    console.error('Brak elementów UI dla wysyłania zaproszeń');
+    return;
+  }
+  
+  const username = usernameInput.value.trim();
+  if (!username) {
+    statusDiv.textContent = 'Wprowadź nazwę użytkownika';
+    statusDiv.className = 'search-status search-error';
+    statusDiv.style.display = 'block';
+    return;
+  }
+  
+  try {
+    statusDiv.textContent = 'Wysyłanie zaproszenia...';
+    statusDiv.className = 'search-status';
+    statusDiv.style.display = 'block';
     
-    if (!usernameInput || !statusDiv) {
-      console.error('Brak elementów UI dla wysyłania zaproszeń');
-      return;
-    }
+    // Loguj wartość przed wysłaniem
+    console.log("Wysyłanie zaproszenia do:", username);
     
-    const username = usernameInput.value.trim();
-    if (!username) {
-      statusDiv.textContent = 'Wprowadź nazwę użytkownika';
-      statusDiv.className = 'search-error';
-      statusDiv.style.display = 'block';
-      return;
-    }
-    
-    try {
-      statusDiv.textContent = 'Wysyłanie zaproszenia...';
-      statusDiv.className = 'search-no-results';
-      statusDiv.style.display = 'block';
+    // Używamy menedżera sesji do wysłania zaproszenia
+    if (this.sessionManager && this.sessionManager.sendFriendRequest) {
+      const result = await this.sessionManager.sendFriendRequest(username);
       
-      // Używamy menedżera sesji do wysłania zaproszenia
-      if (this.sessionManager && this.sessionManager.sendFriendRequest) {
-        const result = await this.sessionManager.sendFriendRequest(username);
-        
-        if (result.success) {
-          statusDiv.textContent = result.message || 'Zaproszenie wysłane pomyślnie';
-          statusDiv.className = 'search-no-results search-success';
-          usernameInput.value = '';
-          
-          // Zamknij modal po 3 sekundach
-          setTimeout(() => {
-            const modal = document.getElementById('add-friend-modal');
-            if (modal) modal.style.display = 'none';
-            
-            // Odśwież listę zaproszeń i znajomych
-            this.loadFriends();
-          }, 3000);
-        } else {
-          statusDiv.textContent = result.message || 'Wystąpił błąd';
-          statusDiv.className = 'search-error';
-        }
-        return;
-      }
-      
-      // Jeśli nie ma menedżera sesji, użyj fetch API bezpośrednio
-      const response = await fetch('/api/friend_requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ 
-          username: username 
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Błąd HTTP: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status === 'success') {
-        statusDiv.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
-        statusDiv.className = 'search-no-results search-success';
+      if (result.success) {
+        statusDiv.textContent = result.message || 'Zaproszenie wysłane pomyślnie';
+        statusDiv.className = 'search-status search-success';
         usernameInput.value = '';
         
         // Zamknij modal po 3 sekundach
@@ -842,16 +806,60 @@ class ChatInterface {
           this.loadFriends();
         }, 3000);
       } else {
-        statusDiv.textContent = data.message || 'Wystąpił błąd';
-        statusDiv.className = 'search-error';
+        statusDiv.textContent = result.message || 'Wystąpił błąd';
+        statusDiv.className = 'search-status search-error';
       }
-    } catch (error) {
-      console.error('Błąd wysyłania zaproszenia:', error);
-      statusDiv.textContent = 'Wystąpił błąd sieciowy: ' + error.message;
-      statusDiv.className = 'search-error';
+      return;
     }
-  }
 
+    
+    // Jeśli nie ma menedżera sesji, użyj fetch API bezpośrednio
+    console.log("Używanie bezpośredniego fetch API");
+    const response = await fetch('/api/friend_requests', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ username: username })
+    });
+    
+    // Loguj odpowiedź serwera
+    console.log("Status odpowiedzi:", response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Szczegóły błędu:", errorText);
+      throw new Error(`Błąd HTTP: ${response.status} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    console.log("Odpowiedź serwera:", data);
+    
+    if (data.status === 'success') {
+      statusDiv.textContent = data.message || 'Zaproszenie wysłane pomyślnie';
+      statusDiv.className = 'search-status search-success';
+      usernameInput.value = '';
+      
+      // Zamknij modal po 3 sekundach
+      setTimeout(() => {
+        const modal = document.getElementById('add-friend-modal');
+        if (modal) modal.style.display = 'none';
+        
+        // Odśwież listę zaproszeń i znajomych
+        this.loadFriends();
+      }, 3000);
+    } else {
+      statusDiv.textContent = data.message || 'Wystąpił błąd';
+      statusDiv.className = 'search-status search-error';
+    }
+  } catch (error) {
+    console.error('Błąd wysyłania zaproszenia:', error);
+    statusDiv.textContent = 'Wystąpił błąd sieciowy: ' + error.message;
+    statusDiv.className = 'search-status search-error';
+  }
+}
 /**
    * Obsługuje wprowadzanie tekstu z potencjalnymi wzmiankami
    */
