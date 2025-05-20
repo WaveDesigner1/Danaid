@@ -301,10 +301,23 @@ ws_handler = WebSocketHandler()
 
 async def start_websocket_server(host: str = '0.0.0.0', port: int = 8765) -> None:
     """Start the WebSocket server"""
-    # Start the ping service
-    asyncio.create_task(ws_handler.start_ping_service())
+    # Sprawdź, czy serwer już działa
+    if ws_handler._running:
+        logger.info("WebSocket server is already running")
+        return
     
-    # Start the WebSocket server
-    async with websockets.serve(ws_handler.handle_connection, host, port):
-        logger.info(f"WebSocket server started on {host}:{port}")
-        await asyncio.Future()  # Run forever
+    try:
+        # Start the ping service
+        ping_task = asyncio.create_task(ws_handler.start_ping_service())
+        
+        # Start the WebSocket server
+        ws_handler._running = True
+        logger.info(f"Starting WebSocket server on {host}:{port}")
+        
+        async with websockets.serve(ws_handler.handle_connection, host, port):
+            logger.info(f"WebSocket server started on {host}:{port}")
+            await asyncio.Future()  # Run forever
+    except Exception as e:
+        logger.error(f"Error starting WebSocket server: {e}")
+        ws_handler._running = False
+        raise
