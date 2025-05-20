@@ -157,7 +157,7 @@
         sendRequestBtn.addEventListener('click', function() {
            const friendUsername = friendIdInput.value.trim();
             
-            if (!friendId) {
+            if (!friendUsername) {
                 statusDiv.textContent = 'Wprowadź nazwę użytkownika';
                 statusDiv.className = 'search-error';
                 statusDiv.style.display = 'block';
