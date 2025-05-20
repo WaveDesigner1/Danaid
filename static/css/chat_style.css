@@ -637,3 +637,47 @@ body {
         width: 90%;
     }
 }
+/* Styl dla wzmianek */
+.mention {
+    color: var(--primary-color);
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.mention:hover {
+    background-color: rgba(255, 152, 0, 0.2);
+    border-radius: 3px;
+}
+
+/* Sugestie wzmianek */
+.mention-suggestions {
+    position: absolute;
+    max-width: 300px;
+    max-height: 200px;
+    overflow-y: auto;
+    background-color: var(--bg-medium);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    z-index: 1000;
+}
+
+.mention-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.mention-item:hover, .mention-item.selected {
+    background-color: var(--bg-light);
+}
+
+/* Zmiana koloru przycisku "Dodaj znajomego" */
+#add-friend-btn {
+    background-color: var(--primary-color);
+    color: var(--bg-dark);
+}
+
+#add-friend-btn:hover {
+    background-color: var(--primary-dark);
+}
