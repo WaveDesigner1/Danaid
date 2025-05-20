@@ -374,3 +374,264 @@ def acknowledge_session_key(session_token):
         db.session.rollback()
         logger.error(f"Błąd potwierdzania klucza sesji: {e}")
         return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
+
+@chat_api.route('/api/message/send', methods=['POST'])
+@login_required
+def send_message():
+    """Wysyła zaszyfrowaną wiadomość z obsługą wzmianek"""
+    try:
+        data = request.get_json()
+        
+        session_token = data.get('session_token')
+        content = data.get('content')  # Zaszyfrowana treść
+        iv = data.get('iv')  # Wektor inicjalizacyjny
+        mentions = data.get('mentions', [])  # Lista wzmianek (@username)
+        
+        if not all([session_token, content, iv]):
+            logger.error(f"Brakujące dane w żądaniu: {data}")
+            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
+            
+        # Pobierz sesję
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        
+        if not session:
+            logger.error(f"Nieprawidłowa sesja: {session_token}")
+            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
+            
+        # Sprawdź, czy sesja jest aktywna
+        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
+            logger.error(f"Sesja wygasła: {session_token}")
+            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
+            
+        # Sprawdź, czy klucz sesji został potwierdzony
+        if not session.key_acknowledged:
+            logger.error(f"Wymiana kluczy nie została zakończona dla sesji: {session_token}")
+            return jsonify({'status': 'error', 'message': 'Wymiana kluczy nie została zakończona'}), 400
+            
+        # Sprawdź, czy użytkownik jest uczestnikiem tej sesji
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            logger.error(f"Brak dostępu do sesji {session_token} dla użytkownika {current_user.id}")
+            return jsonify({'status': 'error', 'message': 'Brak dostępu do tej sesji'}), 403
+        
+        # Zapisz wiadomość
+        new_message = Message(
+            session_id=session.id,
+            sender_id=current_user.id,
+            content=content,
+            iv=iv
+        )
+        
+        db.session.add(new_message)
+        
+        # Odśwież sesję
+        session.last_activity = datetime.datetime.utcnow()
+        
+        # Obsługa wzmianek - powiadomienia dla wspomnianych użytkowników
+        if mentions and len(mentions) > 0:
+            for username in mentions:
+                # Znajdź użytkownika po nazwie
+                mentioned_user = User.query.filter_by(username=username).first()
+                
+                if mentioned_user:
+                    # Jeśli użytkownik istnieje i mamy dostęp do handlera WebSocket
+                    try:
+                        from websocket_handler import ws_handler
+                        if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(mentioned_user.user_id):
+                            ws_handler.send_to_user(mentioned_user.user_id, {
+                                'type': 'mention_notification',
+                                'from_user': {
+                                    'id': current_user.id,
+                                    'user_id': current_user.user_id,
+                                    'username': current_user.username
+                                },
+                                'session_token': session_token,
+                                'message_id': new_message.id,
+                                'timestamp': datetime.datetime.utcnow().isoformat()
+                            })
+                    except (ImportError, AttributeError, Exception) as e:
+                        # Błędy związane z WebSocket nie powinny zatrzymywać całego procesu
+                        logger.error(f"Ostrzeżenie: Nie można wysłać powiadomienia o wzmiance: {e}")
+        
+        # Powiadom odbiorcę o nowej wiadomości
+        try:
+            recipient_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
+            recipient = User.query.get(recipient_id)
+            
+            from websocket_handler import ws_handler
+            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
+                logger.debug(f"Wysyłanie powiadomienia o nowej wiadomości do {recipient.user_id}")
+                ws_handler.send_to_user(recipient.user_id, {
+                    'type': 'new_message',
+                    'session_token': session_token,
+                    'message': {
+                        'id': new_message.id,
+                        'sender_id': current_user.id,
+                        'content': content,
+                        'iv': iv,
+                        'timestamp': datetime.datetime.utcnow().isoformat()
+                    }
+                })
+        except Exception as ws_error:
+            logger.error(f"Błąd WebSocket podczas wysyłania wiadomości: {ws_error}")
+        
+        # Zakończ transakcję
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': {
+                'id': new_message.id,
+                'timestamp': new_message.timestamp.isoformat()
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Błąd wysyłania wiadomości: {e}")
+        return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
+
+@chat_api.route('/api/messages/<session_token>', methods=['GET'])
+@login_required
+def get_messages(session_token):
+    """Pobiera wiadomości z sesji"""
+    try:
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        
+        if not session:
+            return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
+            
+        # Sprawdź czy użytkownik jest uczestnikiem tej sesji
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Brak dostępu do tej sesji'}), 403
+            
+        # Sprawdź ważność sesji
+        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
+            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
+        
+        # Pobierz wiadomości
+        messages = Message.query.filter_by(session_id=session.id).order_by(Message.timestamp).all()
+        
+        # Oznacz wszystkie nieswoje wiadomości jako przeczytane
+        unread_messages = Message.query.filter_by(
+            session_id=session.id,
+            sender_id=session.initiator_id if session.recipient_id == current_user.id else session.recipient_id,
+            read=False
+        ).all()
+        
+        for msg in unread_messages:
+            msg.read = True
+        
+        db.session.commit()
+        
+        message_list = [{
+            'id': msg.id,
+            'sender_id': msg.sender_id,
+            'content': msg.content,
+            'iv': msg.iv,
+            'timestamp': msg.timestamp.isoformat(),
+            'is_mine': msg.sender_id == current_user.id
+        } for msg in messages]
+        
+        return jsonify({
+            'status': 'success',
+            'messages': message_list
+        })
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Błąd pobierania wiadomości: {e}")
+        return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
+
+@chat_api.route('/api/sessions/active', methods=['GET'])
+@login_required
+def get_active_sessions():
+    """Pobiera wszystkie aktywne sesje czatu dla użytkownika"""
+    try:
+        # Pobierz aktywne sesje
+        active_sessions = ChatSession.query.filter(
+            ((ChatSession.initiator_id == current_user.id) | (ChatSession.recipient_id == current_user.id)),
+            ChatSession.is_active == True,
+            ChatSession.expires_at > datetime.datetime.utcnow()
+        ).all()
+        
+        session_list = []
+        for session in active_sessions:
+            # Określ drugiego uczestnika
+            other_user_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
+            other_user = User.query.get(other_user_id)
+            
+            # Policz nieprzeczytane wiadomości
+            unread_count = Message.query.filter_by(
+                session_id=session.id,
+                sender_id=other_user_id,
+                read=False
+            ).count()
+            
+            session_list.append({
+                'id': session.id,
+                'token': session.session_token,
+                'expires_at': session.expires_at.isoformat(),
+                'last_activity': session.last_activity.isoformat(),
+                'has_key': session.encrypted_session_key is not None,
+                'key_acknowledged': session.key_acknowledged,
+                'other_user': {
+                    'id': other_user.id,
+                    'user_id': other_user.user_id,
+                    'username': other_user.username,
+                    'is_online': other_user.is_online if hasattr(other_user, 'is_online') else False
+                },
+                'unread_count': unread_count
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'sessions': session_list
+        })
+    except Exception as e:
+        logger.error(f"Błąd pobierania aktywnych sesji: {e}")
+        return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
+
+# Metoda rozszerzająca klasę ChatSession
+def refresh_session(self):
+    """Odświeża sesję czatu"""
+    self.last_activity = datetime.datetime.utcnow()
+    self.expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
+    db.session.commit()
+    return self
+
+# Metoda tworząca nową sesję
+def create_session(initiator_id, recipient_id):
+    """Tworzy nową sesję czatu między dwoma użytkownikami"""
+    import secrets
+    import string
+    
+    # Generuj token sesji
+    session_token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+    expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
+    
+    new_session = ChatSession(
+        session_token=session_token,
+        initiator_id=initiator_id,
+        recipient_id=recipient_id,
+        created_at=datetime.datetime.utcnow(),
+        last_activity=datetime.datetime.utcnow(),
+        expires_at=expires_at,
+        is_active=True
+    )
+    
+    db.session.add(new_session)
+    db.session.commit()
+    
+    return new_session
+
+# Metoda pobierająca aktywne sesje
+def get_active_sessions(user_id):
+    """Pobiera aktywne sesje czatu dla użytkownika"""
+    return ChatSession.query.filter(
+        ((ChatSession.initiator_id == user_id) | (ChatSession.recipient_id == user_id)),
+        ChatSession.is_active == True,
+        ChatSession.expires_at > datetime.datetime.utcnow()
+    ).all()
+
+# Dodaj metody do klasy ChatSession
+ChatSession.refresh_session = refresh_session
+ChatSession.create_session = staticmethod(create_session)
+ChatSession.get_active_sessions = staticmethod(get_active_sessions)
