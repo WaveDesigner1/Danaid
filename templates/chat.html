@@ -92,7 +92,7 @@
     <script src="static/js/chat_crypto.js"></script>
     <script src="static/js/SecureSessionManager.js"></script>
     <script src="static/js/ChatInterface.js"></script>
-   <script>
+    <script>
     // Funkcja pomocnicza do debugowania komponentów UI
     function debugElements() {
         console.log('Debugowanie elementów UI:');
@@ -141,6 +141,67 @@
         }
     }
 
+    // Funkcja dodająca panel administratora
+    function addAdminPanel() {
+        if (sessionStorage.getItem('is_admin') === 'true') {
+            // Dodaj link do panelu administratora w górnym pasku
+            const userControls = document.querySelector('.user-controls');
+            if (userControls) {
+                // Stwórz przycisk panelu administratora
+                const adminButton = document.createElement('button');
+                adminButton.id = 'admin-panel-btn';
+                adminButton.innerHTML = '<i class="fas fa-shield-alt"></i> Panel Administratora';
+                adminButton.classList.add('admin-button');
+                
+                // Dodaj obsługę kliknięcia
+                adminButton.addEventListener('click', function() {
+                    window.location.href = '/admin';
+                });
+                
+                // Wstaw przycisk przed przyciskiem wylogowania
+                const logoutBtn = document.getElementById('logout-btn');
+                if (logoutBtn) {
+                    userControls.insertBefore(adminButton, logoutBtn);
+                } else {
+                    userControls.appendChild(adminButton);
+                }
+                
+                // Dodaj style CSS dla przycisku administratora
+                const style = document.createElement('style');
+                style.textContent = `
+                    .admin-button {
+                        background-color: #c62828;
+                        color: white;
+                        margin-right: 10px;
+                        padding: 8px 15px;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-weight: bold;
+                        display: inline-flex;
+                        align-items: center;
+                        transition: background-color 0.3s;
+                    }
+                    
+                    .admin-button:hover {
+                        background-color: #b71c1c;
+                    }
+                    
+                    .admin-button i {
+                        margin-right: 5px;
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                console.log('Dodano przycisk panelu administratora');
+            } else {
+                console.error('Nie znaleziono kontenera user-controls do dodania przycisku administratora');
+            }
+        } else {
+            console.log('Użytkownik nie jest administratorem');
+        }
+    }
+
     // Funkcja weryfikująca stan połączenia WebSocket
     function verifyWebSocketConnection() {
         if (window.chatInterface) {
@@ -157,6 +218,9 @@
             
             // Sprawdź dane sesji
             checkSessionStorage();
+            
+            // Dodaj panel administratora, jeśli użytkownik ma uprawnienia
+            addAdminPanel();
             
             // Debugowanie elementów UI przed inicjalizacją
             debugElements();
@@ -233,6 +297,6 @@
             alert('Wystąpił błąd podczas inicjalizacji aplikacji. Spróbuj odświeżyć stronę.');
         }
     });
-</script>
+    </script>
 </body>
 </html>
