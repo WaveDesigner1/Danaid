@@ -533,93 +533,60 @@ class SecureSessionManager {
    * Wysyła zaproszenie do znajomych
    */
   async sendFriendRequest(username) {
-    try {
-      // Sprawdź dane wejściowe
-      if (!username || !username.trim()) {
-        throw new Error('Podaj nazwę użytkownika');
-      }
-      
-      if (!this.user.id) {
-        throw new Error('Użytkownik nie jest zalogowany');
-      }
-      
-      console.log('Wysyłanie zaproszenia do znajomych dla:', username);
-      
-      const response = await fetch('/api/friend_requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ username: username.trim() })
-      });
-      
-      console.log("Status odpowiedzi:", response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Błąd HTTP: ${response.status}`, errorText);
-        throw new Error(`Błąd wysyłania zaproszenia: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log("Odpowiedź serwera:", data);
-      
-      if (data.status === 'success') {
-        console.log('Zaproszenie wysłane pomyślnie');
-        // Odśwież listę znajomych
-        await this.fetchFriends();
-        
-        return {
-          success: true,
-          message: data.message || 'Zaproszenie wysłane pomyślnie'
-        };
-      } else {
-        throw new Error(data.message || 'Błąd wysyłania zaproszenia');
-      }
-    } catch (error) {
-      console.error('Błąd wysyłania zaproszenia:', error);
+  try {
+    // Sprawdź dane wejściowe
+    if (!username || !username.trim()) {
+      throw new Error('Podaj nazwę użytkownika');
+    }
+    
+    if (!this.user.id) {
+      throw new Error('Użytkownik nie jest zalogowany');
+    }
+    
+    console.log('Wysyłanie zaproszenia do znajomych dla:', username);
+    
+    const response = await fetch('/api/friend_requests', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ username: username.trim() })
+    });
+    
+    // Dodatkowe logi dla debugowania
+    console.log("Status odpowiedzi:", response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Szczegóły błędu:", errorText);
+      throw new Error(`Błąd HTTP: ${response.status} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    console.log("Odpowiedź serwera:", data);
+    
+    if (data.status === 'success') {
+      console.log('Zaproszenie wysłane pomyślnie');
+      // Odśwież listę znajomych
+      await this.fetchFriends();
       
       return {
-        success: false,
-        message: error.message
+        success: true,
+        message: data.message || 'Zaproszenie wysłane pomyślnie'
       };
+    } else {
+      throw new Error(data.message || 'Błąd wysyłania zaproszenia');
     }
-  }
-
-  // Ładowanie stanu z localStorage
-  loadState() {
-    try {
-      console.log("Ładowanie stanu z localStorage...");
-      const stateJSON = localStorage.getItem('chat_state');
-      if (stateJSON) {
-        const state = JSON.parse(stateJSON);
-        if (state.friends) this.friends = state.friends;
-        if (state.onlineUsers) this.onlineUsers = state.onlineUsers;
-        console.log("Stan załadowany z localStorage");
-      } else {
-        console.log("Brak zapisanego stanu w localStorage");
-      }
-    } catch (error) {
-      console.error('Błąd ładowania stanu:', error);
-    }
-  }
-
-  // Zapisywanie stanu do localStorage
-  saveState() {
-    try {
-      console.log("Zapisywanie stanu do localStorage...");
-      localStorage.setItem('chat_state', JSON.stringify({
-        friends: this.friends,
-        onlineUsers: this.onlineUsers
-      }));
-      console.log("Stan zapisany do localStorage");
-    } catch (error) {
-      console.error('Błąd zapisywania stanu:', error);
-    }
+  } catch (error) {
+    console.error('Błąd wysyłania zaproszenia:', error);
+    
+    return {
+      success: false,
+      message: error.message
+    };
   }
 }
-
 // Inicjalizacja
 window.sessionManager = new SecureSessionManager();
