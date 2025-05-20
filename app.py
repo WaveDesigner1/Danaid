@@ -109,7 +109,39 @@ def create_app():
     # Uruchom migracje bazy danych
     apply_migrations(app)
     apply_e2ee_migrations(app)
+
+    # Endpoint z konfiguracją WebSocket dla frontendu
+    @app.route('/api/websocket/config')
+    def websocket_config():
+        """Dostarcza konfigurację WebSocket dla klienta"""
+        websocket_host = os.environ.get('WEBSOCKET_HOST', request.host)
+        websocket_port = os.environ.get('WEBSOCKET_PORT', '')
+        
+        config = {
+            'wsUrl': websocket_host + (f':{websocket_port}' if websocket_port else '')
+        }
+        
+        return jsonify(config)
+    
+    # Dodaj skrypt konfiguracyjny dla WebSocket
+    @app.route('/ws-config.js')
+    def ws_config_js():
+        """Generuje skrypt JS z konfiguracją WebSocket"""
+        websocket_host = os.environ.get('WEBSOCKET_HOST', request.host)
+        websocket_port = os.environ.get('WEBSOCKET_PORT', '')
+        
+        config = {
+            'wsUrl': websocket_host + (f':{websocket_port}' if websocket_port else '')
+        }
+        
+        # Generuj skrypt JS
+        js_content = f"window._env = {json.dumps(config)};"
+        
+        return Response(js_content, mimetype='application/javascript')
+
+    
     # Endpoint diagnostyczny do sprawdzenia połączenia z bazą danych
+    
     @app.route('/db-debug')
     def db_debug():
         try:
