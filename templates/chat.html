@@ -88,214 +88,113 @@
         </div>
     </template>
 
-    <!-- Skrypty JavaScript -->
-    <script src="static/js/WebSocketHandler.js"></script>
+    <!-- Skrypty JavaScript - zmodyfikowana kolejność ładowania -->
     <script src="static/js/chat_crypto.js"></script>
+    <script src="static/js/E2EEProtocol.js"></script>
+    <script src="static/js/WebSocketHandler.js"></script>
     <script src="static/js/SecureSessionManager.js"></script>
     <script src="static/js/ChatInterface.js"></script>
+    
     <script>
-    // Funkcja pomocnicza do debugowania komponentów UI
-    function debugElements() {
-        console.log('Debugowanie elementów UI:');
-        console.log('send-button:', document.getElementById('send-button'));
-        console.log('add-friend-btn:', document.getElementById('add-friend-btn'));
-        console.log('message-input:', document.getElementById('message-input'));
-        console.log('friend-list:', document.getElementById('friend-list'));
-        console.log('messages:', document.getElementById('messages'));
-        console.log('logout-btn:', document.getElementById('logout-btn'));
-    }
-
-    // Funkcja sprawdzająca poprawność sessionStorage
-    function checkSessionStorage() {
-        console.log('Sprawdzanie danych sesji:');
-        console.log('user_id:', sessionStorage.getItem('user_id'));
-        console.log('username:', sessionStorage.getItem('username'));
-        console.log('is_admin:', sessionStorage.getItem('is_admin'));
-        console.log('isLoggedIn:', sessionStorage.getItem('isLoggedIn'));
-        
-        // Jeśli brakuje podstawowych danych, próba pobrania ich z endpointu api/user
-        if (!sessionStorage.getItem('user_id') || !sessionStorage.getItem('username')) {
-            console.log('Brak podstawowych danych użytkownika, próba pobrania...');
-            
-            fetch('/api/user')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        console.log('Pobrano dane użytkownika:', data);
-                        sessionStorage.setItem('user_id', data.user.user_id);
-                        sessionStorage.setItem('username', data.user.username);
-                        sessionStorage.setItem('is_admin', data.user.is_admin ? 'true' : 'false');
-                        sessionStorage.setItem('isLoggedIn', 'true');
-                        
-                        // Odśwież stronę, aby zastosować nowe dane
-                        window.location.reload();
-                    } else {
-                        console.error('Błąd pobierania danych użytkownika:', data.message);
-                        // Przekieruj na stronę logowania, jeśli użytkownik nie jest zalogowany
-                        window.location.href = '/';
-                    }
-                })
-                .catch(error => {
-                    console.error('Błąd sieci:', error);
-                    alert('Nie udało się pobrać danych użytkownika. Spróbuj odświeżyć stronę lub zalogować się ponownie.');
-                });
-        }
-    }
-
-    // Funkcja dodająca panel administratora
-    function addAdminPanel() {
-        if (sessionStorage.getItem('is_admin') === 'true') {
-            // Dodaj link do panelu administratora w górnym pasku
-            const userControls = document.querySelector('.user-controls');
-            if (userControls) {
-                // Stwórz przycisk panelu administratora
-                const adminButton = document.createElement('button');
-                adminButton.id = 'admin-panel-btn';
-                adminButton.innerHTML = '<i class="fas fa-shield-alt"></i> Panel Administratora';
-                adminButton.classList.add('admin-button');
-                
-                // Dodaj obsługę kliknięcia
-                adminButton.addEventListener('click', function() {
-                    window.location.href = '/admin';
-                });
-                
-                // Wstaw przycisk przed przyciskiem wylogowania
-                const logoutBtn = document.getElementById('logout-btn');
-                if (logoutBtn) {
-                    userControls.insertBefore(adminButton, logoutBtn);
-                } else {
-                    userControls.appendChild(adminButton);
-                }
-                
-                // Dodaj style CSS dla przycisku administratora
-                const style = document.createElement('style');
-                style.textContent = `
-                    .admin-button {
-                        background-color: #c62828;
-                        color: white;
-                        margin-right: 10px;
-                        padding: 8px 15px;
-                        border: none;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        font-weight: bold;
-                        display: inline-flex;
-                        align-items: center;
-                        transition: background-color 0.3s;
-                    }
-                    
-                    .admin-button:hover {
-                        background-color: #b71c1c;
-                    }
-                    
-                    .admin-button i {
-                        margin-right: 5px;
-                    }
-                `;
-                document.head.appendChild(style);
-                
-                console.log('Dodano przycisk panelu administratora');
-            } else {
-                console.error('Nie znaleziono kontenera user-controls do dodania przycisku administratora');
-            }
-        } else {
-            console.log('Użytkownik nie jest administratorem');
-        }
-    }
-
-    // Funkcja weryfikująca stan połączenia WebSocket
-    function verifyWebSocketConnection() {
-        if (window.chatInterface) {
-            window.chatInterface.checkWebSocketConnection();
-        } else {
-            console.error('ChatInterface nie jest zainicjalizowany, nie można sprawdzić połączenia WebSocket');
-        }
-    }
-
-    // Główna funkcja inicjalizująca aplikację
-    document.addEventListener('DOMContentLoaded', async function() {
+    // Uproszczona inicjalizacja aplikacji
+    document.addEventListener('DOMContentLoaded', function() {
         try {
             console.log('Inicjalizacja aplikacji...');
             
-            // Sprawdź dane sesji
-            checkSessionStorage();
-            
-            // Dodaj panel administratora, jeśli użytkownik ma uprawnienia
-            addAdminPanel();
-            
-            // Debugowanie elementów UI przed inicjalizacją
-            debugElements();
-            
-            // Inicjalizacja menedżera sesji
-            console.log('Inicjalizacja menedżera sesji...');
-            window.sessionManager = new SecureSessionManager();
-            
-            // Inicjalizacja interfejsu czatu
-            console.log('Inicjalizacja interfejsu czatu...');
-            window.chatInterface = new ChatInterface(window.sessionManager);
-            
-            // Sprawdź, czy interfejs został poprawnie zainicjalizowany
-            if (!window.chatInterface) {
-                throw new Error('Nie udało się zainicjalizować interfejsu czatu');
+            // Sprawdź, czy użytkownik jest zalogowany
+            if (!sessionStorage.getItem('user_id')) {
+                const userId = prompt("Nie znaleziono danych użytkownika. Podaj swoje ID użytkownika:");
+                if (userId) {
+                    sessionStorage.setItem('user_id', userId);
+                    // Pobranie podstawowych informacji
+                    fetch(`/api/user/${userId}/info`)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.status === 'success') {
+                                sessionStorage.setItem('username', data.user.username);
+                                sessionStorage.setItem('isLoggedIn', 'true');
+                                window.location.reload();
+                            }
+                        })
+                        .catch(err => console.error('Błąd pobierania danych użytkownika:', err));
+                } else {
+                    window.location.href = '/';
+                    return;
+                }
             }
             
-            console.log('Interfejs czatu zainicjalizowany pomyślnie');
+            // Aktualizacja nazwy użytkownika w interfejsie
+            const usernameElement = document.getElementById('username');
+            if (usernameElement) {
+                usernameElement.textContent = sessionStorage.getItem('username') || 'Użytkownik';
+            }
             
-            // Obsługa przycisku wylogowania
+            // Przypisanie obsługi wylogowania
             const logoutBtn = document.getElementById('logout-btn');
             if (logoutBtn) {
-                console.log('Dodawanie obsługi przycisku wylogowania');
                 logoutBtn.addEventListener('click', function() {
-                    console.log('Wylogowywanie...');
-                    // Wyczyść dane sesji
                     sessionStorage.clear();
                     localStorage.removeItem('isLoggedIn');
-                    
-                    // Wyślij żądanie wylogowania do serwera
-                    fetch('/api/logout', {
-                        method: 'POST',
-                        credentials: 'same-origin'
-                    })
-                    .finally(() => {
-                        // Przekieruj na stronę logowania
-                        window.location.href = '/';
-                    });
+                    fetch('/logout', { method: 'GET' })
+                        .finally(() => {
+                            window.location.href = '/';
+                        });
                 });
-            } else {
-                console.error('Nie znaleziono przycisku wylogowania');
             }
             
-            // Weryfikacja przycisków po całkowitej inicjalizacji
-            setTimeout(() => {
-                debugElements();
-                verifyWebSocketConnection();
-            }, 1000);
-            
-            // Zapytaj o uprawnienia do powiadomień
-            if ("Notification" in window && Notification.permission === "default") {
-                setTimeout(() => {
-                    console.log('Prośba o uprawnienia do powiadomień');
-                    Notification.requestPermission()
-                    .then(permission => {
-                        console.log('Status uprawnień do powiadomień:', permission);
-                    });
-                }, 3000);
+            // Automatyczne utworzenie instancji, jeśli nie istnieją
+            if (!window.wsHandler) {
+                console.log('Inicjalizacja WebSocketHandler...');
+                window.wsHandler = new WebSocketHandler();
             }
             
-            // Dodaj obsługę błędów globalnych JavaScript
-            window.onerror = function(message, source, lineno, colno, error) {
-                console.error('Globalny błąd JavaScript:', {message, source, lineno, colno, error});
-                return false;
-            };
+            // Upewnij się że chat_crypto jest zainicjalizowany
+            if (!window.chatCrypto && typeof ChatCrypto === 'function') {
+                console.log('Inicjalizacja ChatCrypto...');
+                window.chatCrypto = new ChatCrypto();
+            }
             
-            // Dodaj obsługę błędów dla obietnic (Promise)
-            window.addEventListener('unhandledrejection', function(event) {
-                console.error('Nieobsłużony błąd obietnicy:', event.reason);
-            });
+            if (!window.e2eeProtocol && typeof E2EEProtocol === 'function') {
+                console.log('Inicjalizacja E2EEProtocol...');
+                window.e2eeProtocol = new E2EEProtocol();
+            }
+            
+            if (!window.sessionManager && typeof SecureSessionManager === 'function') {
+                console.log('Inicjalizacja SecureSessionManager...');
+                window.sessionManager = new SecureSessionManager();
+            }
+            
+            if (!window.chatInterface && typeof ChatInterface === 'function') {
+                console.log('Inicjalizacja ChatInterface...');
+                window.chatInterface = new ChatInterface(window.sessionManager);
+            }
+            
+            console.log('Aplikacja zainicjalizowana pomyślnie!');
             
         } catch (error) {
             console.error('Błąd podczas inicjalizacji aplikacji:', error);
-            alert('Wystąpił błąd podczas inicjalizacji aplikacji. Spróbuj odświeżyć stronę.');
+            
+            // Wyświetl przyjazny komunikat o błędzie
+            const errorDiv = document.createElement('div');
+            errorDiv.style.position = 'fixed';
+            errorDiv.style.top = '20px';
+            errorDiv.style.left = '50%';
+            errorDiv.style.transform = 'translateX(-50%)';
+            errorDiv.style.backgroundColor = '#FF9800';
+            errorDiv.style.color = '#333';
+            errorDiv.style.padding = '15px 20px';
+            errorDiv.style.borderRadius = '4px';
+            errorDiv.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+            errorDiv.style.zIndex = '9999';
+            errorDiv.innerHTML = `
+                <strong>Wystąpił błąd podczas inicjalizacji aplikacji.</strong><br>
+                ${error.message}<br>
+                <button onclick="window.location.reload()" 
+                    style="margin-top:10px; background:#333; color:white; border:none; padding:5px 10px; cursor:pointer;">
+                    Odśwież stronę
+                </button>
+            `;
+            document.body.appendChild(errorDiv);
         }
     });
     </script>
