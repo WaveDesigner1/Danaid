@@ -1,4 +1,5 @@
-// Poprawiona implementacja WebSocketHandler.js
+// Zaktualizowana implementacja WebSocketHandler.js, która obsługuje różne konfiguracje Railway
+
 class WebSocketHandler {
   constructor() {
     this.socket = null;
@@ -33,12 +34,8 @@ class WebSocketHandler {
     
     this.connectionAttempts++;
     
-    // Określ odpowiedni URL WebSocket - UWAGA: Dodajemy obsługę portu 8765
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Ważne: używamy konkretnego portu 8765 zgodnie z kodem serwera
-    const host = window.location.hostname;
-    const port = "8765"; // Serwer WebSocket działa na porcie 8765
-    const wsUrl = `${protocol}//${host}:${port}/ws/chat/${this.userId}`;
+    // Próba połączenia z różnymi konfiguracjami URL
+    let wsUrl = this.determineWebSocketUrl();
     
     console.log(`Próba połączenia WebSocket: ${wsUrl}`);
     
@@ -56,6 +53,29 @@ class WebSocketHandler {
       this.scheduleReconnect();
       return false;
     }
+  }
+  
+  /**
+   * Określa URL WebSocket na podstawie obecnego środowiska
+   */
+  determineWebSocketUrl() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    
+    // Na Railway.app używaj tego samego hosta
+    if (host.includes('railway.app')) {
+      // Railway używa tego samego portu dla wszystkich usług
+      return `${protocol}//${host}/ws/chat/${this.userId}`;
+    }
+    
+    // W środowisku lokalnym możemy używać portu 8765
+    if (host === 'localhost' || host === '127.0.0.1') {
+      const port = "8765";
+      return `${protocol}//${host}:${port}/ws/chat/${this.userId}`;
+    }
+    
+    // Domyślna konfiguracja - używamy tego samego hosta i portu
+    return `${protocol}//${window.location.host}/ws/chat/${this.userId}`;
   }
   
   /**
