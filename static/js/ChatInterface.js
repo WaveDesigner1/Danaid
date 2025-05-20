@@ -1,14 +1,12 @@
 /**
- * ChatInterface.js - Interfejs użytkownika dla aplikacji czatu
+ * ChatInterface.js - Interfejs użytkownika dla aplikacji czatu Danaid
  * Obsługuje interakcje z interfejsem czatu, w tym wysyłanie i odbieranie wiadomości
  */
 
 class ChatInterface {
     constructor(sessionManager) {
-        // Inicjalizacja menedżera sesji
+        // Inicjalizacja menedżera sesji i elementów DOM
         this.sessionManager = sessionManager || window.sessionManager;
-        
-        // Elementy DOM
         this.friendsList = document.getElementById('friend-list');
         this.messagesContainer = document.getElementById('messages');
         this.messageInput = document.getElementById('message-input');
@@ -22,6 +20,7 @@ class ChatInterface {
         this.onlineUsers = [];
         this.sessions = [];
         this.lastMessageTimes = {};
+        this.pendingRequests = []; // Do przechowywania oczekujących zaproszeń
         
         // System wzmianek
         this.mentionedUsers = [];
@@ -32,6 +31,7 @@ class ChatInterface {
         // Inicjalizacja
         this.initializeEvents();
         this.loadUserData();
+        this.initializeFriendRequestNotifications(); // Inicjalizacja powiadomień o zaproszeniach
         this.loadFriends();
         this.loadSessions();
         
@@ -54,18 +54,18 @@ class ChatInterface {
             }
         });
         
-        // Detekcja wzmianek (@username)
+        // Detekcja wzmianek i nawigacja
         this.messageInput.addEventListener('input', () => this.handleMentionInput());
         this.messageInput.addEventListener('keydown', (e) => this.handleMentionNavigation(e));
         
-        // Kliknięcie poza sugestiami wzmianek zamyka je
+        // Zamykanie sugestii wzmianek po kliknięciu poza nimi
         document.addEventListener('click', (e) => {
             if (this.mentionSuggestions && !this.mentionSuggestions.contains(e.target) && e.target !== this.messageInput) {
                 this.closeMentionSuggestions();
             }
         });
         
-        // Dodawanie znajomego
+        // Obsługa modalu dodawania znajomych
         if (this.addFriendBtn) {
             this.addFriendBtn.addEventListener('click', () => {
                 const modal = document.getElementById('add-friend-modal');
@@ -82,7 +82,7 @@ class ChatInterface {
             });
         }
         
-        // Przycisk wysyłania zaproszenia do znajomych
+        // Przycisk wysyłania zaproszenia
         const sendFriendRequestBtn = document.getElementById('send-friend-request-btn');
         if (sendFriendRequestBtn) {
             sendFriendRequestBtn.addEventListener('click', () => this.sendFriendRequest());
@@ -94,6 +94,12 @@ class ChatInterface {
             this.sessionManager.onSessionsUpdated = (sessions) => this.updateSessionsList(sessions);
             this.sessionManager.onFriendsUpdated = (friends) => this.updateFriendsList(friends);
             this.sessionManager.onOnlineStatusChanged = (onlineUsers) => this.updateOnlineStatus(onlineUsers);
+            
+            // Dodajemy obsługę powiadomień o zaproszeniach
+            this.sessionManager.onFriendRequestReceived = (data) => {
+                console.log("Odebrano zaproszenie:", data);
+                this.loadPendingRequests();
+            };
         }
     }
     
@@ -113,8 +119,8 @@ class ChatInterface {
             usernameDisplay.textContent = this.currentUser.username;
         }
     }
-    
-    /**
+
+/**
      * Ładuje listę znajomych z serwera
      */
     async loadFriends() {
@@ -133,7 +139,7 @@ class ChatInterface {
         }
     }
 
-/**
+    /**
      * Ładuje aktywne sesje czatu z serwera
      */
     async loadSessions() {
@@ -157,16 +163,13 @@ class ChatInterface {
     }
     
     /**
-     * Aktualizuje listę sesji w interfejsie
+     * Aktualizuje listę sesji i znajomych w interfejsie
      */
     updateSessionsList(sessions) {
         this.sessions = sessions;
         this.renderFriendsList();
     }
     
-    /**
-     * Aktualizuje listę znajomych w interfejsie
-     */
     updateFriendsList(friends) {
         this.friends = friends;
         this.renderFriendsList();
@@ -212,14 +215,13 @@ class ChatInterface {
         // Wyczyść listę
         this.friendsList.innerHTML = '';
         
-        // Nagłówek dla aktywnych sesji
+        // Dodaj aktywne sesje
         if (this.sessions.length > 0) {
             const sessionHeader = document.createElement('div');
             sessionHeader.className = 'friends-header';
             sessionHeader.textContent = 'Aktywne rozmowy';
             this.friendsList.appendChild(sessionHeader);
             
-            // Dodaj elementy dla aktywnych sesji
             this.sessions.forEach(session => {
                 const otherUser = session.other_user;
                 const listItem = this.createFriendListItem(otherUser, session.token);
@@ -227,11 +229,9 @@ class ChatInterface {
             });
         }
         
-        // Nagłówek dla znajomych bez aktywnych sesji
+        // Dodaj znajomych bez aktywnych sesji
         const friendsWithoutSession = this.friends.filter(friend => 
-            !this.sessions.some(session => 
-                session.other_user.user_id === friend.user_id
-            )
+            !this.sessions.some(session => session.other_user.user_id === friend.user_id)
         );
         
         if (friendsWithoutSession.length > 0) {
@@ -240,7 +240,6 @@ class ChatInterface {
             friendsHeader.textContent = 'Znajomi';
             this.friendsList.appendChild(friendsHeader);
             
-            // Dodaj elementy dla znajomych bez aktywnych sesji
             friendsWithoutSession.forEach(friend => {
                 const listItem = this.createFriendListItem(friend);
                 this.friendsList.appendChild(listItem);
@@ -263,22 +262,17 @@ class ChatInterface {
             }
         }
         
-        // Avatar
+        // Avatar i statusu
         const avatarDiv = document.createElement('div');
         avatarDiv.className = 'friend-avatar';
         avatarDiv.textContent = user.username.charAt(0).toUpperCase();
         
-        // Status indicator
         const statusIndicator = document.createElement('div');
         statusIndicator.className = 'status-indicator';
-        if (this.isUserOnline(user.user_id)) {
-            statusIndicator.classList.add('online');
-        } else {
-            statusIndicator.classList.add('offline');
-        }
+        statusIndicator.classList.add(this.isUserOnline(user.user_id) ? 'online' : 'offline');
         avatarDiv.appendChild(statusIndicator);
         
-        // Info
+        // Informacje o użytkowniku
         const infoDiv = document.createElement('div');
         infoDiv.className = 'friend-info';
         
@@ -290,10 +284,8 @@ class ChatInterface {
         // Obsługa kliknięcia
         li.addEventListener('click', async () => {
             if (sessionToken) {
-                // Przełącz na istniejącą sesję
                 this.switchSession(sessionToken);
             } else {
-                // Inicjuj nową sesję
                 await this.initSession(user.user_id);
             }
         });
@@ -302,36 +294,74 @@ class ChatInterface {
         li.appendChild(infoDiv);
         return li;
     }
-    
-    /**
+
+/**
      * Inicjuje nową sesję czatu z użytkownikiem
      */
     async initSession(userId) {
         try {
+            console.log(`Inicjalizacja sesji z użytkownikiem ${userId}`);
+            
+            // Sprawdź, czy mamy menedżera sesji
+            if (!this.sessionManager) {
+                console.error("Brak menedżera sesji");
+                this.showNotification("Błąd inicjalizacji sesji: brak menedżera sesji", "error");
+                return;
+            }
+            
+            // Pokaż powiadomienie o ładowaniu
+            this.showNotification("Inicjalizacja sesji czatu...", "info", 2000);
+            
             const result = await this.sessionManager.initSession(userId);
+            console.log("Wynik inicjalizacji sesji:", result);
             
             if (result.success) {
+                // Upewnij się, że session token został ustawiony
+                if (!result.session || !result.session.token) {
+                    console.error("Inicjalizacja sesji nie zwróciła poprawnego tokenu");
+                    this.showNotification("Błąd inicjalizacji sesji", "error");
+                    return;
+                }
+                
                 // Zaktualizuj listy
                 await this.loadSessions();
                 
                 // Przełącz na nową sesję
                 this.switchSession(result.session.token);
+                
+                console.log(`Sesja zainicjalizowana: ${result.session.token}`);
             } else {
+                console.error(`Błąd inicjalizacji sesji: ${result.message}`);
                 this.showNotification(result.message || 'Błąd inicjacji sesji', 'error');
             }
         } catch (error) {
             console.error('Błąd inicjacji sesji:', error);
-            this.showNotification('Nie udało się rozpocząć rozmowy', 'error');
+            this.showNotification('Nie udało się rozpocząć rozmowy: ' + error.message, 'error');
         }
     }
 
-/**
+    /**
      * Przełącza aktywną sesję
      */
     switchSession(sessionToken) {
-        if (sessionToken === this.currentSessionToken) return;
+        console.log(`Przełączanie na sesję: ${sessionToken}`);
         
+        if (!sessionToken) {
+            console.error("Próba przełączenia na pustą sesję");
+            return;
+        }
+        
+        if (sessionToken === this.currentSessionToken) {
+            console.log("Już jesteśmy na tej sesji");
+            return;
+        }
+        
+        // Zapisz poprzedni token sesji (dla debugowania)
+        const prevSessionToken = this.currentSessionToken;
+        
+        // Ustaw nowy token sesji
         this.currentSessionToken = sessionToken;
+        console.log(`Token sesji zmieniony: ${prevSessionToken} -> ${this.currentSessionToken}`);
         
         // Aktualizuj aktywny element na liście
         const friendItems = document.querySelectorAll('.friend-item');
@@ -345,7 +375,11 @@ class ChatInterface {
         
         // Pobierz sesję
         const session = this.sessions.find(s => s.token === sessionToken);
-        if (!session) return;
+        if (!session) {
+            console.error(`Nie znaleziono sesji o tokenie ${sessionToken}`);
+            this.showNotification("Błąd: nie znaleziono sesji", "error");
+            return;
+        }
         
         // Wyświetl nazwę użytkownika w nagłówku czatu
         const chatHeaderTitle = document.querySelector('#chat-header h2');
@@ -353,8 +387,25 @@ class ChatInterface {
             chatHeaderTitle.textContent = session.other_user.username;
         }
         
+        // Sprawdź, czy jest klucz sesji
+        const hasSessionKey = localStorage.getItem(`session_key_${sessionToken}`);
+        console.log(`Klucz sesji ${sessionToken} istnieje: ${!!hasSessionKey}`);
+        
         // Załaduj wiadomości
         this.loadMessages(sessionToken);
+        
+        // Jeśli nie ma klucza sesji, spróbuj go pobrać
+        if (!hasSessionKey && session.has_key) {
+            console.log("Pobieranie klucza sesji...");
+            // Wykonaj to asynchronicznie, aby nie blokować UI
+            setTimeout(async () => {
+                try {
+                    await this.ensureSessionReady();
+                } catch (e) {
+                    console.error("Błąd pobierania klucza sesji:", e);
+                }
+            }, 500);
+        }
     }
     
     /**
@@ -412,10 +463,7 @@ class ChatInterface {
         // Zawartość wiadomości
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        
-        // Przetwórz wzmianki w treści wiadomości
-        const content = this.formatMessageWithMentions(message.content);
-        contentDiv.innerHTML = content;
+        contentDiv.innerHTML = this.formatMessageWithMentions(message.content);
         
         // Informacje o wiadomości
         const infoDiv = document.createElement('div');
@@ -441,451 +489,3 @@ class ChatInterface {
         
         return messageDiv;
     }
-    
-    /**
-     * Formatuje wzmianki w treści wiadomości
-     */
-    formatMessageWithMentions(text) {
-        // Zamień wzmiankę w tekście na odpowiednio formatowane HTML
-        return text.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
-    }
-    
-    /**
-     * Formatuje czas wiadomości
-     */
-    formatTime(timestamp) {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        
-        // Format godziny
-        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
-        // Określ, czy wiadomość jest z dzisiaj, wczoraj, czy wcześniej
-        if (date >= today) {
-            return timeStr;
-        } else if (date >= yesterday) {
-            return `Wczoraj, ${timeStr}`;
-        } else {
-            return `${date.toLocaleDateString()} ${timeStr}`;
-        }
-    }
-    
-    /**
-     * Przewija widok wiadomości na dół
-     */
-    scrollToBottom() {
-        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-    }
-    
-    /**
-     * Sprawdza, czy sesja jest gotowa do wysyłania wiadomości
-     */
-    async ensureSessionReady() {
-        if (!this.currentSessionToken) {
-            console.error("Brak aktywnej sesji");
-            this.showNotification("Brak aktywnej sesji", "error");
-            return false;
-        }
-        
-        // Sprawdź, czy klucz sesji istnieje w localStorage
-        const sessionKey = localStorage.getItem(`session_key_${this.currentSessionToken}`);
-        
-        if (!sessionKey) {
-            console.log("Brak klucza sesji, próba pobrania...");
-            
-            try {
-                // Znajdź sesję w liście
-                const session = this.sessions.find(s => s.token === this.currentSessionToken);
-                
-                if (!session) {
-                    this.showNotification("Sesja nie istnieje", "error");
-                    return false;
-                }
-                
-                // Sprawdź, czy sesja ma klucz
-                if (!session.has_key) {
-                    this.showNotification("Sesja nie ma ustalonego klucza szyfrowania", "error");
-                    return false;
-                }
-                
-                // Pobierz klucz z serwera
-                const result = await this.sessionManager.retrieveSessionKey(this.currentSessionToken);
-                
-                if (!result.success) {
-                    this.showNotification("Nie można pobrać klucza sesji: " + result.message, "error");
-                    return false;
-                }
-                
-                // Sprawdź, czy klucz został pobrany
-                if (!localStorage.getItem(`session_key_${this.currentSessionToken}`)) {
-                    this.showNotification("Nie udało się odszyfrować klucza sesji", "error");
-                    return false;
-                }
-                
-            } catch (error) {
-                console.error("Błąd podczas pobierania klucza sesji:", error);
-                this.showNotification("Błąd podczas pobierania klucza sesji", "error");
-                return false;
-            }
-        }
-        
-        return true;
-    }
-    
-    /**
-     * Funkcja obsługująca wysyłanie wiadomości
-     */
-    async sendMessage() {
-        const content = this.messageInput.value.trim();
-        if (!content) {
-            console.error("Nie można wysłać pustej wiadomości");
-            return;
-        }
-        
-        // Sprawdź gotowość sesji przed wysłaniem
-        const isSessionReady = await this.ensureSessionReady();
-        if (!isSessionReady) {
-            console.error("Sesja nie jest gotowa do wysyłania wiadomości");
-            return;
-        }
-        
-        try {
-            console.log("Próba wysłania wiadomości");
-            console.log("Token sesji:", this.currentSessionToken);
-            
-            // Wykrywanie wzmianek
-            const mentions = this.detectMentions(content);
-            
-            // Wyślij wiadomość przez menedżer sesji
-            const result = await this.sessionManager.sendMessage(this.currentSessionToken, content, mentions);
-            console.log("Wynik wysyłania wiadomości:", result);
-            
-            if (result.status === 'success') {
-                // Dodaj wiadomość do interfejsu
-                this.addMessageToUI(result.messageData);
-                
-                // Wyczyść pole wejściowe
-                this.messageInput.value = '';
-                
-                // Zamknij sugestie wzmianek, jeśli są otwarte
-                this.closeMentionSuggestions();
-            } else {
-                console.error("Błąd podczas wysyłania:", result.message);
-                this.showNotification(result.message || 'Błąd wysyłania wiadomości', "error");
-            }
-        } catch (error) {
-            console.error('Błąd wysyłania wiadomości:', error);
-            this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, "error");
-        }
-    }
-
-/**
-     * Obsługuje wprowadzanie tekstu z potencjalnymi wzmiankami
-     */
-    handleMentionInput() {
-        // Pobierz tekst i pozycję kursora
-        const text = this.messageInput.value;
-        const cursorPosition = this.messageInput.selectionStart;
-        
-        // Resetuj stan wzmianek
-        this.closeMentionSuggestions();
-        
-        // Znajdź ostatnią wzmiankę przed kursorem
-        const textBeforeCursor = text.substring(0, cursorPosition);
-        const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
-        
-        if (mentionMatch) {
-            // Zapamiętaj pozycję wzmianki
-            this.currentMentionPosition = mentionMatch.index;
-            const query = mentionMatch[1].toLowerCase();
-            
-            // Filtruj znajomych pasujących do zapytania
-            const filteredFriends = this.friends.filter(friend => 
-                friend.username.toLowerCase().includes(query)
-            );
-            
-            if (filteredFriends.length > 0) {
-                this.showMentionSuggestions(filteredFriends, query);
-            }
-        }
-    }
-    
-    /**
-     * Pokazuje sugestie wzmianek
-     */
-    showMentionSuggestions(users, query) {
-        // Utwórz lub pobierz kontener sugestii
-        if (!this.mentionSuggestions) {
-            this.mentionSuggestions = document.createElement('div');
-            this.mentionSuggestions.className = 'mention-suggestions';
-            document.body.appendChild(this.mentionSuggestions);
-        }
-        
-        // Wyczyść poprzednie sugestie
-        this.mentionSuggestions.innerHTML = '';
-        
-        // Dodaj nowe sugestie
-        users.forEach((user, index) => {
-            const suggestion = document.createElement('div');
-            suggestion.className = 'mention-item';
-            suggestion.textContent = user.username;
-            
-            if (index === this.selectedMentionIndex) {
-                suggestion.classList.add('selected');
-            }
-            
-            suggestion.addEventListener('click', () => {
-                this.insertMention(user.username);
-            });
-            
-            this.mentionSuggestions.appendChild(suggestion);
-        });
-        
-        // Ustaw pozycję kontenera sugestii pod wzmianką
-        const coords = this.getCaretCoordinates();
-        this.mentionSuggestions.style.top = `${coords.bottom}px`;
-        this.mentionSuggestions.style.left = `${coords.left}px`;
-        
-        // Zapamiętaj użytkowników
-        this.mentionedUsers = users;
-        this.selectedMentionIndex = 0;
-    }
-    
-    /**
-     * Pobiera pozycję kursora
-     */
-    getCaretCoordinates() {
-        // Pobierz pozycję tekstowego elementu wejściowego
-        const inputRect = this.messageInput.getBoundingClientRect();
-        
-        // Zwróć współrzędne względem strony
-        return {
-            left: inputRect.left,
-            bottom: inputRect.bottom + window.scrollY
-        };
-    }
-    
-    /**
-     * Obsługuje nawigację po sugestiach wzmianek
-     */
-    handleMentionNavigation(e) {
-        if (!this.mentionSuggestions || this.mentionedUsers.length === 0) return;
-        
-        switch (e.key) {
-            case 'ArrowDown':
-                e.preventDefault();
-                this.selectedMentionIndex = (this.selectedMentionIndex + 1) % this.mentionedUsers.length;
-                this.updateSelectedMention();
-                break;
-                
-            case 'ArrowUp':
-                e.preventDefault();
-                this.selectedMentionIndex = (this.selectedMentionIndex - 1 + this.mentionedUsers.length) % this.mentionedUsers.length;
-                this.updateSelectedMention();
-                break;
-                
-            case 'Tab':
-            case 'Enter':
-                if (this.mentionSuggestions) {
-                    e.preventDefault();
-                    this.insertMention(this.mentionedUsers[this.selectedMentionIndex].username);
-                }
-                break;
-                
-            case 'Escape':
-                this.closeMentionSuggestions();
-                break;
-        }
-    }
-    
-    /**
-     * Aktualizuje zaznaczoną wzmiankę w sugestiach
-     */
-    updateSelectedMention() {
-        const items = this.mentionSuggestions.querySelectorAll('.mention-item');
-        
-        items.forEach((item, index) => {
-            if (index === this.selectedMentionIndex) {
-                item.classList.add('selected');
-            } else {
-                item.classList.remove('selected');
-            }
-        });
-    }
-    
-    /**
-     * Wstawia wybraną wzmiankę do pola wejściowego
-     */
-    insertMention(username) {
-        if (this.currentMentionPosition === -1) return;
-        
-        const text = this.messageInput.value;
-        const cursorPosition = this.messageInput.selectionStart;
-        
-        // Znajdź początek i koniec wzmianki
-        const textBeforeCursor = text.substring(0, cursorPosition);
-        const mentionMatch = textBeforeCursor.match(/@(\w*)$/);
-        
-        if (mentionMatch) {
-            const mentionStart = mentionMatch.index;
-            const mentionEnd = cursorPosition;
-            
-            // Wstaw wzmiankę
-            const newText = text.substring(0, mentionStart) + '@' + username + ' ' + text.substring(mentionEnd);
-            this.messageInput.value = newText;
-            
-            // Ustaw kursor za wstawioną wzmianką
-            const newPosition = mentionStart + username.length + 2; // +2 for @ and space
-            this.messageInput.setSelectionRange(newPosition, newPosition);
-            
-            // Zamknij sugestie
-            this.closeMentionSuggestions();
-            
-            // Ustaw focus z powrotem na pole wejściowe
-            this.messageInput.focus();
-        }
-    }
-    
-    /**
-     * Zamyka sugestie wzmianek
-     */
-    closeMentionSuggestions() {
-        if (this.mentionSuggestions) {
-            this.mentionSuggestions.remove();
-            this.mentionSuggestions = null;
-        }
-        
-        this.currentMentionPosition = -1;
-        this.mentionedUsers = [];
-        this.selectedMentionIndex = 0;
-    }
-    
-    /**
-     * Odtwarza dźwięk powiadomienia
-     */
-    playNotificationSound() {
-        try {
-            // Tworzenie elementu audio i odtworzenie dźwięku
-            const audio = new Audio('/static/sounds/notification.mp3');
-            audio.volume = 0.5;
-            audio.play().catch(err => {
-                // Wycisz błędy odtwarzania (mogą wystąpić przez ustawienia przeglądarki)
-                console.log('Nie można odtworzyć dźwięku powiadomienia', err);
-            });
-        } catch (error) {
-            console.log('Błąd odtwarzania dźwięku', error);
-        }
-    }
-    
-    /**
-     * Pokazuje powiadomienie desktopowe
-     */
-    showDesktopNotification(sessionToken, message) {
-        // Sprawdź, czy strona jest w tle i czy przeglądarka obsługuje powiadomienia
-        if (!("Notification" in window) || document.visibilityState !== "hidden") return;
-        
-        const session = this.sessions.find(s => s.token === sessionToken);
-        if (!session) return;
-        
-        // Tytuł i treść powiadomienia
-        const username = session.other_user.username;
-        const title = `Nowa wiadomość od ${username}`;
-        
-        // Treść powiadomienia (skrócona)
-        let content = message.content;
-        if (content.length > 50) {
-            content = content.substring(0, 47) + '...';
-        }
-        
-        // Sprawdź uprawnienia
-        if (Notification.permission === "granted") {
-            new Notification(title, {
-                body: content,
-                icon: '/static/images/notification-icon.png'
-            });
-        } else if (Notification.permission !== "denied") {
-            Notification.requestPermission().then(permission => {
-                if (permission === "granted") {
-                    new Notification(title, {
-                        body: content,
-                        icon: '/static/images/notification-icon.png'
-                    });
-                }
-            });
-        }
-    }
-    
-    /**
-     * Sprawdza klucze sesji - funkcja diagnostyczna
-     */
-    checkSessionKeys() {
-        if (this.currentSessionToken) {
-            const sessionKey = localStorage.getItem(`session_key_${this.currentSessionToken}`);
-            console.log("Klucz sesji dla tokenu", this.currentSessionToken, "istnieje:", !!sessionKey);
-        } else {
-            console.log("Brak aktywnej sesji");
-        }
-    }
-    
-    /**
-     * Pokazuje powiadomienie w interfejsie
-     */
-    showNotification(message, type = 'info') {
-        // Utwórz element powiadomienia na podstawie szablonu
-        const template = document.getElementById('notification-template');
-        if (!template) {
-            // Fallback jeśli nie ma szablonu
-            console.log(`${type.toUpperCase()}: ${message}`);
-            return;
-        }
-        
-        const notification = document.importNode(template.content, true).querySelector('.notification');
-        if (!notification) return;
-        
-        // Ustaw typ powiadomienia
-        notification.classList.add(type);
-        
-        // Ustaw treść
-        const content = notification.querySelector('.notification-content');
-        if (content) content.textContent = message;
-        
-        // Dodaj obsługę zamykania
-        const closeButton = notification.querySelector('.notification-close');
-        if (closeButton) {
-            closeButton.addEventListener('click', () => {
-                notification.classList.add('closing');
-                setTimeout(() => notification.remove(), 300);
-            });
-        }
-        
-        // Dodaj do dokumentu
-        document.body.appendChild(notification);
-        
-        // Automatycznie zamknij po 5 sekundach
-        setTimeout(() => {
-            if (document.body.contains(notification)) {
-                notification.classList.add('closing');
-                setTimeout(() => notification.remove(), 300);
-            }
-        }, 5000);
-    }
-}
-
-// Inicjalizacja interfejsu po załadowaniu dokumentu
-document.addEventListener('DOMContentLoaded', () => {
-    // Sprawdź, czy użytkownik jest zalogowany
-    if (sessionStorage.getItem('isLoggedIn') === 'true' || localStorage.getItem('isLoggedIn') === 'true') {
-        // Inicjalizuj interfejs czatu
-        window.chatInterface = new ChatInterface(window.sessionManager);
-        
-        // Zapytaj o uprawnienia do powiadomień, jeśli jeszcze nie zostały udzielone
-        if ("Notification" in window && Notification.permission === "default") {
-            setTimeout(() => {
-                Notification.requestPermission();
-            }, 3000);
-        }
-    }
-});
