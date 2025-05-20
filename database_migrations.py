@@ -5,7 +5,7 @@ Database migrations for E2EE chat functionality
 import logging
 from datetime import datetime
 from flask import Flask
-from models import db, User, ChatSession, Message
+from models import db, User, ChatSession, Message, Friend, FriendRequest
 from sqlalchemy import inspect, text
 
 logger = logging.getLogger(__name__)
