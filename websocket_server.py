@@ -244,5 +244,16 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
     
-    # Uruchom główną pętlę
-    asyncio.run(main())
+    # Pobierz port z zmiennej środowiskowej lub użyj domyślnego
+    port = int(os.environ.get("PORT", 8081))
+    
+    print(f"Uruchamianie serwera WebSocket na porcie {port}...")
+    sys.stdout.flush()  # Upewnij się, że log jest natychmiast widoczny
+    
+    try:
+        # Uruchom główną pętlę
+        asyncio.run(main())
+    except Exception as e:
+        print(f"Błąd podczas uruchamiania serwera WebSocket: {e}")
+        sys.stdout.flush()
+        sys.exit(1)
