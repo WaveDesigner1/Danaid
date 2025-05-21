@@ -254,16 +254,17 @@ def create_app():
             
     @app.after_request
     def after_request(response):
-    """Ustawia ciasteczko z czasem ostatniej aktualizacji statusu online"""
+        """Ustawia ciasteczko z czasem ostatniej aktualizacji statusu online"""
         if current_user.is_authenticated and hasattr(current_user, 'is_online'):
             last_update_key = f'last_online_update_{current_user.id}'
             response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
         return response
-
+    
     @app.route('/logout', methods=['POST'])
     def logout():
-    # Wyczyść dane sesji
+        # Wyczyść dane sesji
         session.clear()
+        
         return jsonify({
             'status': 'success',
             'message': 'Pomyślnie wylogowano'
