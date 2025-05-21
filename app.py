@@ -251,7 +251,6 @@ def create_app():
         except Exception as e:
             app.logger.error(f"Błąd w before_request: {e}")
             db.session.rollback()
-    
     @app.after_request
     def after_request(response):
         """Ustawia ciasteczko z czasem ostatniej aktualizacji statusu online"""
@@ -265,12 +264,10 @@ def create_app():
     # Wyczyść dane sesji
         session.clear()
     
-    # Jeśli używasz flask-login, dodaj również:
-    # from flask_login import logout_user
-    # logout_user()
-    
-    return jsonify({
-        'status': 'success',
-        'message': 'Pomyślnie wylogowano'
+        return jsonify({
+            'status': 'success',
+            'message': 'Pomyślnie wylogowano'
     })
+    
+    
     return app
