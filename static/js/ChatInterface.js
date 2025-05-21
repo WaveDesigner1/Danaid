@@ -915,6 +915,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Inicjuj interfejs czatu
     window.chatInterface = new ChatInterface(window.sessionManager);
   }
+
+  // Obsługa przycisku wylogowania
+  const logoutButton = document.getElementById('logout-btn');
+  if (logoutButton) {
+    logoutButton.addEventListener('click', function(event) {
+      event.preventDefault();
+      // Wywołanie metody logout z SecureSessionManager
+      if (window.sessionManager) {
+        window.sessionManager.logout();
+      } else {
+        console.error("Brak dostępu do sessionManager");
+        alert("Wystąpił błąd podczas wylogowywania. Odśwież stronę i spróbuj ponownie.");
+      }
+    });
+  }
+});
 });
 
   
