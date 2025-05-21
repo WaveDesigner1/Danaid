@@ -261,13 +261,13 @@ def create_app():
 
     @app.route('/logout', methods=['POST'])
     def logout():
-    # Wyczyść dane sesji
+        # Wyczyść dane sesji
         session.clear()
-    
+
         return jsonify({
             'status': 'success',
             'message': 'Pomyślnie wylogowano'
-    })
+        })
     
     
     return app
