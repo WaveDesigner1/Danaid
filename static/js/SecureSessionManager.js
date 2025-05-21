@@ -665,6 +665,50 @@ class SecureSessionManager {
   }
 }
 
+/**
+   * Obsługuje wylogowanie użytkownika
+   */
+  logout() {
+    // Wyślij żądanie wylogowania do serwera
+    fetch('/logout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin' // To zapewnia wysłanie cookies z żądaniem
+    })
+    .then(response => {
+      if (response.ok) {
+        // Usuń dane sesji z localStorage i sessionStorage
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('private_key_pem');
+        
+        // Wyczyść dane z sessionStorage
+        sessionStorage.removeItem('user_id');
+        sessionStorage.removeItem('username');
+        sessionStorage.removeItem('is_admin');
+        sessionStorage.removeItem('isLoggedIn');
+        
+        // Rozłącz WebSocket jeśli istnieje
+        if (window.wsHandler) {
+          window.wsHandler.disconnect();
+        }
+        
+        // Przekieruj użytkownika na stronę logowania
+        window.location.href = '/login';
+      } else {
+        throw new Error('Wylogowanie nie powiodło się');
+      }
+    })
+    .catch(error => {
+      console.error('Błąd podczas wylogowywania:', error);
+      alert('Wystąpił błąd podczas wylogowywania. Spróbuj ponownie.');
+    });
+  }
+}
+
+
 // Inicjalizacja
 window.sessionManager = new SecureSessionManager();
 
