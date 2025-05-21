@@ -260,7 +260,7 @@ def create_app():
             response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
         return response
 
-    @app.route('/', methods=['POST'])
+    @app.route('/logout', methods=['POST'])
     def logout():
     # Wyczyść dane sesji
         session.clear()
