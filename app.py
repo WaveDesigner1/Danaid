@@ -75,7 +75,7 @@ def apply_migration(inspector, table, column, sql_statement):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
-    init_websocket_routes(app)
+    
     
     # Konfiguracja bazy danych
     database_url = os.environ.get('DATABASE_URL')
