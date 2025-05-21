@@ -261,9 +261,9 @@ def create_app():
         return response
 
     @app.route('/', methods=['POST'])
-def logout():
+    def logout():
     # Wyczyść dane sesji
-    session.clear()
+        session.clear()
     
     # Jeśli używasz flask-login, dodaj również:
     # from flask_login import logout_user
