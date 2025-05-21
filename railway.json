@@ -1,7 +1,7 @@
 {
   "services": {
     "web": {
-      "command": "gunicorn main:app",
+      "command": "gunicorn wsgi:app",
       "ports": ["8080:8080"],
       "environment": {}
     },
