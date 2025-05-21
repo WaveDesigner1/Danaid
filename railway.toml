@@ -7,4 +7,4 @@ startCommand = "python websocket_server.py"
 restartPolicy = "always"
 
 [variables]
-PORT = "8181"
+PORT = "8081"
