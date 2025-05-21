@@ -696,7 +696,7 @@ class SecureSessionManager {
         }
         
         // Przekieruj użytkownika na stronę logowania
-        window.location.href = '/login';
+        window.location.href = '/';
       } else {
         throw new Error('Wylogowanie nie powiodło się');
       }
