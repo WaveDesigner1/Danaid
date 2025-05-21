@@ -5,10 +5,5 @@
       "ports": ["8080:8080"],
       "environment": {}
     },
-    "websocket": {
-      "command": "python websocket_server.py",
-      "ports": ["8081:8081"],
-      "environment": {}
-    }
   }
 }
