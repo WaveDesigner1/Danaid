@@ -3,8 +3,8 @@ builder = "nixpacks"
 buildCommand = "pip install -r requirements.txt"
 
 [deploy]
-startCommand = "gunicorn main:app"
+startCommand = "python websocket_server.py"
 restartPolicy = "always"
 
 [variables]
-PORT = "8080"
+PORT = "8181"
