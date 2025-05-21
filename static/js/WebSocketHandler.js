@@ -213,5 +213,11 @@ class WebSocketHandler {
   }
 }
 
+/**
+ * Rozłącza połączenie WebSocket (alias dla metody close)
+ */
+disconnect() {
+  this.close();
+}
 // Inicjalizacja globalnego handlara WebSocket
 window.wsHandler = new WebSocketHandler();
