@@ -211,13 +211,14 @@ class WebSocketHandler {
       this.socket.close(1000, 'Zamknięcie przez użytkownika');
     }
   }
+  
+  /**
+   * Rozłącza połączenie WebSocket (alias dla metody close)
+   */
+  disconnect() {
+    this.close();
+  }
 }
 
-/**
- * Rozłącza połączenie WebSocket (alias dla metody close)
- */
-disconnect() {
-  this.close();
-}
 // Inicjalizacja globalnego handlara WebSocket
 window.wsHandler = new WebSocketHandler();
