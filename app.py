@@ -81,7 +81,7 @@ def create_app():
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
         # Użyj bezpiecznego fallbacku lub zgłoś błąd
-        database_url = 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@turntable.proxy.rlwy.net:39432/railway'
+        database_url = '${{Postgres.DATABASE_URL}}'
         app.logger.warning('Używanie domyślnego URL bazy danych - to nie powinno być używane w produkcji!')
     
     if database_url.startswith('postgres://'):
@@ -251,19 +251,19 @@ def create_app():
         except Exception as e:
             app.logger.error(f"Błąd w before_request: {e}")
             db.session.rollback()
+            
     @app.after_request
     def after_request(response):
-        """Ustawia ciasteczko z czasem ostatniej aktualizacji statusu online"""
+    """Ustawia ciasteczko z czasem ostatniej aktualizacji statusu online"""
         if current_user.is_authenticated and hasattr(current_user, 'is_online'):
             last_update_key = f'last_online_update_{current_user.id}'
             response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
-        return response
+    return response
 
     @app.route('/logout', methods=['POST'])
     def logout():
-        # Wyczyść dane sesji
+    # Wyczyść dane sesji
         session.clear()
-
         return jsonify({
             'status': 'success',
             'message': 'Pomyślnie wylogowano'
