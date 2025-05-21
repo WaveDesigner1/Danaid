@@ -121,15 +121,16 @@ def create_app():
     # Endpoint z konfiguracją WebSocket dla frontendu
     @app.route('/api/websocket/config')
     def websocket_config():
-        """Dostarcza konfigurację WebSocket dla klienta"""
-        websocket_host = os.environ.get('WEBSOCKET_HOST', request.host)
-        websocket_port = os.environ.get('WEBSOCKET_PORT', '')
-        
-        config = {
-            'wsUrl': websocket_host + (f':{websocket_port}' if websocket_port else '')
-        }
-        
-        return jsonify(config)
+    """Dostarcza konfigurację WebSocket dla klienta"""
+    # Pobierz URL z zmiennej środowiskowej lub użyj domyślnej
+        websocket_url = os.environ.get('WEBSOCKET_URL', '')
+        if not websocket_url:
+            # Użyj domyślnego hosta z request
+            websocket_url = request.host
+    
+        return jsonify({
+            'wsUrl': websocket_url
+        })
     
     # Dodaj skrypt konfiguracyjny dla WebSocket
     @app.route('/ws-config.js')
