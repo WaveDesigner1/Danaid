@@ -29,6 +29,72 @@ def get_user_public_key(user_id):
 
 @chat_api.route('/api/user/<user_id>/info', methods=['GET'])
 @login_required
+
+@chat_api.route('/api/polling/messages', methods=['GET'])
+@login_required
+def polling_messages():
+    """Endpoint fallback do odbierania wiadomości poprzez polling."""
+    try:
+        # Pobierz ostatnie znane ID wiadomości
+        last_id = request.args.get('last_id', 0)
+        try:
+            last_id = int(last_id)
+        except ValueError:
+            last_id = 0
+        
+        # Znajdź aktywne sesje użytkownika
+        active_sessions = ChatSession.query.filter(
+            ((ChatSession.initiator_id == current_user.id) | (ChatSession.recipient_id == current_user.id)),
+            ChatSession.is_active == True,
+            ChatSession.expires_at > datetime.datetime.utcnow()
+        ).all()
+        
+        # IDs sesji
+        session_ids = [session.id for session in active_sessions]
+        
+        # Pobierz nowe wiadomości
+        new_messages = Message.query.filter(
+            Message.session_id.in_(session_ids),
+            Message.id > last_id,
+            Message.sender_id != current_user.id,
+            Message.read == False
+        ).order_by(Message.id).all()
+        
+        # Dane wiadomości do zwrócenia
+        messages = []
+        max_id = last_id
+        
+        for msg in new_messages:
+            # Znajdź sesję dla tej wiadomości
+            session = next((s for s in active_sessions if s.id == msg.session_id), None)
+            if session:
+                # Zbuduj informację o wiadomości
+                max_id = max(max_id, msg.id)
+                messages.append({
+                    'type': 'new_message',
+                    'session_token': session.session_token,
+                    'message': {
+                        'id': msg.id,
+                        'sender_id': msg.sender_id,
+                        'content': msg.content,
+                        'iv': msg.iv,
+                        'timestamp': msg.timestamp.isoformat(),
+                        'is_mine': False
+                    }
+                })
+        
+        return jsonify({
+            'status': 'success',
+            'messages': messages,
+            'last_id': max_id
+        })
+    
+    except Exception as e:
+        logger.error(f"Błąd pollingu wiadomości: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 def get_user_info(user_id):
     """Pobiera podstawowe informacje o użytkowniku"""
     user = User.query.filter_by(user_id=user_id).first()
