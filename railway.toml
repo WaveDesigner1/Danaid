@@ -1,0 +1,248 @@
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+startCommand = "python websocket_server.py"
+healthcheckPath = "/"
+healthcheckTimeout = 10
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 5
+
+[variables]
+PORT = "8081"
+4. Zaktualizuj plik requirements.txt
+Dodaj wymagane zależności do requirements.txt:
+websockets==11.0.3
+5. Zaktualizuj plik WebSocketHandler.js
+Zmodyfikuj plik WebSocketHandler.js tak, aby łączył się z nową usługą WebSocket:
+javascript/**
+ * WebSocketHandler.js - Obsługa komunikacji WebSocket
+ */
+class WebSocketHandler {
+  constructor() {
+    this.socket = null;
+    this.isConnected = false;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+    this.reconnectDelay = 3000; // 3 sekundy
+    this.handlers = {};
+    this.userId = sessionStorage.getItem('user_id');
+    this.pendingMessages = [];
+    
+    // Inicjalizacja
+    this.init();
+    
+    // Ustaw timer na ping co 30 sekund, aby utrzymać połączenie
+    setInterval(() => {
+      this.ping();
+    }, 30000);
+  }
+  
+  /**
+   * Inicjalizacja i ustawienie eventów
+   */
+  init() {
+    if (!this.userId) {
+      console.warn("Brak ID użytkownika - WebSocket nie zostanie zainicjalizowany");
+      return;
+    }
+    
+    // Pobierz URL WebSocket z konfiguracji
+    fetch('/api/websocket/config')
+      .then(response => response.json())
+      .then(config => {
+        // Użyj dedykowanego URL WebSocket
+        const wsUrl = config.wsUrl || window.location.host;
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const websocketUrl = `${protocol}${wsUrl}/ws/chat/${this.userId}`;
+        
+        console.log(`Łączenie z WebSocket: ${websocketUrl}`);
+        this.connect(websocketUrl);
+      })
+      .catch(error => {
+        console.error("Błąd pobierania konfiguracji WebSocket:", error);
+        this.fallbackToPolling();
+      });
+  }
+  
+  /**
+   * Nawiązanie połączenia WebSocket
+   */
+  connect(url) {
+    try {
+      console.log(`Próba połączenia WebSocket: ${url}`);
+      this.socket = new WebSocket(url);
+      
+      this.socket.onopen = this.onOpen.bind(this);
+      this.socket.onmessage = this.onMessage.bind(this);
+      this.socket.onclose = this.onClose.bind(this);
+      this.socket.onerror = this.onError.bind(this);
+    } catch (error) {
+      console.error("Błąd inicjalizacji WebSocket:", error);
+      this.fallbackToPolling();
+    }
+  }
+  
+  /**
+   * Obsługa zdarzenia otwarcia połączenia
+   */
+  onOpen(event) {
+    console.log("Połączenie WebSocket nawiązane");
+    this.isConnected = true;
+    this.reconnectAttempts = 0;
+    
+    // Wyślij zaległe wiadomości
+    while (this.pendingMessages.length > 0) {
+      const message = this.pendingMessages.shift();
+      this.send(message);
+    }
+    
+    // Wywołaj obsługę zdarzenia połączenia
+    this.trigger('connected', { timestamp: new Date().toISOString() });
+  }
+  
+  /**
+   * Obsługa odebrania wiadomości
+   */
+  onMessage(event) {
+    try {
+      const data = JSON.parse(event.data);
+      console.log("Otrzymano wiadomość WebSocket:", data);
+      
+      // Wywołaj odpowiedni handler na podstawie typu wiadomości
+      if (data.type) {
+        if (data.type === 'pong') {
+          // Ignoruj odpowiedzi ping-pong
+          return;
+        }
+        
+        if (this.handlers[data.type]) {
+          this.handlers[data.type](data);
+        } else {
+          console.warn(`Nieznany typ wiadomości: ${data.type}`);
+        }
+      } else {
+        console.warn("Wiadomość bez typu:", data);
+      }
+    } catch (error) {
+      console.error("Błąd przetwarzania wiadomości WebSocket:", error);
+    }
+  }
+  
+  /**
+   * Obsługa zamknięcia połączenia
+   */
+  onClose(event) {
+    this.isConnected = false;
+    console.log(`Połączenie WebSocket zamknięte: ${event.code} - ${event.reason}`);
+    
+    // Próba ponownego połączenia
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      console.log(`Ponowna próba połączenia (${this.reconnectAttempts}/${this.maxReconnectAttempts}) za ${this.reconnectDelay}ms`);
+      
+      setTimeout(() => {
+        this.init();
+      }, this.reconnectDelay);
+    } else {
+      console.warn("Osiągnięto maksymalną liczbę prób ponownego połączenia");
+      this.fallbackToPolling();
+    }
+  }
+  
+  /**
+   * Obsługa błędów połączenia
+   */
+  onError(error) {
+    console.error("Błąd WebSocket:", error);
+  }
+  
+  /**
+   * Wysyłanie ping co jakiś czas, aby utrzymać połączenie
+   */
+  ping() {
+    if (this.isConnected) {
+      try {
+        this.send({
+          type: 'ping',
+          timestamp: new Date().toISOString()
+        });
+      } catch (e) {
+        console.error("Błąd wysyłania ping:", e);
+      }
+    }
+  }
+  
+  /**
+   * Wysyłanie wiadomości
+   */
+  send(message) {
+    if (!this.isConnected) {
+      console.warn("Próba wysłania wiadomości, gdy WebSocket nie jest połączony");
+      this.pendingMessages.push(message);
+      return false;
+    }
+    
+    try {
+      const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+      this.socket.send(messageStr);
+      return true;
+    } catch (error) {
+      console.error("Błąd wysyłania wiadomości WebSocket:", error);
+      return false;
+    }
+  }
+  
+  /**
+   * Rejestracja handlera dla typu wiadomości
+   */
+  on(type, callback) {
+    this.handlers[type] = callback;
+  }
+  
+  /**
+   * Wywołanie handlera dla typu zdarzenia
+   */
+  trigger(type, data) {
+    if (this.handlers[type]) {
+      this.handlers[type](data);
+    }
+  }
+  
+  /**
+   * Rozłączenie WebSocket
+   */
+  disconnect() {
+    if (this.socket && this.isConnected) {
+      this.socket.close();
+    }
+  }
+  
+  /**
+   * Fallback do mechanizmu pollingu, gdy WebSocket nie działa
+   */
+  fallbackToPolling() {
+    console.log("Przełączanie na mechanizm pollingu");
+    this.isConnected = false;
+    
+    // Uruchom polling co 3 sekundy
+    setInterval(() => {
+      fetch('/api/polling/messages')
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === 'success' && data.messages) {
+            data.messages.forEach(message => {
+              if (message.type && this.handlers[message.type]) {
+                this.handlers[message.type](message);
+              }
+            });
+          }
+        })
+        .catch(error => console.error("Błąd pollingu:", error));
+    }, 3000);
+  }
+}
+
+// Inicjalizacja globalna
+window.wsHandler = new WebSocketHandler();
