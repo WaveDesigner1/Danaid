@@ -299,10 +299,17 @@ class WebSocketHandler:
 # Global WebSocket handler instance
 ws_handler = WebSocketHandler()
 
-async def start_websocket_server(host: str = '0.0.0.0', port: int = 8765) -> None:
+async def start_websocket_server(host: str = None, port: int = None) -> None:
     """Start the WebSocket server"""
+    # Pobierz host i port z zmiennych środowiskowych, jeśli nie podano
+    if host is None:
+        host = os.environ.get("HOST", "0.0.0.0")
+    
+    if port is None:
+        port = int(os.environ.get("PORT", 8081))  # Zmiana domyślnego portu z 8765 na 8081
+    
     # Sprawdź, czy serwer już działa
-    if ws_handler._running:
+    if hasattr(ws_handler, '_running') and ws_handler._running:
         logger.info("WebSocket server is already running")
         return
     
