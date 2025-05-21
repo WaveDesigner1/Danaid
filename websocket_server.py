@@ -1,88 +1,248 @@
+#!/usr/bin/env python
 """
-Moduł inicjalizacji websocketu dla głównej aplikacji Flask.
-Dodaj ten kod w głównym pliku aplikacji.
+websocket_server.py - Dedykowany serwer WebSocket dla aplikacji Danaid
 """
 
-def init_websocket_routes(app):
+import asyncio
+import websockets
+import json
+import logging
+import os
+import signal
+import sys
+from datetime import datetime
+
+# Konfiguracja logowania
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("websocket_server")
+
+# Przechowywanie aktywnych połączeń
+active_connections = {}
+
+# Handler dla nowych połączeń WebSocket
+async def connection_handler(websocket, path):
     """
-    Inicjalizuje ścieżki WebSocket w aplikacji Flask.
+    Obsługuje nowe połączenie WebSocket.
     
-    W przypadku Railway.app, serwer WebSocket działa jako osobny proces,
-    więc potrzebujemy przekierować żądania WebSocket na ten proces.
+    Args:
+        websocket: Obiekt WebSocket
+        path: Ścieżka żądania, np. /ws/chat/12345
     """
-    from flask import request, Response
-    import requests
-    import logging
-    
-    logger = logging.getLogger(__name__)
-    
-    @app.route('/ws/chat/<user_id>', methods=['GET', 'POST', 'OPTIONS'])
-    def websocket_proxy(user_id):
-        """
-        Proxy dla żądań WebSocket.
+    user_id = None
+    try:
+        # Wyciągnij user_id z ścieżki (np. /ws/chat/12345)
+        parts = path.split('/')
+        if len(parts) > 2 and parts[-2] == 'chat':
+            user_id = parts[-1]
         
-        W środowisku Railway.app, WebSocket działa jako osobny proces, więc
-        używamy tego endpointu jako point proxy dla żądań WebSocket.
-        """
-        # Wyloguj informacje o żądaniu
-        logger.info(f"Otrzymano żądanie WebSocket dla użytkownika {user_id}")
-        logger.info(f"Metoda: {request.method}")
-        logger.info(f"Nagłówki: {request.headers}")
+        if not user_id:
+            logger.warning(f"Nieprawidłowa ścieżka: {path}")
+            await websocket.close(1008, "Nieprawidłowa ścieżka")
+            return
         
-        # Dla żądań OPTIONS zwracamy odpowiednie nagłówki CORS
-        if request.method == 'OPTIONS':
-            resp = Response()
-            resp.headers['Access-Control-Allow-Origin'] = '*'
-            resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-            resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Requested-With'
-            return resp
-            
-        # Dla żądań GET zwracamy instrukcje
-        if request.method == 'GET':
-            # Tutaj możemy zaimplementować logikę handshake WebSocket
-            # Sprawdzamy czy serwer WebSocket działa
+        logger.info(f"Nowe połączenie WebSocket od użytkownika {user_id}")
+        
+        # Dodaj do aktywnych połączeń
+        if user_id not in active_connections:
+            active_connections[user_id] = set()
+        active_connections[user_id].add(websocket)
+        
+        # Powiadom klienta o pomyślnym połączeniu
+        await websocket.send(json.dumps({
+            'type': 'connection_established',
+            'user_id': user_id,
+            'timestamp': datetime.now().isoformat(),
+            'message': 'Połączenie WebSocket nawiązane pomyślnie'
+        }))
+        
+        # Powiadom o statusie online
+        broadcast_online_status(user_id, True)
+        
+        # Pętla odbierania wiadomości
+        async for message in websocket:
             try:
-                # W rzeczywistym wdrożeniu, tutaj należy sprawdzić czy serwer WebSocket działa
-                # i zwrócić odpowiednie informacje
+                data = json.loads(message)
+                logger.info(f"Otrzymano wiadomość od {user_id}: {str(data)[:100]}...")
                 
-                # Tymczasowo zwróćmy informację dla celów diagnostycznych
-                return {
-                    'status': 'info',
-                    'message': 'WebSocket endpoint jest dostępny. Użyj protokołu WebSocket do połączenia.',
-                    'websocket_url': f"ws://{request.host}/ws/chat/{user_id}"
-                }
+                # Obsługa różnych typów wiadomości
+                message_type = data.get('type')
+                
+                if message_type == 'ping':
+                    # Obsługa ping-pong dla utrzymania połączenia
+                    await websocket.send(json.dumps({
+                        'type': 'pong',
+                        'timestamp': datetime.now().isoformat()
+                    }))
+                elif message_type == 'message':
+                    # Przesyłanie wiadomości do odbiory
+                    recipient_id = data.get('recipient_id')
+                    if recipient_id:
+                        await send_to_user(recipient_id, {
+                            'type': 'new_message',
+                            'from_user_id': user_id,
+                            'content': data.get('content'),
+                            'session_token': data.get('session_token'),
+                            'timestamp': datetime.now().isoformat()
+                        })
+                
+            except json.JSONDecodeError:
+                logger.warning(f"Otrzymano nieprawidłowy JSON: {message[:100]}...")
             except Exception as e:
-                logger.error(f"Błąd sprawdzania statusu WebSocket: {e}")
-                return {
-                    'status': 'error',
-                    'message': 'Serwer WebSocket jest obecnie niedostępny. Spróbuj ponownie później.',
-                    'error': str(e)
-                }, 503  # Service Unavailable
+                logger.error(f"Błąd przetwarzania wiadomości: {e}")
     
-    # Dodaj endpoint dla sprawdzenia statusu WebSocket
-    @app.route('/api/websocket/status', methods=['GET'])
-    def websocket_status():
-        """Sprawdza status serwera WebSocket"""
-        # W rzeczywistej implementacji, należy sprawdzić czy serwer WebSocket działa
-        # i zwrócić odpowiednie informacje
-        return {
-            'status': 'success',
-            'websocket_running': True,
-            'websocket_url': f"ws://{request.host}/ws/chat"
-        }
+    except websockets.exceptions.ConnectionClosed as e:
+        logger.info(f"Połączenie zamknięte przez klienta: {e}")
+    except Exception as e:
+        logger.error(f"Błąd w obsłudze WebSocket: {e}")
+    finally:
+        # Sprzątanie przy rozłączeniu
+        if user_id and user_id in active_connections:
+            active_connections[user_id].discard(websocket)
+            if not active_connections[user_id]:
+                del active_connections[user_id]
+                # Powiadom o statusie offline
+                broadcast_online_status(user_id, False)
+        
+        logger.info(f"Użytkownik {user_id} rozłączony")
+
+# Funkcja do wysyłania wiadomości do konkretnego użytkownika
+async def send_to_user(user_id, message):
+    """
+    Wysyła wiadomość do użytkownika.
     
-    logger.info("Zainicjalizowano ścieżki WebSocket")
+    Args:
+        user_id (str): ID użytkownika
+        message (dict): Wiadomość do wysłania
+    
+    Returns:
+        bool: True jeśli wiadomość została wysłana, False w przeciwnym razie
+    """
+    if not user_id or user_id not in active_connections:
+        logger.info(f"Nie można wysłać wiadomości: użytkownik {user_id} nie jest połączony")
+        return False
+    
+    # Konwertuj obiekt na JSON, jeśli to nie jest string
+    if not isinstance(message, str):
+        message = json.dumps(message)
+    
+    # Licznik udanych wysłań
+    sent_count = 0
+    
+    # Kopia zestawu, aby uniknąć błędów modyfikacji podczas iteracji
+    connections = active_connections[user_id].copy()
+    
+    # Wyślij do wszystkich połączeń użytkownika
+    for websocket in connections:
+        try:
+            await websocket.send(message)
+            sent_count += 1
+        except Exception as e:
+            logger.error(f"Błąd wysyłania do {user_id}: {e}")
+            # Usuń nieprawidłowe połączenie
+            active_connections[user_id].discard(websocket)
+    
+    # Jeśli wszystkie połączenia się nie powiodły, usuń użytkownika z aktywnych
+    if sent_count == 0 and user_id in active_connections:
+        active_connections.pop(user_id, None)
+        return False
+    
+    return sent_count > 0
 
-# Dodaj ten fragment w głównym pliku aplikacji:
-"""
-from websocket_routes import init_websocket_routes
+# Funkcja do rozgłaszania zmiany statusu online
+def broadcast_online_status(user_id, is_online):
+    """
+    Informuje wszystkich użytkowników o zmianie statusu online.
+    
+    Args:
+        user_id (str): ID użytkownika
+        is_online (bool): Status online
+    """
+    asyncio.create_task(broadcast_status_update(user_id, is_online))
 
-# ... reszta kodu aplikacji ...
+async def broadcast_status_update(user_id, is_online):
+    """
+    Wysyła powiadomienia o statusie online do wszystkich użytkowników.
+    
+    Args:
+        user_id (str): ID użytkownika
+        is_online (bool): Status online
+    """
+    status_message = {
+        'type': 'user_status_change',
+        'user_id': user_id,
+        'is_online': is_online,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    # Wyślij do wszystkich użytkowników poza tym, który zmienił status
+    for recipient_id, connections in active_connections.items():
+        if recipient_id != user_id:
+            for websocket in connections:
+                try:
+                    await websocket.send(json.dumps(status_message))
+                except Exception as e:
+                    logger.error(f"Błąd wysyłania statusu do {recipient_id}: {e}")
+
+# Funkcja do wysyłania listy użytkowników online
+async def send_online_users():
+    """Wysyła listę użytkowników online do wszystkich połączonych klientów."""
+    while True:
+        try:
+            # Lista wszystkich użytkowników online
+            online_users = list(active_connections.keys())
+            
+            # Wyślij do każdego połączonego klienta
+            for user_id, connections in active_connections.items():
+                message = {
+                    'type': 'online_users',
+                    'users': online_users,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                for websocket in connections:
+                    try:
+                        await websocket.send(json.dumps(message))
+                    except Exception as e:
+                        logger.error(f"Błąd wysyłania listy online do {user_id}: {e}")
+            
+            # Aktualizuj co 30 sekund
+            await asyncio.sleep(30)
+        
+        except Exception as e:
+            logger.error(f"Błąd w pętli wysyłania użytkowników online: {e}")
+            await asyncio.sleep(10)  # Krótsza przerwa przy błędzie
+
+# Obsługa sygnałów systemowych
+def handle_signal(sig, frame):
+    """Obsługuje sygnały zamknięcia dla czystego zamknięcia."""
+    logger.info(f"Otrzymano sygnał {sig}, zamykanie...")
+    sys.exit(0)
+
+# Główna funkcja uruchamiająca serwer
+async def main():
+    # Konfiguracja z zmiennych środowiskowych
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 8081))
+    
+    logger.info(f"Uruchamianie serwera WebSocket na {host}:{port}")
+    
+    # Uruchom wysyłanie listy użytkowników online
+    asyncio.create_task(send_online_users())
+    
+    # Uruchom serwer WebSocket
+    async with websockets.serve(connection_handler, host, port):
+        await asyncio.Future()  # Uruchom bezterminowo
 
 if __name__ == "__main__":
-    # Inicjalizuj ścieżki WebSocket
-    init_websocket_routes(app)
+    # Rejestruj obsługę sygnałów
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
     
-    # Uruchom aplikację
-    app.run(debug=True)
-"""
+    # Uruchom główną pętlę
+    asyncio.run(main())
