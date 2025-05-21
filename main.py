@@ -1,20 +1,28 @@
-import os
+from flask import Flask
+import asyncio
+import threading
+from websockets import serve
 
-# Pobierz URL bazy danych ze zmiennych środowiskowych
-database_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@postgres.railway.internal:5432/railway')
+app = Flask(__name__)
 
-# Popraw URL jeśli zaczyna się od "postgres://"
-if database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+@app.route('/')
+def index():
+    return "Główna strona aplikacji"
 
-from app import create_app
+# Funkcja uruchamiająca serwer WebSocket w osobnym wątku
+def start_websocket_server():
+    async def echo(websocket, path):
+        async for message in websocket:
+            await websocket.send(message)
 
-# Utworzenie aplikacji
-app = create_app()
+    async def main():
+        async with serve(echo, "0.0.0.0", 8081):
+            await asyncio.Future()  # Uruchom bezterminowo
 
-# Wymuszenie ustawienia bazy danych - użyj zdefiniowanej wcześniej zmiennej database_url
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    asyncio.run(main())
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=False)
+# Uruchom serwer WebSocket w osobnym wątku
+threading.Thread(target=start_websocket_server, daemon=True).start()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
