@@ -24,6 +24,8 @@ logger = logging.getLogger("websocket_server")
 
 # Przechowywanie aktywnych połączeń
 active_connections = {}
+# Flaga informująca, czy serwer jest uruchomiony
+server_running = False
 
 # Handler dla nowych połączeń WebSocket
 async def connection_handler(websocket, path):
@@ -225,10 +227,19 @@ def handle_signal(sig, frame):
     sys.exit(0)
 
 # Główna funkcja uruchamiająca serwer
-async def main():
-    # Konfiguracja z zmiennych środowiskowych
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", 8081))
+async def run_server(host="0.0.0.0", port=8081):
+    """
+    Uruchamia serwer WebSocket na podanym hoście i porcie.
+    
+    Args:
+        host (str): Host do nasłuchiwania
+        port (int): Port do nasłuchiwania
+    """
+    global server_running
+    
+    if server_running:
+        logger.info("Serwer WebSocket już działa")
+        return
     
     logger.info(f"Uruchamianie serwera WebSocket na {host}:{port}")
     
@@ -236,9 +247,45 @@ async def main():
     asyncio.create_task(send_online_users())
     
     # Uruchom serwer WebSocket
+    server_running = True
     async with websockets.serve(connection_handler, host, port):
+        logger.info(f"Serwer WebSocket uruchomiony na {host}:{port}")
         await asyncio.Future()  # Uruchom bezterminowo
 
+# Funkcja do uruchamiania serwera WebSocket w osobnym wątku
+def start_websocket_server_thread():
+    """
+    Uruchamia serwer WebSocket w osobnym wątku.
+    Ta funkcja może być wywoływana z innych skryptów, np. wsgi.py.
+    """
+    import threading
+    
+    def run_async_server():
+        # Pobierz port z zmiennej środowiskowej lub użyj domyślnego
+        port = int(os.environ.get("WEBSOCKET_PORT", 8081))
+        host = os.environ.get("HOST", "0.0.0.0")
+        
+        print(f"Uruchamianie serwera WebSocket w wątku na {host}:{port}...")
+        sys.stdout.flush()
+        
+        # Uruchom pętlę zdarzeń asyncio w tym wątku
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            loop.run_until_complete(run_server(host, port))
+        except Exception as e:
+            print(f"Błąd podczas uruchamiania serwera WebSocket: {e}")
+            sys.stdout.flush()
+    
+    # Uruchom w osobnym wątku
+    websocket_thread = threading.Thread(target=run_async_server)
+    websocket_thread.daemon = True
+    websocket_thread.start()
+    
+    return websocket_thread
+
+# Gdy skrypt jest uruchamiany samodzielnie
 if __name__ == "__main__":
     # Rejestruj obsługę sygnałów
     signal.signal(signal.SIGINT, handle_signal)
@@ -246,13 +293,14 @@ if __name__ == "__main__":
     
     # Pobierz port z zmiennej środowiskowej lub użyj domyślnego
     port = int(os.environ.get("PORT", 8081))
+    host = os.environ.get("HOST", "0.0.0.0")
     
-    print(f"Uruchamianie serwera WebSocket na porcie {port}...")
+    print(f"Uruchamianie serwera WebSocket na {host}:{port}...")
     sys.stdout.flush()  # Upewnij się, że log jest natychmiast widoczny
     
     try:
         # Uruchom główną pętlę
-        asyncio.run(main())
+        asyncio.run(run_server(host, port))
     except Exception as e:
         print(f"Błąd podczas uruchamiania serwera WebSocket: {e}")
         sys.stdout.flush()
