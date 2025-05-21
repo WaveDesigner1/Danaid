@@ -123,7 +123,7 @@ def create_app():
     def websocket_config():
     """Dostarcza konfigurację WebSocket dla klienta"""
     # Pobierz URL z zmiennej środowiskowej lub użyj domyślnej
-        websocket_url = os.environ.get('WEBSOCKET_URL', '')
+        websocket_url = os.environ.get('WEBSOCKET_URL', request.host)
         if not websocket_url:
             # Użyj domyślnego hosta z request
             websocket_url = request.host
