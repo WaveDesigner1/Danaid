@@ -285,27 +285,6 @@ def start_websocket_server_thread():
     
     return websocket_thread
 
-# Gdy skrypt jest uruchamiany samodzielnie
-if __name__ == "__main__":
-    # Rejestruj obsługę sygnałów
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
-    
-    # Pobierz port z zmiennej środowiskowej lub użyj domyślnego
-    port = int(os.environ.get("WEBSOCKET_PORT", 8081))
-    host = os.environ.get("HOST", "0.0.0.0")
-    
-    print(f"Uruchamianie serwera WebSocket na {host}:{port}...")
-    sys.stdout.flush()  # Upewnij się, że log jest natychmiast widoczny
-    
-    try:
-        # Uruchom główną pętlę
-        asyncio.run(run_server(host, port))
-    except Exception as e:
-        print(f"Błąd podczas uruchamiania serwera WebSocket: {e}")
-        sys.stdout.flush()
-        sys.exit(1)
-
 def start_flask_app():
     """Uruchamia aplikację Flask w osobnym wątku"""
     import threading
