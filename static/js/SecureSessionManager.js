@@ -667,40 +667,47 @@ class SecureSessionManager {
    * Obsługuje wylogowanie użytkownika
    */
   logout() {
-  // Rozłącz WebSocket jeśli istnieje
-  if (window.wsHandler) {
-    window.wsHandler.disconnect();
-  }
-  
-  // Wyczyść dane lokalne
-  localStorage.removeItem('authToken');
-  localStorage.removeItem('private_key_pem');
-  
-  // Wyczyść wszystkie klucze sesji
-  Object.keys(localStorage).forEach(key => {
-    if (key.startsWith('session_key_')) {
-      localStorage.removeItem(key);
+  try {
+    // 1. NAJPIERW wyczyść dane lokalne
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('private_key_pem');
+    
+    // Wyczyść wszystkie klucze sesji
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('session_key_')) {
+        localStorage.removeItem(key);
+      }
+    });
+    
+    // Wyczyść dane z sessionStorage
+    sessionStorage.removeItem('user_id');
+    sessionStorage.removeItem('username');
+    sessionStorage.removeItem('is_admin');
+    sessionStorage.removeItem('isLoggedIn');
+    
+    // Wyczyść lokalne dane obiektu
+    this.activeSessions = [];
+    this.friends = [];
+    this.messages = {};
+    this.onlineUsers = [];
+    
+    // Zamknij bazę danych IndexedDB
+    if (this.db) {
+      this.db.close();
     }
-  });
-  
-  // Wyczyść dane z sessionStorage
-  sessionStorage.removeItem('user_id');
-  sessionStorage.removeItem('username');
-  sessionStorage.removeItem('is_admin');
-  sessionStorage.removeItem('isLoggedIn');
-  
-  // Wyczyść lokalne dane
-  this.activeSessions = [];
-  this.friends = [];
-  this.messages = {};
-  this.onlineUsers = [];
-  
-  // Zamknij bazę danych IndexedDB
-  if (this.db) {
-    this.db.close();
+    
+    // Rozłącz WebSocket
+    if (window.wsHandler) {
+      window.wsHandler.disconnect();
+    }
+    
+    console.log('Dane lokalne wyczyszczone, przekierowuję...');
+    
+  } catch (error) {
+    console.error('Błąd podczas czyszczenia danych:', error);
   }
   
-  // Przekieruj na logout endpoint (GET zamiast POST)
+  // 2. DOPIERO TERAZ przekieruj
   window.location.href = '/logout';
 }
     })
