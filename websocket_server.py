@@ -292,7 +292,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, handle_signal)
     
     # Pobierz port z zmiennej środowiskowej lub użyj domyślnego
-    port = int(os.environ.get("PORT", 8081))
+    port = int(os.environ.get("WEBSOCKET_PORT", 8081))
     host = os.environ.get("HOST", "0.0.0.0")
     
     print(f"Uruchamianie serwera WebSocket na {host}:{port}...")
