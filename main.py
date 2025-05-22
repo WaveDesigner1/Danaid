@@ -10,10 +10,10 @@ app = create_app()
 
 # Funkcja uruchamiająca serwer WebSocket w osobnym wątku
 def run_websocket_server():
-    asyncio.run(start_websocket_server(
-        host="0.0.0.0", 
-        port=int(os.environ.get("WEBSOCKET_PORT", 8081))
-    ))
+   asyncio.run(start_websocket_server(
+       host="0.0.0.0", 
+       port=int(os.environ.get("WEBSOCKET_PORT", 8081))
+   ))
 
 # Uruchom WebSocket w osobnym wątku przy starcie aplikacji
 websocket_thread = threading.Thread(target=run_websocket_server)
@@ -21,8 +21,8 @@ websocket_thread.daemon = True
 websocket_thread.start()
 
 if __name__ == "__main__":
-    # Pobierz port dla głównej aplikacji z zmiennej środowiskowej
-    port = int(os.environ.get("PORT", 8080))
-    
-    # W trybie deweloperskim użyj wbudowanego serwera Flask
-    app.run(host="0.0.0.0", port=port)
+   # Pobierz port dla głównej aplikacji z zmiennej środowiskowej
+   port = int(os.environ.get("PORT", 8080))
+   
+   # W trybie deweloperskim użyj wbudowanego serwera Flask
+   app.run(host="0.0.0.0", port=port)
