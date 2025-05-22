@@ -29,8 +29,24 @@ def get_user_public_key(user_id):
 
 @chat_api.route('/api/user/<user_id>/info', methods=['GET'])
 @login_required
+def get_user_info(user_id):
+    """Pobiera podstawowe informacje o użytkowniku"""
+    user = User.query.filter_by(user_id=user_id).first()
+    
+    if not user:
+        return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+        
+    return jsonify({
+        'status': 'success',
+        'user': {
+            'id': user.id,
+            'user_id': user.user_id,
+            'username': user.username,
+            'is_online': user.is_online if hasattr(user, 'is_online') else False
+        }
+    })
 
-@chat_api.route('polling/messages', methods=['GET'])
+@chat_api.route('/api/polling/messages', methods=['GET'])
 @login_required
 def polling_messages():
     """Endpoint fallback do odbierania wiadomości poprzez polling."""
@@ -95,22 +111,6 @@ def polling_messages():
             'status': 'error',
             'message': str(e)
         }), 500
-def get_user_info(user_id):
-    """Pobiera podstawowe informacje o użytkowniku"""
-    user = User.query.filter_by(user_id=user_id).first()
-    
-    if not user:
-        return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
-        
-    return jsonify({
-        'status': 'success',
-        'user': {
-            'id': user.id,
-            'user_id': user.user_id,
-            'username': user.username,
-            'is_online': user.is_online if hasattr(user, 'is_online') else False
-        }
-    })
 
 @chat_api.route('/api/users', methods=['GET'])
 @login_required
@@ -734,7 +734,7 @@ def create_session(initiator_id, recipient_id):
     return new_session
 
 # Metoda pobierająca aktywne sesje
-def get_active_sessions(user_id):
+def get_active_sessions_for_user(user_id):
     """Pobiera aktywne sesje czatu dla użytkownika"""
     return ChatSession.query.filter(
         ((ChatSession.initiator_id == user_id) | (ChatSession.recipient_id == user_id)),
@@ -745,7 +745,7 @@ def get_active_sessions(user_id):
 # Dodaj metody do klasy ChatSession
 ChatSession.refresh_session = refresh_session
 ChatSession.create_session = staticmethod(create_session)
-ChatSession.get_active_sessions = staticmethod(get_active_sessions)
+ChatSession.get_active_sessions = staticmethod(get_active_sessions_for_user)
 
 # Nowy endpoint do pobierania znajomych
 @chat_api.route('/api/friends', methods=['GET'])
@@ -1032,4 +1032,3 @@ def reject_friend_request(request_id):
             'status': 'error',
             'message': f'Błąd podczas odrzucania zaproszenia: {str(e)}'
         }), 500
-
