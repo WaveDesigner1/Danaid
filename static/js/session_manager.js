@@ -338,29 +338,29 @@ class ChatSessionManager {
      * Wysyła zaszyfrowaną wiadomość
      */
     async sendMessage(sessionToken, message) {
-        try {
-            // 1. Sprawdź czy mamy klucz sesji
-            const sessionKeyBase64 = localStorage.getItem(`session_key_${sessionToken}`);
-            if (!sessionKeyBase64) {
-                throw new Error('Brak klucza sesji w pamięci lokalnej');
-            }
-            
-            // 2. Importuj klucz sesji
-            const sessionKey = await window.chatCrypto.importSessionKey(sessionKeyBase64);
-            
-            // 3. Zaszyfruj wiadomość
-            const encryptedData = await window.chatCrypto.encryptMessage(message, sessionKey);
-            
-            // 4. Wyślij wiadomość (serwer nie przechowuje, tylko przekazuje)
-            const response = await fetch('/api/message/relay', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session_token: sessionToken,
-                    content: encryptedData.encryptedData,
-                    iv: encryptedData.iv
-                })
-            });
+      try {
+        // 1. Sprawdź czy mamy klucz sesji
+        const sessionKeyBase64 = sessionStorage.getItem(`session_key_${sessionToken}`);
+        if (!sessionKeyBase64) {
+          throw new Error('Brak klucza sesji w pamięci lokalnej');
+        }
+    
+        // 2. Importuj klucz sesji
+        const sessionKey = await window.chatCrypto.importSessionKey(sessionKeyBase64);
+    
+        // 3. Zaszyfruj wiadomość
+        const encryptedData = await window.chatCrypto.encryptMessage(message, sessionKey);
+    
+        // 4. Wyślij wiadomość - zmiana z '/api/message/relay' na '/api/message/send'
+        const response = await fetch('/api/message/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_token: sessionToken,
+            content: encryptedData.encryptedData,
+            iv: encryptedData.iv
+          })
+        });
             
             if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
             
