@@ -224,19 +224,6 @@ def create_app():
             traceback.print_exc()
             db.session.rollback()
 
-    @app.route('/')
-    def index():
-        """Strona główna - logowanie lub przekierowanie do czatu"""
-        try:
-            if current_user.is_authenticated:
-                return redirect(url_for('chat.chat'))  # lub inne url do czatu
-            else:
-                return render_template('login.html')  # lub inne template logowania
-        except Exception as e:
-            app.logger.error(f"Błąd w route /: {e}")
-            # Fallback - zwróć prostą stronę
-            return render_template('login.html')
-
 # Dodaj zarządzanie sesją
     @app.before_request
     def before_request():
