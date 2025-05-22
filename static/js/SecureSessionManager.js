@@ -667,55 +667,42 @@ class SecureSessionManager {
    * Obsługuje wylogowanie użytkownika
    */
   logout() {
-    // Wyślij żądanie wylogowania do serwera
-    fetch('/logout', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      credentials: 'same-origin' // To zapewnia wysłanie cookies z żądaniem
-    })
-    .then(response => {
-      if (response.ok) {
-        // Usuń dane sesji z localStorage i sessionStorage
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('private_key_pem');
-        
-        // Wyczyść wszystkie klucze sesji
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('session_key_')) {
-            localStorage.removeItem(key);
-          }
-        });
-        
-        // Wyczyść dane z sessionStorage
-        sessionStorage.removeItem('user_id');
-        sessionStorage.removeItem('username');
-        sessionStorage.removeItem('is_admin');
-        sessionStorage.removeItem('isLoggedIn');
-        
-        // Rozłącz WebSocket jeśli istnieje
-        if (window.wsHandler) {
-          window.wsHandler.disconnect();
-        }
-        
-        // Wyczyść lokalne dane
-        this.activeSessions = [];
-        this.friends = [];
-        this.messages = {};
-        this.onlineUsers = [];
-        
-        // Zamknij bazę danych IndexedDB
-        if (this.db) {
-          this.db.close();
-        }
-        
-        // Przekieruj użytkownika na stronę logowania
-        window.location.href = '/';
-      } else {
-        throw new Error('Wylogowanie nie powiodło się');
-      }
+  // Rozłącz WebSocket jeśli istnieje
+  if (window.wsHandler) {
+    window.wsHandler.disconnect();
+  }
+  
+  // Wyczyść dane lokalne
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('private_key_pem');
+  
+  // Wyczyść wszystkie klucze sesji
+  Object.keys(localStorage).forEach(key => {
+    if (key.startsWith('session_key_')) {
+      localStorage.removeItem(key);
+    }
+  });
+  
+  // Wyczyść dane z sessionStorage
+  sessionStorage.removeItem('user_id');
+  sessionStorage.removeItem('username');
+  sessionStorage.removeItem('is_admin');
+  sessionStorage.removeItem('isLoggedIn');
+  
+  // Wyczyść lokalne dane
+  this.activeSessions = [];
+  this.friends = [];
+  this.messages = {};
+  this.onlineUsers = [];
+  
+  // Zamknij bazę danych IndexedDB
+  if (this.db) {
+    this.db.close();
+  }
+  
+  // Przekieruj na logout endpoint (GET zamiast POST)
+  window.location.href = '/logout';
+}
     })
     .catch(error => {
       console.error('Błąd podczas wylogowywania:', error);
