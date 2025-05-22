@@ -666,49 +666,37 @@ class SecureSessionManager {
   /**
    * Obsługuje wylogowanie użytkownika
    */
-  logout() {
+  async logout() {
   try {
-    // 1. NAJPIERW wyczyść dane lokalne
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('private_key_pem');
-    
-    // Wyczyść wszystkie klucze sesji
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('session_key_')) {
-        localStorage.removeItem(key);
-      }
-    });
-    
-    // Wyczyść dane z sessionStorage
-    sessionStorage.removeItem('user_id');
-    sessionStorage.removeItem('username');
-    sessionStorage.removeItem('is_admin');
-    sessionStorage.removeItem('isLoggedIn');
-    
-    // Wyczyść lokalne dane obiektu
-    this.activeSessions = [];
-    this.friends = [];
-    this.messages = {};
-    this.onlineUsers = [];
-    
-    // Zamknij bazę danych IndexedDB
-    if (this.db) {
-      this.db.close();
-    }
+    // Wyczyść dane lokalne
+    localStorage.clear();
+    sessionStorage.clear();
     
     // Rozłącz WebSocket
     if (window.wsHandler) {
       window.wsHandler.disconnect();
     }
     
-    console.log('Dane lokalne wyczyszczone, przekierowuję...');
+    // Wyczyść lokalne dane
+    this.activeSessions = [];
+    this.friends = [];
+    this.messages = {};
+    
+    if (this.db) {
+      this.db.close();
+    }
+    
+    // Małe opóźnienie żeby wszystko się wykonało
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    console.log('Przekierowuję na logout...');
     
   } catch (error) {
-    console.error('Błąd podczas czyszczenia danych:', error);
+    console.error('Błąd podczas wylogowania:', error);
+  } finally {
+    // Zawsze przekieruj, nawet jak był błąd
+    window.location.href = '/logout';
   }
-  
-  // 2. DOPIERO TERAZ przekieruj
-  window.location.href = '/logout';
 }
     })
     .catch(error => {
