@@ -30,7 +30,7 @@ class SecureSessionManager {
   }
 
   /**
-   * Konfiguruje handlery dla WebSocketHandler
+   * Konfiguruje handlery untuk WebSocketHandler
    */
   setupWebSocketHandlers() {
     if (!window.wsHandler) {
@@ -134,7 +134,7 @@ class SecureSessionManager {
     }
   }
 
-  // Pobieranie wiadomości z lokalnego magazynu
+// Pobieranie wiadomości z lokalnego magazynu
   async loadMessagesFromStorage() {
     if (!this.db) {
       console.error("Baza danych nie jest dostępna");
@@ -199,7 +199,7 @@ class SecureSessionManager {
     }
   }
 
-/**
+  /**
    * Inicjalizacja sesji czatu
    */
   async initSession(recipientId) {
@@ -289,7 +289,6 @@ class SecureSessionManager {
       };
     }
   }
-
   /**
    * Pobieranie klucza sesji
    */
@@ -455,7 +454,7 @@ class SecureSessionManager {
     }
   }
 
-/**
+  /**
    * Pobieranie lokalnych wiadomości
    */
   getLocalMessages(sessionToken) {
@@ -472,7 +471,7 @@ class SecureSessionManager {
     };
   }
 
-  /**
+/**
    * Pobieranie listy znajomych
    */
   async fetchFriends() {
@@ -636,8 +635,8 @@ class SecureSessionManager {
       };
     }
   }
-  
-  // Pomocnicze funkcje konwersji
+
+// Pomocnicze funkcje konwersji
   _arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = '';
@@ -663,9 +662,8 @@ class SecureSessionManager {
       .replace(/\s+/g, "");
     return this._base64ToArrayBuffer(pemContent);
   }
-}
 
-/**
+  /**
    * Obsługuje wylogowanie użytkownika
    */
   logout() {
@@ -684,6 +682,13 @@ class SecureSessionManager {
         localStorage.removeItem('authToken');
         localStorage.removeItem('private_key_pem');
         
+        // Wyczyść wszystkie klucze sesji
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('session_key_')) {
+            localStorage.removeItem(key);
+          }
+        });
+        
         // Wyczyść dane z sessionStorage
         sessionStorage.removeItem('user_id');
         sessionStorage.removeItem('username');
@@ -693,6 +698,17 @@ class SecureSessionManager {
         // Rozłącz WebSocket jeśli istnieje
         if (window.wsHandler) {
           window.wsHandler.disconnect();
+        }
+        
+        // Wyczyść lokalne dane
+        this.activeSessions = [];
+        this.friends = [];
+        this.messages = {};
+        this.onlineUsers = [];
+        
+        // Zamknij bazę danych IndexedDB
+        if (this.db) {
+          this.db.close();
         }
         
         // Przekieruj użytkownika na stronę logowania
@@ -708,7 +724,5 @@ class SecureSessionManager {
   }
 }
 
-
-// Inicjalizacja
+// Inicjalizacja globalnego SessionManager
 window.sessionManager = new SecureSessionManager();
-
