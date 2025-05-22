@@ -30,7 +30,7 @@ def get_user_public_key(user_id):
 @chat_api.route('/api/user/<user_id>/info', methods=['GET'])
 @login_required
 
-@chat_api.route('/api/polling/messages', methods=['GET'])
+@chat_api.route('polling/messages', methods=['GET'])
 @login_required
 def polling_messages():
     """Endpoint fallback do odbierania wiadomości poprzez polling."""
