@@ -75,6 +75,7 @@ def apply_migration(inspector, table, column, sql_statement):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
+    
     # Konfiguracja bazy danych
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
@@ -134,11 +135,11 @@ def create_app():
     @app.route('/ws-config.js')
     def ws_config_js():
         """Generuje skrypt JS z konfiguracją WebSocket"""
-        websocket_host = os.environ.get('WEBSOCKET_HOST', request.host)
-        websocket_port = os.environ.get('WEBSOCKET_PORT', '')
+        websocket_host = os.environ.get('WEBSOCKET_HOST', request.host.split(':')[0])
+        websocket_port = os.environ.get('WEBSOCKET_PORT', '8081')
         
         config = {
-            'wsUrl': websocket_host + (f':{websocket_port}' if websocket_port else '')
+            'wsUrl': f"{websocket_host}:{websocket_port}"
         }
         
         # Generuj skrypt JS
@@ -176,8 +177,8 @@ def create_app():
                 "engine": engine_name,
                 "test_query": dict(result) if result else None,
                 "tables": tables,
-                "env_database_url": "ZREDAGOWANO", # Bezpieczniejsza implementacja
-                "env_neon_database_url": "ZREDAGOWANO", # Bezpieczniejsza implementacja
+                "env_database_url": "ZREDAGOWANO",
+                "env_neon_database_url": "ZREDAGOWANO",
                 "connection_string": safe_connection
             })
         except Exception as e:
@@ -186,8 +187,8 @@ def create_app():
                 "message": str(e),
                 "error_type": type(e).__name__,
                 "env_vars": {
-                    "DATABASE_URL": "ZREDAGOWANO", # Bezpieczniejsza implementacja
-                    "NEON_DATABASE_URL": "ZREDAGOWANO" # Bezpieczniejsza implementacja
+                    "DATABASE_URL": "ZREDAGOWANO",
+                    "NEON_DATABASE_URL": "ZREDAGOWANO"
                 }
             }), 500
     
