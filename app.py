@@ -258,7 +258,20 @@ def create_app():
             last_update_key = f'last_online_update_{current_user.id}'
             response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
         return response
+    @app.route('/ws-config.js')
+    def ws_config_js():
+        """Generuje skrypt JS z konfiguracją WebSocket"""
+        websocket_host = os.environ.get('WEBSOCKET_HOST', request.host.split(':')[0])  # Pobierz tylko nazwę hosta bez portu
+        websocket_port = os.environ.get('WEBSOCKET_PORT', '8081')  # Domyślny port WebSocket
     
+        config = {
+            'wsUrl': f"{websocket_host}:{websocket_port}"
+        }
+        # Generuj skrypt JS
+        js_content = f"window._env = {json.dumps(config)};"
+    
+        return Response(js_content, mimetype='application/javascript')
+
     @app.route('/logout', methods=['POST'])
     def logout():
         # Wyczyść dane sesji
