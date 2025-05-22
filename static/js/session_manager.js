@@ -340,7 +340,7 @@ class ChatSessionManager {
     async sendMessage(sessionToken, message) {
       try {
         // 1. Sprawdź czy mamy klucz sesji
-        const sessionKeyBase64 = sessionStorage.getItem(`session_key_${sessionToken}`);
+        const sessionKeyBase64 = localStorage.getItem(`session_key_${sessionToken}`);
         if (!sessionKeyBase64) {
           throw new Error('Brak klucza sesji w pamięci lokalnej');
         }
