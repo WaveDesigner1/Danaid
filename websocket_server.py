@@ -305,3 +305,43 @@ if __name__ == "__main__":
         print(f"Błąd podczas uruchamiania serwera WebSocket: {e}")
         sys.stdout.flush()
         sys.exit(1)
+
+def start_flask_app():
+    """Uruchamia aplikację Flask w osobnym wątku"""
+    import threading
+    from app import create_app
+    
+    print("🚀 Starting Flask app...")
+    app = create_app()
+    
+    def run_flask():
+        app.run(host="0.0.0.0", port=8080, debug=False, use_reloader=False)
+    
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    print("✅ Flask thread started on port 8080")
+
+# Gdy skrypt jest uruchamiany samodzielnie
+if __name__ == "__main__":
+    # Rejestruj obsługę sygnałów
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+    
+    # Pobierz port z zmiennej środowiskowej lub użyj domyślnego
+    port = int(os.environ.get("WEBSOCKET_PORT", 8081))  # WebSocket na 8081
+    host = os.environ.get("HOST", "0.0.0.0")
+    
+    print(f"Uruchamianie serwera WebSocket na {host}:{port}...")
+    sys.stdout.flush()
+    
+    # DODAJ TĘ LINIĘ:
+    start_flask_app()  # Uruchom Flask przed WebSocket
+    
+    try:
+        # Uruchom główną pętlę WebSocket
+        asyncio.run(run_server(host, port))
+    except Exception as e:
+        print(f"Błąd podczas uruchamiania serwera WebSocket: {e}")
+        sys.stdout.flush()
+        sys.exit(1)
