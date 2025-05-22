@@ -20,49 +20,54 @@ class WebSocketHandler {
   }
   
   /**
-   * Nawiązuje połączenie WebSocket z autodetekcją konfiguracji
-   */
-  connect() {
-    if (this.connectionAttempts >= this.maxConnectionAttempts) {
-      console.error('Przekroczono maksymalną liczbę prób połączenia WebSocket');
-      return false;
-    }
-    
-    if (!this.userId) {
-      console.error('Brak ID użytkownika do połączenia WebSocket');
-      return false;
-    }
-    
-    this.connectionAttempts++;
-    
-    // Autodetekcja konfiguracji WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let wsHost = window.location.host;
-    let wsPath = `/ws/chat/${this.userId}`;
-    
-    // Sprawdź, czy konfiguracja jest dostępna
-    if (window._env && window._env.wsUrl) {
-      wsHost = window._env.wsUrl;
-    }
-    
-    const wsUrl = `${protocol}//${wsHost}${wsPath}`;
-    console.log(`Próba połączenia WebSocket: ${wsUrl}`);
-    
-    try {
-      this.socket = new WebSocket(wsUrl);
-      
-      this.socket.onopen = this.handleOpen.bind(this);
-      this.socket.onmessage = this.handleMessage.bind(this);
-      this.socket.onclose = this.handleClose.bind(this);
-      this.socket.onerror = this.handleError.bind(this);
-      
-      return true;
-    } catch (error) {
-      console.error('Błąd tworzenia połączenia WebSocket:', error);
-      this.scheduleReconnect();
-      return false;
-    }
+ * Nawiązuje połączenie WebSocket z autodetekcją konfiguracji
+ */
+connect() {
+  if (this.connectionAttempts >= this.maxConnectionAttempts) {
+    console.error('Przekroczono maksymalną liczbę prób połączenia WebSocket');
+    return false;
   }
+  
+  if (!this.userId) {
+    console.error('Brak ID użytkownika do połączenia WebSocket');
+    return false;
+  }
+  
+  this.connectionAttempts++;
+  
+  // NOWA KONFIGURACJA WebSocket dla Railway
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let wsHost = window.location.hostname; // Usuń port z host
+  let wsPort = '8081'; // WebSocket na porcie 8081
+  let wsPath = `/ws/chat/${this.userId}`;
+  
+  // Dla Railway - użyj portu 8081
+  let wsUrl;
+  if (window.location.hostname.includes('railway.app')) {
+    // Railway - WebSocket na porcie 8081
+    wsUrl = `${protocol}//${wsHost}:${wsPort}${wsPath}`;
+  } else {
+    // Lokalne środowisko
+    wsUrl = `ws://localhost:8081${wsPath}`;
+  }
+  
+  console.log(`Próba połączenia WebSocket: ${wsUrl}`);
+  
+  try {
+    this.socket = new WebSocket(wsUrl);
+    
+    this.socket.onopen = this.handleOpen.bind(this);
+    this.socket.onmessage = this.handleMessage.bind(this);
+    this.socket.onclose = this.handleClose.bind(this);
+    this.socket.onerror = this.handleError.bind(this);
+    
+    return true;
+  } catch (error) {
+    console.error('Błąd tworzenia połączenia WebSocket:', error);
+    this.scheduleReconnect();
+    return false;
+  }
+}
   
   /**
    * Obsługuje otwarcie połączenia
