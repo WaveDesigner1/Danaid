@@ -302,6 +302,7 @@ def start_flask_app():
     print("✅ Flask thread started on port 8080")
 
 # Klasa do obsługi WebSocket z poziomu chat_api
+# Klasa do obsługi WebSocket z poziomu chat_api
 class WebSocketHandler:
     """Handler do komunikacji WebSocket z poziomu chat_api"""
     
@@ -342,21 +343,26 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
     
-    # Pobierz port z zmiennej środowiskowej lub użyj domyślnego
-    port = int(os.environ.get("PORT", 8080))  # ← Zmienione na PORT zamiast WEBSOCKET_PORT
+    # Pobierz porty z zmiennych środowiskowych
+    flask_port = int(os.environ.get("PORT", 8080))  # Flask na porcie Railway
+    websocket_port = int(os.environ.get("WEBSOCKET_PORT", 8081))  # WebSocket na 8081
     host = os.environ.get("HOST", "0.0.0.0")
     
-    print(f"Uruchamianie serwera WebSocket na {host}:{port}...")
+    print(f"Uruchamianie Flask na {host}:{flask_port}...")
+    print(f"Uruchamianie WebSocket na {host}:{websocket_port}...")
     sys.stdout.flush()
     
-    # NIE uruchamiaj Flask - będzie konflikt portów
-    # start_flask_app()  # ← ZAKOMENTOWANE
+    # URUCHOM Flask w osobnym wątku
+    start_flask_app()  # ← ODKOMENTOWANE
+    
+    # Poczekaj chwilę na uruchomienie Flask
+    import time
+    time.sleep(3)
     
     try:
-        # Uruchom główną pętlę WebSocket
-        asyncio.run(run_server(host, port))
+        # Uruchom WebSocket na porcie 8081
+        asyncio.run(run_server(host, websocket_port))
     except Exception as e:
         print(f"Błąd podczas uruchamiania serwera WebSocket: {e}")
         sys.stdout.flush()
         sys.exit(1)
-
