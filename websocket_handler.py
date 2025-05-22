@@ -306,7 +306,7 @@ async def start_websocket_server(host: str = None, port: int = None) -> None:
         host = os.environ.get("HOST", "0.0.0.0")
     
     if port is None:
-        port = int(os.environ.get("PORT", 8081))  # Zmiana domyślnego portu z 8765 na 8081
+        port = int(os.environ.get("WEBSOCKET_PORT", 8081))  # Zmiana domyślnego portu z 8765 na 8081
     
     # Sprawdź, czy serwer już działa
     if hasattr(ws_handler, '_running') and ws_handler._running:
