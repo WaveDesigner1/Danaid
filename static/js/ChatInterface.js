@@ -3,29 +3,48 @@
  */
 class ChatInterface {
   constructor(sessionManager) {
-    // Inicjalizacja menedżera sesji
-    this.sessionManager = sessionManager || window.sessionManager;
-    this.initializeDOMElements();
-    
-    // Stan aplikacji
-    this.currentSessionToken = null;
-    this.currentUser = null;
-    this.friends = [];
-    this.pendingRequests = [];
-    
+  // Inicjalizacja menedżera sesji
+  this.sessionManager = sessionManager || window.sessionManager;
+  this.initializeDOMElements();
+  
+  // Stan aplikacji
+  this.currentSessionToken = null;
+  this.currentUser = null;
+  this.friends = [];
+  this.pendingRequests = [];
+  
+  // Załaduj konfigurację WebSocket, a następnie zainicjuj interfejs
+  this.loadWebSocketConfig().then(() => {
     // Inicjalizacja 
     this.initializeEvents();
     this.loadUserData();
     this.initializeFriendRequestNotifications();
     this.loadFriends();
     this.loadSessions();
-    
-    // Sprawdź połączenie WebSocket
-    setTimeout(() => this.checkWebSocketConnection(), 1000);
-    
-    // Regularnie aktualizuj i sprawdzaj zaproszenia
-    setInterval(() => this.loadPendingRequests(), 30000);
+  });
+  
+  // Regularne aktualizacje i sprawdzanie zaproszeń
+  setInterval(() => this.loadPendingRequests(), 30000);
+}
+
+/**
+ * Ładuje konfigurację WebSocket
+ */
+async loadWebSocketConfig() {
+  try {
+    const response = await fetch('/api/websocket/config');
+    if (response.ok) {
+      const config = await response.json();
+      if (config && config.wsUrl) {
+        window._env = window._env || {};
+        window._env.wsUrl = config.wsUrl;
+        console.log('Pobrano konfigurację WebSocket:', config.wsUrl);
+      }
+    }
+  } catch (e) {
+    console.warn('Nie udało się pobrać konfiguracji WebSocket:', e);
   }
+}
   
   /**
    * Inicjalizacja elementów DOM
