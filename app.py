@@ -18,7 +18,7 @@ from auth import auth_bp
 from chat import chat_bp
 from chat_api import chat_api
 from database_migrations import apply_migrations as apply_e2ee_migrations
-
+# USUNIĘTO: from websocket_routes import init_websocket_routes  # ❌ USUNIĘTE!
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
@@ -115,37 +115,47 @@ def create_app():
     apply_migrations(app)
     apply_e2ee_migrations(app)
     
-    # Endpoint z konfiguracją WebSocket dla frontendu
+    # NAPRAWIONE: Endpoint z konfiguracją WebSocket dla frontendu
     @app.route('/api/websocket/config')
     def websocket_config():
         """Dostarcza konfigurację WebSocket dla klienta"""
-        # Pobierz URL z zmiennej środowiskowej lub użyj domyślnej
-        websocket_url = os.environ.get('WEBSOCKET_URL','')
-        if not websocket_url:
-            # Użyj domyślnego hosta z request
-            websocket_url = request.host
-    
+        # Dla Railway użyj tego samego hosta co główna aplikacja
+        websocket_host = request.host.split(':')[0]  # Usuń port jeśli jest
+        
+        # Na Railway WebSocket będzie na tym samym hoście
+        if 'railway.app' in websocket_host:
+            websocket_url = websocket_host  # Bez portu dla Railway
+        else:
+            # Lokalne środowisko
+            websocket_url = f"{websocket_host}:8081"
+        
         return jsonify({
             'wsUrl': websocket_url
         })
     
-    # Dodaj skrypt konfiguracyjny dla WebSocket
+    # NAPRAWIONE: Dodaj skrypt konfiguracyjny dla WebSocket
     @app.route('/ws-config.js')
     def ws_config_js():
         """Generuje skrypt JS z konfiguracją WebSocket"""
-        websocket_host = os.environ.get('WEBSOCKET_HOST', request.host.split(':')[0])
-        websocket_port = os.environ.get('WEBSOCKET_PORT', '8081')
+        websocket_host = request.host.split(':')[0]
         
-        config = {
-            'wsUrl': f"{websocket_host}:{websocket_port}"
-        }
+        # Dla Railway
+        if 'railway.app' in websocket_host:
+            config = {
+                'wsUrl': websocket_host  # Bez portu
+            }
+        else:
+            # Lokalne środowisko
+            config = {
+                'wsUrl': f"{websocket_host}:8081"
+            }
         
         # Generuj skrypt JS
         js_content = f"window._env = {json.dumps(config)};"
         
         return Response(js_content, mimetype='application/javascript')
 
-# Endpoint diagnostyczny do sprawdzenia połączenia z bazą danych
+    # Endpoint diagnostyczny do sprawdzenia połączenia z bazą danych
     @app.route('/db-debug')
     def db_debug():
         try:
@@ -222,7 +232,7 @@ def create_app():
             traceback.print_exc()
             db.session.rollback()
 
-# Dodaj zarządzanie sesją
+    # Dodaj zarządzanie sesją
     @app.before_request
     def before_request():
         """Zarządzanie sesją przed każdym żądaniem"""
