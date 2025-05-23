@@ -369,90 +369,203 @@ class SecureSessionManager {
    * Wysyłanie wiadomości - ZAKTUALIZOWANA implementacja z Socket.IO i UnifiedCrypto
    */
   async sendMessage(sessionToken, content) {
-    try {
-      // Sprawdź czy UnifiedCrypto jest dostępny
-      if (!window.unifiedCrypto) {
-        throw new Error('UnifiedCrypto nie jest dostępny');
-      }
+  try {
+    console.log('🚀 Rozpoczynam wysyłanie wiadomości...');
+    
+    // Sprawdź czy UnifiedCrypto jest dostępny
+    if (!window.unifiedCrypto) {
+      throw new Error('UnifiedCrypto nie jest dostępny');
+    }
 
-      // Sprawdź czy mamy klucz sesji
-      const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
-      if (!sessionKeyBase64) {
-        throw new Error('Brak klucza sesji');
+    // Sprawdź czy mamy klucz sesji
+    const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+    if (!sessionKeyBase64) {
+      throw new Error('Brak klucza sesji');
+    }
+    
+    // KRYTYCZNE: Znajdź sesję aby pobrać recipient_id
+    const session = this.activeSessions.find(s => s.token === sessionToken);
+    if (!session) {
+      console.error('❌ Nie znaleziono sesji o tokenie:', sessionToken);
+      console.error('Dostępne sesje:', this.activeSessions.map(s => s.token));
+      throw new Error('Nie znaleziono sesji');
+    }
+    
+    if (!session.other_user || !session.other_user.user_id) {
+      console.error('❌ Sesja nie ma danych other_user:', session);
+      throw new Error('Brak danych odbiorcy w sesji');
+    }
+    
+    console.log('✅ Sesja znaleziona:', {
+      token: session.token,
+      recipient_id: session.other_user.user_id,
+      recipient_name: session.other_user.username
+    });
+    
+    // Szyfrowanie wiadomości
+    const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+    const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
+    
+    // KRYTYCZNE: Upewnij się o prawidłowym formacie danych
+    let encryptedContent, ivBase64;
+    
+    try {
+      // Sprawdź typ danych i konwertuj na Base64
+      if (typeof encryptedData.data === 'string') {
+        encryptedContent = encryptedData.data;
+      } else if (encryptedData.data instanceof ArrayBuffer) {
+        encryptedContent = btoa(String.fromCharCode(...new Uint8Array(encryptedData.data)));
+      } else if (encryptedData.data instanceof Uint8Array) {
+        encryptedContent = btoa(String.fromCharCode(...encryptedData.data));
+      } else {
+        throw new Error('Nieobsługiwany typ danych szyfrowania: ' + typeof encryptedData.data);
       }
       
-      // ZAKTUALIZOWANE: Używamy UnifiedCrypto do szyfrowania
-      const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
-      const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
+      if (typeof encryptedData.iv === 'string') {
+        ivBase64 = encryptedData.iv;
+      } else if (encryptedData.iv instanceof ArrayBuffer) {
+        ivBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedData.iv)));
+      } else if (encryptedData.iv instanceof Uint8Array) {
+        ivBase64 = btoa(String.fromCharCode(...encryptedData.iv));
+      } else {
+        throw new Error('Nieobsługiwany typ IV: ' + typeof encryptedData.iv);
+      }
+    } catch (conversionError) {
+      console.error('❌ Błąd konwersji danych:', conversionError);
+      throw new Error('Błąd przetwarzania zaszyfrowanych danych: ' + conversionError.message);
+    }
+    
+    // Przygotuj payload - TESTUJ różne warianty
+    const basePayload = {
+      session_token: sessionToken,
+      recipient_id: session.other_user.user_id,
+      content: encryptedContent,
+      iv: ivBase64
+    };
+    
+    // Wariant 1: Podstawowy payload
+    console.log('📤 Próba wysłania wiadomości - wariant podstawowy');
+    console.log('Payload:', {
+      session_token: sessionToken,
+      recipient_id: session.other_user.user_id,
+      content_length: encryptedContent.length,
+      iv_length: ivBase64.length
+    });
+    
+    let response = await fetch('/api/message/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(basePayload)
+    });
+    
+    // Jeśli podstawowy nie zadziała, próbuj inne warianty
+    if (!response.ok) {
+      console.log('❌ Podstawowy payload nie zadziałał, próbuję alternatywne...');
       
-      // Wyślij na serwer
-      const response = await fetch('/api/message/send', {
+      // Wariant 2: Z encrypted_content zamiast content
+      const altPayload2 = {
+        session_token: sessionToken,
+        recipient_id: session.other_user.user_id,
+        encrypted_content: encryptedContent,
+        iv: ivBase64
+      };
+      
+      console.log('📤 Próba wysłania - wariant z encrypted_content');
+      response = await fetch('/api/message/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest'
         },
         credentials: 'same-origin',
-        body: JSON.stringify({
-          session_token: sessionToken,
-          content: encryptedData.data,
-          iv: encryptedData.iv
-        })
+        body: JSON.stringify(altPayload2)
       });
       
       if (!response.ok) {
-        throw new Error(`Błąd wysyłania wiadomości: ${response.status}`);
+        // Wariant 3: Z message_id
+        const altPayload3 = {
+          session_token: sessionToken,
+          recipient_id: session.other_user.user_id,
+          content: encryptedContent,
+          iv: ivBase64,
+          message_id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9)
+        };
+        
+        console.log('📤 Próba wysłania - wariant z message_id');
+        response = await fetch('/api/message/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(altPayload3)
+        });
+      }
+    }
+    
+    // Szczegółowa obsługa błędów
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}`;
+      let errorDetails = null;
+      
+      try {
+        const responseText = await response.text();
+        console.error('❌ Odpowiedź serwera (tekst):', responseText);
+        
+        try {
+          errorDetails = JSON.parse(responseText);
+          errorMessage = errorDetails.message || errorDetails.error || errorMessage;
+          console.error('❌ Szczegóły błędu serwera:', errorDetails);
+        } catch (parseError) {
+          console.error('❌ Nie można sparsować odpowiedzi jako JSON');
+          errorMessage = responseText || errorMessage;
+        }
+      } catch (readError) {
+        console.error('❌ Nie można odczytać odpowiedzi:', readError);
       }
       
-      const data = await response.json();
-      
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'Błąd wysyłania wiadomości');
-      }
-      
-      // Dodaj wiadomość do lokalnego stanu
-      const newMessage = {
-        id: data.message.id || Date.now().toString(),
-        sender_id: parseInt(this.user.id),
-        content: content,
-        timestamp: data.message.timestamp || new Date().toISOString(),
-        is_mine: true
-      };
-      
-      // Zapisz lokalnie
-      await this.storeMessage(sessionToken, newMessage);
-      
-      return {
-        status: 'success',
-        message: 'Wiadomość wysłana',
-        messageData: newMessage
-      };
-    } catch (error) {
-      console.error('Błąd wysyłania wiadomości:', error);
-      return {
-        status: 'error',
-        message: error.message
-      };
+      throw new Error(`Błąd wysyłania wiadomości: ${errorMessage}`);
     }
-  }
-
-  /**
-   * Pobieranie lokalnych wiadomości
-   */
-  getLocalMessages(sessionToken) {
-    if (!this.messages[sessionToken]) {
-      return {
-        status: 'success',
-        messages: []
-      };
+    
+    const data = await response.json();
+    console.log('✅ Odpowiedź serwera:', data);
+    
+    if (data.status !== 'success') {
+      throw new Error(data.message || 'Błąd wysyłania wiadomości');
     }
+    
+    // Dodaj wiadomość do lokalnego stanu
+    const newMessage = {
+      id: data.message?.id || Date.now().toString(),
+      sender_id: parseInt(this.user.id),
+      content: content,
+      timestamp: data.message?.timestamp || new Date().toISOString(),
+      is_mine: true
+    };
+    
+    // Zapisz lokalnie
+    await this.storeMessage(sessionToken, newMessage);
+    
+    console.log('✅ Wiadomość wysłana pomyślnie!');
     
     return {
       status: 'success',
-      messages: this.messages[sessionToken]
+      message: 'Wiadomość wysłana',
+      messageData: newMessage
+    };
+  } catch (error) {
+    console.error('❌ Błąd wysyłania wiadomości:', error);
+    return {
+      status: 'error',
+      message: error.message
     };
   }
-
+}
   /**
    * Pobieranie listy znajomych
    */
