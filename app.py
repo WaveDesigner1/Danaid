@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, Response, session
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_required
+from flask_socketio import SocketIO
 from datetime import timedelta
 import os
 import shutil
@@ -11,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy import inspect, text
 import traceback
 import sys
+
 # Bezpośrednie importy
 from models import db, User, ChatSession, Message
 from admin import init_admin
@@ -18,7 +20,7 @@ from auth import auth_bp
 from chat import chat_bp
 from chat_api import chat_api
 from database_migrations import apply_migrations as apply_e2ee_migrations
-# USUNIĘTO: from websocket_routes import init_websocket_routes  # ❌ USUNIĘTE!
+from socketio_handler import init_socketio_handler
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
@@ -78,7 +80,6 @@ def create_app():
     # Konfiguracja bazy danych
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
-        # Użyj bezpiecznego fallbacku lub zgłoś błąd
         database_url = 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@turntable.proxy.rlwy.net:39432/railway'
         app.logger.warning('Używanie domyślnego URL bazy danych - to nie powinno być używane w produkcji!')
     
@@ -95,8 +96,15 @@ def create_app():
         app.logger.warning('Używanie wygenerowanego SECRET_KEY - to wyloguje wszystkich użytkowników przy restarcie!')
     
     # Konfiguracja sesji
-    app.config['SESSION_TYPE'] = 'filesystem'  # Przechowuj sesje w plikach, a nie w cookies
+    app.config['SESSION_TYPE'] = 'filesystem'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+    
+    # Inicjalizacja Socket.IO
+    socketio = SocketIO(app, 
+                       cors_allowed_origins="*", 
+                       logger=False, 
+                       engineio_logger=False,
+                       async_mode='threading')
     
     # Inicjalizacja bazy danych i logowania
     db.init_app(app)
@@ -110,68 +118,50 @@ def create_app():
     
     # Inicjalizacja panelu admina
     init_admin(app)
+    
+    # Inicjalizacja Socket.IO handler
+    init_socketio_handler(socketio)
  
     # Uruchom migracje bazy danych
     apply_migrations(app)
     apply_e2ee_migrations(app)
     
-    # NAPRAWIONE: Endpoint z konfiguracją WebSocket dla frontendu
+    # Socket.IO konfiguracja dla frontendu
     @app.route('/api/websocket/config')
     def websocket_config():
-        """Dostarcza konfigurację WebSocket dla klienta"""
-        # Dla Railway użyj tego samego hosta co główna aplikacja
-        websocket_host = request.host.split(':')[0]  # Usuń port jeśli jest
-        
-        # Na Railway WebSocket będzie na tym samym hoście
-        if 'railway.app' in websocket_host:
-            websocket_url = websocket_host  # Bez portu dla Railway
-        else:
-            # Lokalne środowisko
-            websocket_url = f"{websocket_host}:8081"
+        """Dostarcza konfigurację Socket.IO dla klienta"""
+        host = request.host
         
         return jsonify({
-            'wsUrl': websocket_url
+            'socketUrl': f"https://{host}" if request.is_secure else f"http://{host}",
+            'path': '/socket.io/'
         })
     
-    # NAPRAWIONE: Dodaj skrypt konfiguracyjny dla WebSocket
-    @app.route('/ws-config.js')
-    def ws_config_js():
-        """Generuje skrypt JS z konfiguracją WebSocket"""
-        websocket_host = request.host.split(':')[0]
+    # Socket.IO konfiguracyjny skrypt JS
+    @app.route('/socket-config.js')
+    def socket_config_js():
+        """Generuje skrypt JS z konfiguracją Socket.IO"""
+        host = request.host
         
-        # Dla Railway
-        if 'railway.app' in websocket_host:
-            config = {
-                'wsUrl': websocket_host  # Bez portu
-            }
-        else:
-            # Lokalne środowisko
-            config = {
-                'wsUrl': f"{websocket_host}:8081"
-            }
+        config = {
+            'socketUrl': f"https://{host}" if request.is_secure else f"http://{host}",
+            'path': '/socket.io/'
+        }
         
-        # Generuj skrypt JS
-        js_content = f"window._env = {json.dumps(config)};"
-        
+        js_content = f"window._socketConfig = {json.dumps(config)};"
         return Response(js_content, mimetype='application/javascript')
-
-    # Endpoint diagnostyczny do sprawdzenia połączenia z bazą danych
+    
+    # Reszta endpointów pozostaje bez zmian...
     @app.route('/db-debug')
     def db_debug():
         try:
             from sqlalchemy import text, inspect
             
-            # Sprawdź, jaki silnik bazy danych jest używany
             engine_name = db.engine.name
-            
-            # Wykonaj bezpieczne zapytanie działające w bazie
             result = db.session.execute(text("SELECT 1 as test")).fetchone()
-            
-            # Pobierz listę tabel w sposób niezależny od bazy
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()
             
-            # Maskuj dane wrażliwe w connection string
             safe_connection = str(db.engine.url)
             if ":" in safe_connection and "@" in safe_connection:
                 parts = safe_connection.split('@')
@@ -185,19 +175,13 @@ def create_app():
                 "engine": engine_name,
                 "test_query": dict(result) if result else None,
                 "tables": tables,
-                "env_database_url": "ZREDAGOWANO",
-                "env_neon_database_url": "ZREDAGOWANO",
                 "connection_string": safe_connection
             })
         except Exception as e:
             return jsonify({
                 "status": "error",
                 "message": str(e),
-                "error_type": type(e).__name__,
-                "env_vars": {
-                    "DATABASE_URL": "ZREDAGOWANO",
-                    "NEON_DATABASE_URL": "ZREDAGOWANO"
-                }
+                "error_type": type(e).__name__
             }), 500
     
     # Inicjalizacja bazy danych przy pierwszym uruchomieniu
@@ -224,7 +208,7 @@ def create_app():
                 missing_tables = [table for table in model_tables if table not in existing_tables]
                 if missing_tables:
                     print(f"Brakujące tabele: {missing_tables}")
-                    db.create_all()  # Utworzy tylko brakujące tabele
+                    db.create_all()
                     print("Dodano brakujące tabele")
             
         except Exception as e:
@@ -237,12 +221,9 @@ def create_app():
     def before_request():
         """Zarządzanie sesją przed każdym żądaniem"""
         try:
-            # Ustawienie czasu życia sesji
             app.permanent_session_lifetime = timedelta(hours=24)
             
-            # Optymalizacja aktualizacji statusu online
             if current_user.is_authenticated and hasattr(current_user, 'is_online'):
-                # Aktualizuj status tylko raz na 5 minut zamiast przy każdym żądaniu
                 last_update_key = f'last_online_update_{current_user.id}'
                 last_update = request.cookies.get(last_update_key, 0)
                 try:
@@ -253,9 +234,7 @@ def create_app():
                 now = int(time.time())
                 
                 if now - last_update > 300:  # 5 minut = 300 sekund
-                    # Używaj flagi modified zamiast bezpośredniego commita
                     current_user.is_online = True
-                    # Commit zostanie wykonany po zakończeniu obsługi żądania przez Flask
         except Exception as e:
             app.logger.error(f"Błąd w before_request: {e}")
             db.session.rollback()
@@ -268,4 +247,5 @@ def create_app():
             response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
         return response
     
-    return app
+    return app, socketio
+
