@@ -1,6 +1,6 @@
 /**
- * SecureSessionManager - NAPRAWIONA wersja zarządzania sesją
- * Używa UnifiedCrypto zamiast starych modułów
+ * SecureSessionManager - ZAKTUALIZOWANA wersja dla Socket.IO
+ * Używa UnifiedCrypto i SocketIOHandler zamiast WebSocketHandler
  */
 class SecureSessionManager {
   constructor() {
@@ -18,7 +18,7 @@ class SecureSessionManager {
 
     // Inicjalizacja bazy danych
     this.initDatabase();
-    this.setupWebSocketHandlers();
+    this.setupSocketIOHandlers();
 
     // Callbacks
     this.onMessageReceived = null;
@@ -27,60 +27,73 @@ class SecureSessionManager {
     this.onOnlineStatusChanged = null;
     this.onFriendRequestReceived = null;
     
-    console.log("SecureSessionManager zainicjalizowany", this.user);
+    console.log("SecureSessionManager zainicjalizowany z Socket.IO", this.user);
   }
 
   /**
-   * Konfiguruje handlery dla WebSocketHandler
+   * Konfiguruje handlery dla SocketIOHandler
    */
-  setupWebSocketHandlers() {
-    if (!window.wsHandler) {
-      console.error("WebSocketHandler nie jest dostępny globalnie");
-      return;
+  setupSocketIOHandlers() {
+    // Poczekaj na załadowanie SocketIOHandler
+    const setupHandlers = () => {
+      if (!window.wsHandler) {
+        console.error("SocketIOHandler nie jest dostępny globalnie");
+        return;
+      }
+      
+      // Obsługa nowych wiadomości
+      window.wsHandler.on('new_message', (data) => {
+        console.log("Otrzymano nową wiadomość:", data);
+        
+        if (this.onMessageReceived) {
+          this.onMessageReceived(data.session_token, data.message);
+        }
+        
+        // Dodaj wiadomość do lokalnego magazynu
+        this.storeMessage(data.session_token, data.message);
+      });
+      
+      // Obsługa aktualizacji sesji
+      window.wsHandler.on('session_update', (data) => {
+        console.log("Aktualizacja sesji:", data);
+        this.getActiveSessions();
+      });
+      
+      // Obsługa zaproszeń do znajomych
+      window.wsHandler.on('friend_request', (data) => {
+        console.log("Otrzymano zaproszenie do znajomych:", data);
+        
+        if (this.onFriendRequestReceived) {
+          this.onFriendRequestReceived(data);
+        }
+      });
+      
+      // Obsługa zmian statusu online
+      window.wsHandler.on('user_status_change', (data) => {
+        const userId = data.user_id;
+        const isOnline = data.is_online;
+        this.updateOnlineStatus(userId, isOnline);
+      });
+      
+      // Obsługa listy użytkowników online
+      window.wsHandler.on('online_users', (data) => {
+        this.onlineUsers = data.users || [];
+        
+        if (this.onOnlineStatusChanged) {
+          this.onOnlineStatusChanged(this.onlineUsers);
+        }
+      });
+      
+      console.log("✅ Socket.IO handlers skonfigurowane");
+    };
+
+    // Spróbuj teraz, jeśli nie to czekaj
+    if (window.wsHandler) {
+      setupHandlers();
+    } else {
+      // Poczekaj na załadowanie
+      setTimeout(setupHandlers, 1000);
     }
-    
-    // Obsługa nowych wiadomości
-    window.wsHandler.on('new_message', (data) => {
-      console.log("Otrzymano nową wiadomość:", data);
-      
-      if (this.onMessageReceived) {
-        this.onMessageReceived(data.session_token, data.message);
-      }
-      
-      // Dodaj wiadomość do lokalnego magazynu
-      this.storeMessage(data.session_token, data.message);
-    });
-    
-    // Obsługa aktualizacji sesji
-    window.wsHandler.on('session_update', (data) => {
-      console.log("Aktualizacja sesji:", data);
-      this.getActiveSessions();
-    });
-    
-    // Obsługa zaproszeń do znajomych
-    window.wsHandler.on('friend_request', (data) => {
-      console.log("Otrzymano zaproszenie do znajomych:", data);
-      
-      if (this.onFriendRequestReceived) {
-        this.onFriendRequestReceived(data);
-      }
-    });
-    
-    // Obsługa zmian statusu online
-    window.wsHandler.on('user_status_change', (data) => {
-      const userId = data.user_id;
-      const isOnline = data.is_online;
-      this.updateOnlineStatus(userId, isOnline);
-    });
-    
-    // Obsługa listy użytkowników online
-    window.wsHandler.on('online_users', (data) => {
-      this.onlineUsers = data.users || [];
-      
-      if (this.onOnlineStatusChanged) {
-        this.onOnlineStatusChanged(this.onlineUsers);
-      }
-    });
   }
 
   /**
@@ -201,8 +214,9 @@ class SecureSessionManager {
       return false;
     }
   }
+
 /**
-   * Inicjalizacja sesji czatu - NAPRAWIONA
+   * Inicjalizacja sesji czatu - ZAKTUALIZOWANA dla Socket.IO
    */
   async initSession(recipientId) {
     try {
@@ -293,7 +307,7 @@ class SecureSessionManager {
   }
 
   /**
-   * Pobieranie klucza sesji - NAPRAWIONA implementacja z UnifiedCrypto
+   * Pobieranie klucza sesji - ZAKTUALIZOWANA implementacja z UnifiedCrypto
    */
   async retrieveSessionKey(sessionToken) {
     try {
@@ -322,7 +336,7 @@ class SecureSessionManager {
         throw new Error(data.message || 'Błąd pobierania klucza sesji');
       }
       
-      // NAPRAWIONE: Używamy UnifiedCrypto zamiast starych modułów
+      // ZAKTUALIZOWANE: Używamy UnifiedCrypto zamiast starych modułów
       const sessionKeyBase64 = await window.unifiedCrypto.decryptSessionKey(data.encrypted_key);
       
       // Zapisz klucz sesji
@@ -352,7 +366,7 @@ class SecureSessionManager {
   }
 
   /**
-   * Wysyłanie wiadomości - NAPRAWIONA implementacja z UnifiedCrypto
+   * Wysyłanie wiadomości - ZAKTUALIZOWANA implementacja z Socket.IO i UnifiedCrypto
    */
   async sendMessage(sessionToken, content) {
     try {
@@ -367,7 +381,7 @@ class SecureSessionManager {
         throw new Error('Brak klucza sesji');
       }
       
-      // NAPRAWIONE: Używamy UnifiedCrypto do szyfrowania
+      // ZAKTUALIZOWANE: Używamy UnifiedCrypto do szyfrowania
       const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
       const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
       
@@ -439,7 +453,7 @@ class SecureSessionManager {
     };
   }
 
-/**
+  /**
    * Pobieranie listy znajomych
    */
   async fetchFriends() {
@@ -605,11 +619,11 @@ class SecureSessionManager {
   }
 
   /**
-   * Obsługuje wylogowanie użytkownika - NAPRAWIONA
+   * Obsługuje wylogowanie użytkownika - ZAKTUALIZOWANA
    */
   async logout() {
     try {
-      // NAPRAWIONE: Wyczyść klucze kryptograficzne
+      // ZAKTUALIZOWANE: Wyczyść klucze kryptograficzne
       if (window.unifiedCrypto) {
         window.unifiedCrypto.clearAllKeys();
       }
@@ -618,7 +632,7 @@ class SecureSessionManager {
       localStorage.clear();
       sessionStorage.clear();
       
-      // Rozłącz WebSocket
+      // Rozłącz Socket.IO
       if (window.wsHandler) {
         window.wsHandler.disconnect();
       }
