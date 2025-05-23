@@ -584,63 +584,171 @@ class ChatInterface {
    * Ładuje wiadomości dla sesji
    */
   async loadMessages(sessionToken) {
-    if (!this.sessionManager) return;
+  if (!this.sessionManager) {
+    console.error('❌ SessionManager nie jest dostępny');
+    return;
+  }
+  
+  if (this.messagesContainer) {
+    this.messagesContainer.innerHTML = '';
+  }
+  
+  try {
+    console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken);
     
-    if (this.messagesContainer) {
-      this.messagesContainer.innerHTML = '';
+    // NAPRAWIONE: Sprawdź dostępne metody w sessionManager
+    console.log('🔍 Dostępne metody sessionManager:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.sessionManager)));
+    
+    let result;
+    
+    // Spróbuj różne nazwy metod
+    if (typeof this.sessionManager.getLocalMessages === 'function') {
+      result = this.sessionManager.getLocalMessages(sessionToken);
+    } else if (typeof this.sessionManager.getMessagesForSession === 'function') {
+      result = this.sessionManager.getMessagesForSession(sessionToken);
+    } else if (typeof this.sessionManager.loadMessagesForSession === 'function') {
+      result = await this.sessionManager.loadMessagesForSession(sessionToken);
+    } else {
+      // Fallback: sprawdź bezpośrednio w messages object
+      console.log('⚠️ Brak metody getLocalMessages, sprawdzam bezpośrednio messages');
+      
+      if (this.sessionManager.messages && this.sessionManager.messages[sessionToken]) {
+        result = {
+          status: 'success',
+          messages: this.sessionManager.messages[sessionToken]
+        };
+      } else {
+        result = {
+          status: 'success',
+          messages: []
+        };
+      }
     }
     
-    try {
-      const result = this.sessionManager.getLocalMessages(sessionToken);
+    console.log('📨 Wynik ładowania wiadomości:', result);
+    
+    if (result && result.status === 'success') {
+      const messages = result.messages || [];
+      console.log(`📝 Ładuję ${messages.length} wiadomości`);
       
-      if (result.status === 'success') {
-        const messages = result.messages;
-        messages.forEach(message => this.addMessageToUI(message));
-        this.scrollToBottom();
-      }
-    } catch (error) {
-      console.error('❌ Błąd ładowania wiadomości:', error);
+      messages.forEach(message => {
+        console.log('💬 Dodaję wiadomość:', message);
+        this.addMessageToUI(message);
+      });
+      
+      this.scrollToBottom();
+    } else {
+      console.warn('⚠️ Brak wiadomości lub błąd:', result);
+    }
+  } catch (error) {
+    console.error('❌ Błąd ładowania wiadomości:', error);
+    console.error('❌ Stack trace:', error.stack);
+    
+    // Fallback: spróbuj załadować z IndexedDB bezpośrednio
+    try {
+      console.log('🔄 Próbuję załadować z IndexedDB...');
+      await this.loadMessagesFromIndexedDB(sessionToken);
+    } catch (dbError) {
+      console.error('❌ Błąd ładowania z IndexedDB:', dbError);
       this.showNotification('Błąd ładowania wiadomości', 'error');
     }
   }
+}
 
-  /**
-   * Dodaje wiadomość do UI
-   */
-  addMessageToUI(message) {
-    if (!this.messagesContainer) return;
-    
-    const messageElement = this.createMessageElement(message);
-    this.messagesContainer.appendChild(messageElement);
-    this.scrollToBottom();
+/**
+ * DODANA: Metoda fallback do ładowania z IndexedDB
+ */
+async loadMessagesFromIndexedDB(sessionToken) {
+  if (!this.sessionManager.db) {
+    console.error('❌ Baza IndexedDB nie jest dostępna');
+    return;
   }
   
-  /**
-   * Tworzy element wiadomości
-   */
-  createMessageElement(message) {
-    const messageDiv = document.createElement('div');
+  try {
+    const tx = this.sessionManager.db.transaction(['messages'], 'readonly');
+    const store = tx.objectStore('messages');
     
-    const isSent = message.sender_id === parseInt(this.currentUser.id) || message.is_mine;
-    messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
+    const messages = await new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const allMessages = request.result;
+        // Filtruj wiadomości dla tej sesji
+        const sessionMessages = allMessages.filter(msg => msg.sessionToken === sessionToken);
+        resolve(sessionMessages);
+      };
+      request.onerror = () => reject(request.error);
+    });
     
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-content';
-    contentDiv.textContent = message.content;
+    console.log(`📦 Załadowano ${messages.length} wiadomości z IndexedDB`);
     
-    const infoDiv = document.createElement('div');
-    infoDiv.className = 'message-info';
+    messages.forEach(message => {
+      this.addMessageToUI(message);
+    });
     
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'message-time';
-    timeSpan.textContent = this.formatTime(message.timestamp);
-    
-    infoDiv.appendChild(timeSpan);
-    messageDiv.appendChild(contentDiv);
-    messageDiv.appendChild(infoDiv);
-    
-    return messageDiv;
+    this.scrollToBottom();
+  } catch (error) {
+    console.error('❌ Błąd ładowania z IndexedDB:', error);
+    throw error;
   }
+}
+
+/**
+ * POPRAWIONA: Metoda displayNewMessage - obsługa przychodzących wiadomości
+ */
+displayNewMessage(sessionToken, message) {
+  console.log('🆕 Otrzymano nową wiadomość:', {
+    sessionToken,
+    message,
+    currentSession: this.currentSessionToken
+  });
+  
+  // Jeśli to aktualna sesja, wyświetl od razu
+  if (sessionToken === this.currentSessionToken) {
+    console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
+    this.addMessageToUI(message);
+  } else {
+    // Jeśli to inna sesja, pokaż powiadomienie
+    const session = this.sessions?.find(s => s.token === sessionToken);
+    if (session) {
+      console.log('🔔 Powiadomienie o wiadomości z innej sesji');
+      this.showNotification(`Nowa wiadomość od ${session.other_user.username}`, 'info');
+      
+      // Opcjonalnie: dodaj wskaźnik nieprzeczytanych wiadomości
+      this.updateUnreadIndicator(sessionToken);
+    }
+  }
+}
+
+/**
+ * DODANA: Aktualizacja wskaźnika nieprzeczytanych wiadomości
+ */
+updateUnreadIndicator(sessionToken) {
+  const friendItem = document.querySelector(`[data-session-token="${sessionToken}"]`);
+  if (friendItem) {
+    let badge = friendItem.querySelector('.unread-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'unread-badge';
+      badge.style.cssText = `
+        background: #ff4444;
+        color: white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        margin-left: auto;
+      `;
+      friendItem.appendChild(badge);
+    }
+    
+    const currentCount = parseInt(badge.textContent) || 0;
+    badge.textContent = currentCount + 1;
+    badge.style.display = 'flex';
+  }
+}
 
   /**
    * Formatuje czas wiadomości
