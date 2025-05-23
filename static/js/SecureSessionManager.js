@@ -1,5 +1,5 @@
 /**
- * SecureSessionManager - ZAKTUALIZOWANA wersja dla Socket.IO
+ * SecureSessionManager - POPRAWIONA wersja dla Socket.IO
  * Używa UnifiedCrypto i SocketIOHandler zamiast WebSocketHandler
  */
 class SecureSessionManager {
@@ -31,7 +31,7 @@ class SecureSessionManager {
   }
 
   /**
-   * Konfiguruje handlery dla SocketIOHandler
+   * POPRAWIONA: Konfiguruje handlery dla SocketIOHandler
    */
   setupSocketIOHandlers() {
     // Poczekaj na załadowanie SocketIOHandler
@@ -41,16 +41,38 @@ class SecureSessionManager {
         return;
       }
       
-      // Obsługa nowych wiadomości
+      // POPRAWIONA: Obsługa nowych wiadomości z debugowaniem
       window.wsHandler.on('new_message', (data) => {
-        console.log("Otrzymano nową wiadomość:", data);
+        console.log("🆕 [SOCKET] Otrzymano nową wiadomość:", data);
+        console.log("🆕 [SOCKET] Struktura danych:", {
+          hasSessionToken: !!data.session_token,
+          hasMessage: !!data.message,
+          messageContent: data.message?.content,
+          messageId: data.message?.id,
+          senderId: data.message?.sender_id
+        });
         
-        if (this.onMessageReceived) {
-          this.onMessageReceived(data.session_token, data.message);
+        try {
+          // Sprawdź czy to nie nasza własna wiadomość (echo)
+          if (data.message && data.message.sender_id && 
+              parseInt(data.message.sender_id) === parseInt(this.user.id)) {
+            console.log("↩️ To nasza własna wiadomość, pomijam");
+            return;
+          }
+          
+          // Wywołaj callback
+          if (this.onMessageReceived) {
+            this.onMessageReceived(data.session_token, data.message);
+          } else {
+            console.warn("⚠️ Brak callbacku onMessageReceived");
+          }
+          
+          // Dodaj do lokalnego magazynu
+          this.storeMessage(data.session_token, data.message);
+          
+        } catch (error) {
+          console.error("❌ Błąd przetwarzania wiadomości Socket.IO:", error);
         }
-        
-        // Dodaj wiadomość do lokalnego magazynu
-        this.storeMessage(data.session_token, data.message);
       });
       
       // Obsługa aktualizacji sesji
@@ -82,6 +104,29 @@ class SecureSessionManager {
         if (this.onOnlineStatusChanged) {
           this.onOnlineStatusChanged(this.onlineUsers);
         }
+      });
+      
+      // DODANE: Obsługa błędów Socket.IO
+      window.wsHandler.on('error', (error) => {
+        console.error("❌ [SOCKET] Błąd Socket.IO:", error);
+      });
+
+      // DODANE: Obsługa rozłączenia
+      window.wsHandler.on('disconnect', (reason) => {
+        console.warn("🔌 [SOCKET] Rozłączono:", reason);
+      });
+
+      // DODANE: Test połączenia
+      window.wsHandler.on('connect', () => {
+        console.log("✅ [SOCKET] Połączono - testowanie...");
+        
+        // Wyślij ping test
+        setTimeout(() => {
+          if (window.wsHandler.send) {
+            window.wsHandler.send('ping', { test: true });
+            console.log("🏓 Wysłano ping test");
+          }
+        }, 1000);
       });
       
       console.log("✅ Socket.IO handlers skonfigurowane");
@@ -121,7 +166,7 @@ class SecureSessionManager {
     }
   }
 
-  // Inicjalizuje bazę danych IndexedDB
+// Inicjalizuje bazę danych IndexedDB
   async initDatabase() {
     try {
       const request = indexedDB.open('SecureChatMessages', 1);
@@ -193,6 +238,18 @@ class SecureSessionManager {
       if (!this.messages[sessionToken]) {
         this.messages[sessionToken] = [];
       }
+      
+      // Sprawdź czy wiadomość już nie istnieje (unikaj duplikatów)
+      const exists = this.messages[sessionToken].find(m => 
+        m.id === message.id || 
+        (m.timestamp === message.timestamp && m.content === message.content && m.sender_id === message.sender_id)
+      );
+      
+      if (exists) {
+        console.log("📝 Wiadomość już istnieje, pomijam duplikat");
+        return true;
+      }
+      
       this.messages[sessionToken].push(message);
       
       // Zapisz do IndexedDB
@@ -208,10 +265,141 @@ class SecureSessionManager {
         request.onerror = () => reject(request.error);
       });
       
+      console.log("💾 Wiadomość zapisana:", message.content?.substring(0, 50) + "...");
       return true;
     } catch (error) {
       console.error('Błąd zapisywania wiadomości:', error);
       return false;
+    }
+  }
+
+  /**
+   * DODANA: Pobieranie lokalnych wiadomości z obsługą deszyfrowania
+   */
+  getLocalMessages(sessionToken) {
+    console.log('📥 getLocalMessages wywołane dla:', sessionToken);
+    console.log('💾 Dostępne wiadomości:', Object.keys(this.messages));
+    
+    if (!sessionToken) {
+      console.error('❌ Brak sessionToken');
+      return {
+        status: 'error',
+        message: 'Brak tokenu sesji',
+        messages: []
+      };
+    }
+    
+    // Sprawdź czy mamy wiadomości dla tej sesji
+    if (!this.messages[sessionToken]) {
+      console.log('📭 Brak wiadomości dla sesji:', sessionToken);
+      return {
+        status: 'success',
+        messages: []
+      };
+    }
+    
+    const messages = this.messages[sessionToken];
+    console.log(`📨 Znaleziono ${messages.length} wiadomości dla sesji ${sessionToken}`);
+    
+    // Posortuj wiadomości według czasu
+    const sortedMessages = messages.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeA - timeB;
+    });
+    
+    return {
+      status: 'success',
+      messages: sortedMessages
+    };
+  }
+
+  /**
+   * DODANA: Pobieranie i odszyfrowanie wiadomości z serwera
+   */
+  async fetchMessagesFromServer(sessionToken) {
+    try {
+      console.log('🌐 Pobieranie wiadomości z serwera dla:', sessionToken);
+      
+      const response = await fetch(`/api/messages/${sessionToken}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'Błąd pobierania wiadomości');
+      }
+      
+      // Odszyfruj wiadomości jeśli są zaszyfrowane
+      const decryptedMessages = [];
+      
+      for (const message of data.messages || []) {
+        try {
+          if (message.content && message.iv && window.unifiedCrypto) {
+            // Sprawdź czy mamy klucz sesji
+            const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+            if (sessionKeyBase64) {
+              const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+              const decryptedContent = await window.unifiedCrypto.decryptMessage(sessionKey, {
+                data: message.content,
+                iv: message.iv
+              });
+              
+              message.content = decryptedContent;
+            }
+          }
+          
+          decryptedMessages.push(message);
+        } catch (decryptError) {
+          console.error('❌ Błąd deszyfrowania wiadomości:', decryptError);
+          // Dodaj wiadomość z błędem deszyfrowania
+          decryptedMessages.push({
+            ...message,
+            content: '[Nie można odszyfrować wiadomości]',
+            decryption_error: true
+          });
+        }
+      }
+      
+      // Zapisz do lokalnej pamięci
+      if (!this.messages[sessionToken]) {
+        this.messages[sessionToken] = [];
+      }
+      
+      // Połącz z lokalnymi wiadomościami (unikaj duplikatów)
+      for (const message of decryptedMessages) {
+        const exists = this.messages[sessionToken].find(m => 
+          m.id === message.id || 
+          (m.timestamp === message.timestamp && m.content === message.content)
+        );
+        
+        if (!exists) {
+          this.messages[sessionToken].push(message);
+          // Zapisz też do IndexedDB
+          await this.storeMessage(sessionToken, message);
+        }
+      }
+      
+      console.log(`✅ Pobrano i odszyfrowano ${decryptedMessages.length} wiadomości`);
+      
+      return {
+        status: 'success',
+        messages: this.messages[sessionToken]
+      };
+      
+    } catch (error) {
+      console.error('❌ Błąd pobierania wiadomości z serwera:', error);
+      return {
+        status: 'error',
+        message: error.message,
+        messages: []
+      };
     }
   }
 
@@ -365,201 +553,7 @@ class SecureSessionManager {
     }
   }
 
-  /**
-   * Wysyłanie wiadomości - ZAKTUALIZOWANA implementacja z Socket.IO i UnifiedCrypto
-   */
-  async sendMessage(sessionToken, content) {
-  try {
-    console.log('🚀 [RAILWAY] Rozpoczynam wysyłanie wiadomości...');
-    
-    // Sprawdź UnifiedCrypto
-    if (!window.unifiedCrypto) {
-      throw new Error('UnifiedCrypto nie jest dostępny');
-    }
-
-    // Sprawdź klucz sesji
-    const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
-    if (!sessionKeyBase64) {
-      throw new Error('Brak klucza sesji');
-    }
-    
-    // Znajdź sesję
-    const session = this.activeSessions.find(s => s.token === sessionToken);
-    if (!session || !session.other_user?.user_id) {
-      throw new Error('Nie znaleziono sesji lub danych odbiorcy');
-    }
-    
-    console.log('✅ Sesja OK:', {
-      token: session.token,
-      recipient_id: session.other_user.user_id,
-      recipient_name: session.other_user.username
-    });
-    
-    // Szyfrowanie
-    const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
-    const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
-    
-    // RAILWAY: Konwersja do Base64 (Railway wymaga string, nie Buffer)
-    let encryptedContent, ivBase64;
-    
-    if (typeof encryptedData.data === 'string') {
-      encryptedContent = encryptedData.data;
-    } else {
-      // Konwertuj ArrayBuffer/Uint8Array na Base64
-      const bytes = encryptedData.data instanceof ArrayBuffer 
-        ? new Uint8Array(encryptedData.data)
-        : encryptedData.data;
-      encryptedContent = btoa(String.fromCharCode.apply(null, bytes));
-    }
-    
-    if (typeof encryptedData.iv === 'string') {
-      ivBase64 = encryptedData.iv;
-    } else {
-      const ivBytes = encryptedData.iv instanceof ArrayBuffer 
-        ? new Uint8Array(encryptedData.iv)
-        : encryptedData.iv;
-      ivBase64 = btoa(String.fromCharCode.apply(null, ivBytes));
-    }
-    
-    console.log('📊 Dane do wysłania:', {
-      session_token: sessionToken,
-      recipient_id: session.other_user.user_id,
-      content_length: encryptedContent.length,
-      iv_length: ivBase64.length
-    });
-    
-    // RAILWAY: Standardowy format Flask
-    const payload = {
-      session_token: sessionToken,
-      recipient_id: parseInt(session.other_user.user_id), // Railway: zawsze INT
-      content: encryptedContent,
-      iv: ivBase64
-    };
-    
-    // RAILWAY: Specjalne headery
-    const headers = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-      'Cache-Control': 'no-cache'
-    };
-    
-    console.log('📤 Wysyłanie do Railway...');
-    
-    const response = await fetch('/api/message/send', {
-      method: 'POST',
-      headers: headers,
-      credentials: 'same-origin',
-      body: JSON.stringify(payload)
-    });
-    
-    console.log('📡 Odpowiedź Railway:', response.status, response.statusText);
-    
-    // Railway: Szczegółowa obsługa błędów
-    if (!response.ok) {
-      let errorMessage = `HTTP ${response.status}`;
-      let errorDetails = null;
-      
-      try {
-        const responseText = await response.text();
-        console.error('❌ [RAILWAY] Błąd response:', responseText);
-        
-        // Próbuj sparsować JSON
-        try {
-          errorDetails = JSON.parse(responseText);
-          errorMessage = errorDetails.message || errorDetails.error || errorMessage;
-        } catch (e) {
-          // Jeśli nie JSON, użyj tekstu
-          errorMessage = responseText.length > 100 
-            ? responseText.substring(0, 100) + '...' 
-            : responseText;
-        }
-      } catch (e) {
-        console.error('❌ Nie można odczytać odpowiedzi błędu');
-      }
-      
-      // RAILWAY: Specjalne błędy
-      if (response.status === 400) {
-        console.error('❌ [RAILWAY] Błąd 400 - sprawdź format danych:', payload);
-        
-        // Dla Railway, spróbuj alternatywny format
-        console.log('🔄 Próbuję alternatywny format...');
-        
-        const altPayload = {
-          session_token: sessionToken,
-          recipient_id: parseInt(session.other_user.user_id),
-          encrypted_content: encryptedContent,  // Alternatywna nazwa
-          iv: ivBase64
-        };
-        
-        const altResponse = await fetch('/api/message/send', {
-          method: 'POST',
-          headers: headers,
-          credentials: 'same-origin',
-          body: JSON.stringify(altPayload)
-        });
-        
-        if (altResponse.ok) {
-          console.log('✅ Alternatywny format zadziałał!');
-          const data = await altResponse.json();
-          
-          // Dodaj do lokalnego stanu
-          const newMessage = {
-            id: data.message?.id || Date.now().toString(),
-            sender_id: parseInt(this.user.id),
-            content: content,
-            timestamp: data.message?.timestamp || new Date().toISOString(),
-            is_mine: true
-          };
-          
-          await this.storeMessage(sessionToken, newMessage);
-          
-          return {
-            status: 'success',
-            message: 'Wiadomość wysłana (format alternatywny)',
-            messageData: newMessage
-          };
-        }
-      }
-      
-      throw new Error(`Railway błąd: ${errorMessage}`);
-    }
-    
-    const data = await response.json();
-    console.log('✅ [RAILWAY] Sukces:', data);
-    
-    if (data.status !== 'success') {
-      throw new Error(data.message || 'Railway API zwróciło błąd');
-    }
-    
-    // Dodaj do lokalnego stanu
-    const newMessage = {
-      id: data.message?.id || Date.now().toString(),
-      sender_id: parseInt(this.user.id),
-      content: content,
-      timestamp: data.message?.timestamp || new Date().toISOString(),
-      is_mine: true
-    };
-    
-    await this.storeMessage(sessionToken, newMessage);
-    
-    console.log('✅ [RAILWAY] Wiadomość wysłana pomyślnie!');
-    
-    return {
-      status: 'success',
-      message: 'Wiadomość wysłana',
-      messageData: newMessage
-    };
-    
-  } catch (error) {
-    console.error('❌ [RAILWAY] Błąd wysyłania:', error);
-    return {
-      status: 'error',
-      message: `Railway błąd: ${error.message}`
-    };
-  }
-}
-  /**
+/**
    * Pobieranie listy znajomych
    */
   async fetchFriends() {
@@ -725,6 +719,48 @@ class SecureSessionManager {
   }
 
   /**
+   * DODANA: Odszyfrowanie i zapis przychodzących wiadomości
+   */
+  async decryptAndStoreMessage(sessionToken, message) {
+    try {
+      console.log('🔐 Próba odszyfrowania wiadomości:', {
+        sessionToken,
+        hasContent: !!message.content,
+        hasIv: !!message.iv
+      });
+      
+      // Jeśli wiadomość jest zaszyfrowana i mamy klucz
+      if (message.content && message.iv && window.unifiedCrypto) {
+        const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+        
+        if (sessionKeyBase64) {
+          const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+          message.content = await window.unifiedCrypto.decryptMessage(sessionKey, {
+            data: message.content,
+            iv: message.iv
+          });
+          console.log('✅ Wiadomość odszyfrowana:', message.content?.substring(0, 50) + "...");
+        } else {
+          console.warn('⚠️ Brak klucza sesji dla:', sessionToken);
+        }
+      }
+      
+      // Zapisz do lokalnej pamięci i IndexedDB
+      await this.storeMessage(sessionToken, message);
+      
+      console.log('✅ Wiadomość odszyfrowana i zapisana');
+      
+    } catch (error) {
+      console.error('❌ Błąd deszyfrowania wiadomości:', error);
+      
+      // Zapisz z informacją o błędzie
+      message.content = '[Nie można odszyfrować]';
+      message.decryption_error = true;
+      await this.storeMessage(sessionToken, message);
+    }
+  }
+
+  /**
    * Obsługuje wylogowanie użytkownika - ZAKTUALIZOWANA
    */
   async logout() {
@@ -768,4 +804,3 @@ class SecureSessionManager {
 
 // Inicjalizacja globalnego SessionManager
 window.sessionManager = new SecureSessionManager();
-
