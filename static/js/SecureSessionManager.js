@@ -370,176 +370,169 @@ class SecureSessionManager {
    */
   async sendMessage(sessionToken, content) {
   try {
-    console.log('🚀 Rozpoczynam wysyłanie wiadomości...');
+    console.log('🚀 [RAILWAY] Rozpoczynam wysyłanie wiadomości...');
     
-    // Sprawdź czy UnifiedCrypto jest dostępny
+    // Sprawdź UnifiedCrypto
     if (!window.unifiedCrypto) {
       throw new Error('UnifiedCrypto nie jest dostępny');
     }
 
-    // Sprawdź czy mamy klucz sesji
+    // Sprawdź klucz sesji
     const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
     if (!sessionKeyBase64) {
       throw new Error('Brak klucza sesji');
     }
     
-    // KRYTYCZNE: Znajdź sesję aby pobrać recipient_id
+    // Znajdź sesję
     const session = this.activeSessions.find(s => s.token === sessionToken);
-    if (!session) {
-      console.error('❌ Nie znaleziono sesji o tokenie:', sessionToken);
-      console.error('Dostępne sesje:', this.activeSessions.map(s => s.token));
-      throw new Error('Nie znaleziono sesji');
+    if (!session || !session.other_user?.user_id) {
+      throw new Error('Nie znaleziono sesji lub danych odbiorcy');
     }
     
-    if (!session.other_user || !session.other_user.user_id) {
-      console.error('❌ Sesja nie ma danych other_user:', session);
-      throw new Error('Brak danych odbiorcy w sesji');
-    }
-    
-    console.log('✅ Sesja znaleziona:', {
+    console.log('✅ Sesja OK:', {
       token: session.token,
       recipient_id: session.other_user.user_id,
       recipient_name: session.other_user.username
     });
     
-    // Szyfrowanie wiadomości
+    // Szyfrowanie
     const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
     const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
     
-    // KRYTYCZNE: Upewnij się o prawidłowym formacie danych
+    // RAILWAY: Konwersja do Base64 (Railway wymaga string, nie Buffer)
     let encryptedContent, ivBase64;
     
-    try {
-      // Sprawdź typ danych i konwertuj na Base64
-      if (typeof encryptedData.data === 'string') {
-        encryptedContent = encryptedData.data;
-      } else if (encryptedData.data instanceof ArrayBuffer) {
-        encryptedContent = btoa(String.fromCharCode(...new Uint8Array(encryptedData.data)));
-      } else if (encryptedData.data instanceof Uint8Array) {
-        encryptedContent = btoa(String.fromCharCode(...encryptedData.data));
-      } else {
-        throw new Error('Nieobsługiwany typ danych szyfrowania: ' + typeof encryptedData.data);
-      }
-      
-      if (typeof encryptedData.iv === 'string') {
-        ivBase64 = encryptedData.iv;
-      } else if (encryptedData.iv instanceof ArrayBuffer) {
-        ivBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedData.iv)));
-      } else if (encryptedData.iv instanceof Uint8Array) {
-        ivBase64 = btoa(String.fromCharCode(...encryptedData.iv));
-      } else {
-        throw new Error('Nieobsługiwany typ IV: ' + typeof encryptedData.iv);
-      }
-    } catch (conversionError) {
-      console.error('❌ Błąd konwersji danych:', conversionError);
-      throw new Error('Błąd przetwarzania zaszyfrowanych danych: ' + conversionError.message);
+    if (typeof encryptedData.data === 'string') {
+      encryptedContent = encryptedData.data;
+    } else {
+      // Konwertuj ArrayBuffer/Uint8Array na Base64
+      const bytes = encryptedData.data instanceof ArrayBuffer 
+        ? new Uint8Array(encryptedData.data)
+        : encryptedData.data;
+      encryptedContent = btoa(String.fromCharCode.apply(null, bytes));
     }
     
-    // Przygotuj payload - TESTUJ różne warianty
-    const basePayload = {
-      session_token: sessionToken,
-      recipient_id: session.other_user.user_id,
-      content: encryptedContent,
-      iv: ivBase64
-    };
+    if (typeof encryptedData.iv === 'string') {
+      ivBase64 = encryptedData.iv;
+    } else {
+      const ivBytes = encryptedData.iv instanceof ArrayBuffer 
+        ? new Uint8Array(encryptedData.iv)
+        : encryptedData.iv;
+      ivBase64 = btoa(String.fromCharCode.apply(null, ivBytes));
+    }
     
-    // Wariant 1: Podstawowy payload
-    console.log('📤 Próba wysłania wiadomości - wariant podstawowy');
-    console.log('Payload:', {
+    console.log('📊 Dane do wysłania:', {
       session_token: sessionToken,
       recipient_id: session.other_user.user_id,
       content_length: encryptedContent.length,
       iv_length: ivBase64.length
     });
     
-    let response = await fetch('/api/message/send', {
+    // RAILWAY: Standardowy format Flask
+    const payload = {
+      session_token: sessionToken,
+      recipient_id: parseInt(session.other_user.user_id), // Railway: zawsze INT
+      content: encryptedContent,
+      iv: ivBase64
+    };
+    
+    // RAILWAY: Specjalne headery
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Cache-Control': 'no-cache'
+    };
+    
+    console.log('📤 Wysyłanie do Railway...');
+    
+    const response = await fetch('/api/message/send', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
+      headers: headers,
       credentials: 'same-origin',
-      body: JSON.stringify(basePayload)
+      body: JSON.stringify(payload)
     });
     
-    // Jeśli podstawowy nie zadziała, próbuj inne warianty
-    if (!response.ok) {
-      console.log('❌ Podstawowy payload nie zadziałał, próbuję alternatywne...');
-      
-      // Wariant 2: Z encrypted_content zamiast content
-      const altPayload2 = {
-        session_token: sessionToken,
-        recipient_id: session.other_user.user_id,
-        encrypted_content: encryptedContent,
-        iv: ivBase64
-      };
-      
-      console.log('📤 Próba wysłania - wariant z encrypted_content');
-      response = await fetch('/api/message/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify(altPayload2)
-      });
-      
-      if (!response.ok) {
-        // Wariant 3: Z message_id
-        const altPayload3 = {
-          session_token: sessionToken,
-          recipient_id: session.other_user.user_id,
-          content: encryptedContent,
-          iv: ivBase64,
-          message_id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9)
-        };
-        
-        console.log('📤 Próba wysłania - wariant z message_id');
-        response = await fetch('/api/message/send', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-          },
-          credentials: 'same-origin',
-          body: JSON.stringify(altPayload3)
-        });
-      }
-    }
+    console.log('📡 Odpowiedź Railway:', response.status, response.statusText);
     
-    // Szczegółowa obsługa błędów
+    // Railway: Szczegółowa obsługa błędów
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}`;
       let errorDetails = null;
       
       try {
         const responseText = await response.text();
-        console.error('❌ Odpowiedź serwera (tekst):', responseText);
+        console.error('❌ [RAILWAY] Błąd response:', responseText);
         
+        // Próbuj sparsować JSON
         try {
           errorDetails = JSON.parse(responseText);
           errorMessage = errorDetails.message || errorDetails.error || errorMessage;
-          console.error('❌ Szczegóły błędu serwera:', errorDetails);
-        } catch (parseError) {
-          console.error('❌ Nie można sparsować odpowiedzi jako JSON');
-          errorMessage = responseText || errorMessage;
+        } catch (e) {
+          // Jeśli nie JSON, użyj tekstu
+          errorMessage = responseText.length > 100 
+            ? responseText.substring(0, 100) + '...' 
+            : responseText;
         }
-      } catch (readError) {
-        console.error('❌ Nie można odczytać odpowiedzi:', readError);
+      } catch (e) {
+        console.error('❌ Nie można odczytać odpowiedzi błędu');
       }
       
-      throw new Error(`Błąd wysyłania wiadomości: ${errorMessage}`);
+      // RAILWAY: Specjalne błędy
+      if (response.status === 400) {
+        console.error('❌ [RAILWAY] Błąd 400 - sprawdź format danych:', payload);
+        
+        // Dla Railway, spróbuj alternatywny format
+        console.log('🔄 Próbuję alternatywny format...');
+        
+        const altPayload = {
+          session_token: sessionToken,
+          recipient_id: parseInt(session.other_user.user_id),
+          encrypted_content: encryptedContent,  // Alternatywna nazwa
+          iv: ivBase64
+        };
+        
+        const altResponse = await fetch('/api/message/send', {
+          method: 'POST',
+          headers: headers,
+          credentials: 'same-origin',
+          body: JSON.stringify(altPayload)
+        });
+        
+        if (altResponse.ok) {
+          console.log('✅ Alternatywny format zadziałał!');
+          const data = await altResponse.json();
+          
+          // Dodaj do lokalnego stanu
+          const newMessage = {
+            id: data.message?.id || Date.now().toString(),
+            sender_id: parseInt(this.user.id),
+            content: content,
+            timestamp: data.message?.timestamp || new Date().toISOString(),
+            is_mine: true
+          };
+          
+          await this.storeMessage(sessionToken, newMessage);
+          
+          return {
+            status: 'success',
+            message: 'Wiadomość wysłana (format alternatywny)',
+            messageData: newMessage
+          };
+        }
+      }
+      
+      throw new Error(`Railway błąd: ${errorMessage}`);
     }
     
     const data = await response.json();
-    console.log('✅ Odpowiedź serwera:', data);
+    console.log('✅ [RAILWAY] Sukces:', data);
     
     if (data.status !== 'success') {
-      throw new Error(data.message || 'Błąd wysyłania wiadomości');
+      throw new Error(data.message || 'Railway API zwróciło błąd');
     }
     
-    // Dodaj wiadomość do lokalnego stanu
+    // Dodaj do lokalnego stanu
     const newMessage = {
       id: data.message?.id || Date.now().toString(),
       sender_id: parseInt(this.user.id),
@@ -548,21 +541,21 @@ class SecureSessionManager {
       is_mine: true
     };
     
-    // Zapisz lokalnie
     await this.storeMessage(sessionToken, newMessage);
     
-    console.log('✅ Wiadomość wysłana pomyślnie!');
+    console.log('✅ [RAILWAY] Wiadomość wysłana pomyślnie!');
     
     return {
       status: 'success',
       message: 'Wiadomość wysłana',
       messageData: newMessage
     };
+    
   } catch (error) {
-    console.error('❌ Błąd wysyłania wiadomości:', error);
+    console.error('❌ [RAILWAY] Błąd wysyłania:', error);
     return {
       status: 'error',
-      message: error.message
+      message: `Railway błąd: ${error.message}`
     };
   }
 }
