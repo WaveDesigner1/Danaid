@@ -553,6 +553,149 @@ class SecureSessionManager {
     }
   }
 
+  async sendMessage(sessionToken, content) {
+    try {
+      console.log('🚀 [SENDMESSAGE] Rozpoczynam wysyłanie wiadomości...');
+      
+      // Sprawdź UnifiedCrypto
+      if (!window.unifiedCrypto) {
+        throw new Error('UnifiedCrypto nie jest dostępny');
+      }
+
+      // Sprawdź klucz sesji
+      const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+      if (!sessionKeyBase64) {
+        throw new Error('Brak klucza sesji');
+      }
+      
+      // Znajdź sesję
+      const session = this.activeSessions.find(s => s.token === sessionToken);
+      if (!session || !session.other_user?.user_id) {
+        throw new Error('Nie znaleziono sesji lub danych odbiorcy');
+      }
+      
+      console.log('✅ Sesja OK:', {
+        token: session.token,
+        recipient_id: session.other_user.user_id,
+        recipient_name: session.other_user.username
+      });
+      
+      // Szyfrowanie
+      const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+      const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
+      
+      // Konwersja do Base64
+      let encryptedContent, ivBase64;
+      
+      if (typeof encryptedData.data === 'string') {
+        encryptedContent = encryptedData.data;
+      } else {
+        const bytes = encryptedData.data instanceof ArrayBuffer 
+          ? new Uint8Array(encryptedData.data)
+          : encryptedData.data;
+        encryptedContent = btoa(String.fromCharCode.apply(null, bytes));
+      }
+      
+      if (typeof encryptedData.iv === 'string') {
+        ivBase64 = encryptedData.iv;
+      } else {
+        const ivBytes = encryptedData.iv instanceof ArrayBuffer 
+          ? new Uint8Array(encryptedData.iv)
+          : encryptedData.iv;
+        ivBase64 = btoa(String.fromCharCode.apply(null, ivBytes));
+      }
+      
+      console.log('📊 Dane do wysłania:', {
+        session_token: sessionToken,
+        recipient_id: session.other_user.user_id,
+        content_length: encryptedContent.length,
+        iv_length: ivBase64.length
+      });
+      
+      // Payload dla Railway
+      const payload = {
+        session_token: sessionToken,
+        recipient_id: parseInt(session.other_user.user_id),
+        content: encryptedContent,
+        iv: ivBase64
+      };
+      
+      // Headers
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Cache-Control': 'no-cache'
+      };
+      
+      console.log('📤 Wysyłanie wiadomości...');
+      
+      const response = await fetch('/api/message/send', {
+        method: 'POST',
+        headers: headers,
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      });
+      
+      console.log('📡 Odpowiedź serwera:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}`;
+        
+        try {
+          const responseText = await response.text();
+          console.error('❌ Błąd response:', responseText);
+          
+          try {
+            const errorDetails = JSON.parse(responseText);
+            errorMessage = errorDetails.message || errorDetails.error || errorMessage;
+          } catch (e) {
+            errorMessage = responseText.length > 100 
+              ? responseText.substring(0, 100) + '...' 
+              : responseText;
+          }
+        } catch (e) {
+          console.error('❌ Nie można odczytać odpowiedzi błędu');
+        }
+        
+        throw new Error(`Błąd serwera: ${errorMessage}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Sukces:', data);
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'API zwróciło błąd');
+      }
+      
+      // Dodaj do lokalnego stanu
+      const newMessage = {
+        id: data.message?.id || Date.now().toString(),
+        sender_id: parseInt(this.user.id),
+        content: content,
+        timestamp: data.message?.timestamp || new Date().toISOString(),
+        is_mine: true
+      };
+      
+      await this.storeMessage(sessionToken, newMessage);
+      
+      console.log('✅ Wiadomość wysłana i zapisana lokalnie!');
+      
+      return {
+        status: 'success',
+        message: 'Wiadomość wysłana',
+        messageData: newMessage
+      };
+      
+    } catch (error) {
+      console.error('❌ Błąd wysyłania wiadomości:', error);
+      return {
+        status: 'error',
+        message: error.message
+      };
+    }
+  }
+
 /**
    * Pobieranie listy znajomych
    */
