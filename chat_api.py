@@ -46,72 +46,6 @@ def get_user_info(user_id):
         }
     })
 
-@chat_api.route('/api/polling/messages', methods=['GET'])
-@login_required
-def polling_messages():
-    """Endpoint fallback do odbierania wiadomości poprzez polling."""
-    try:
-        # Pobierz ostatnie znane ID wiadomości
-        last_id = request.args.get('last_id', 0)
-        try:
-            last_id = int(last_id)
-        except ValueError:
-            last_id = 0
-        
-        # Znajdź aktywne sesje użytkownika
-        active_sessions = ChatSession.query.filter(
-            ((ChatSession.initiator_id == current_user.id) | (ChatSession.recipient_id == current_user.id)),
-            ChatSession.is_active == True,
-            ChatSession.expires_at > datetime.datetime.utcnow()
-        ).all()
-        
-        # IDs sesji
-        session_ids = [session.id for session in active_sessions]
-        
-        # Pobierz nowe wiadomości
-        new_messages = Message.query.filter(
-            Message.session_id.in_(session_ids),
-            Message.id > last_id,
-            Message.sender_id != current_user.id,
-            Message.read == False
-        ).order_by(Message.id).all()
-        
-        # Dane wiadomości do zwrócenia
-        messages = []
-        max_id = last_id
-        
-        for msg in new_messages:
-            # Znajdź sesję dla tej wiadomości
-            session = next((s for s in active_sessions if s.id == msg.session_id), None)
-            if session:
-                # Zbuduj informację o wiadomości
-                max_id = max(max_id, msg.id)
-                messages.append({
-                    'type': 'new_message',
-                    'session_token': session.session_token,
-                    'message': {
-                        'id': msg.id,
-                        'sender_id': msg.sender_id,
-                        'content': msg.content,
-                        'iv': msg.iv,
-                        'timestamp': msg.timestamp.isoformat(),
-                        'is_mine': False
-                    }
-                })
-        
-        return jsonify({
-            'status': 'success',
-            'messages': messages,
-            'last_id': max_id
-        })
-    
-    except Exception as e:
-        logger.error(f"Błąd pollingu wiadomości: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
 @chat_api.route('/api/users', methods=['GET'])
 @login_required
 def get_users():
@@ -700,54 +634,8 @@ def get_active_sessions():
         logger.error(f"Błąd pobierania aktywnych sesji: {e}")
         return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
 
-# Metoda rozszerzająca klasę ChatSession
-def refresh_session(self):
-    """Odświeża sesję czatu"""
-    self.last_activity = datetime.datetime.utcnow()
-    self.expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
-    db.session.commit()
-    return self
+# === ZNAJOMI ===
 
-# Metoda tworząca nową sesję
-def create_session(initiator_id, recipient_id):
-    """Tworzy nową sesję czatu między dwoma użytkownikami"""
-    import secrets
-    import string
-    
-    # Generuj token sesji
-    session_token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
-    expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
-    
-    new_session = ChatSession(
-        session_token=session_token,
-        initiator_id=initiator_id,
-        recipient_id=recipient_id,
-        created_at=datetime.datetime.utcnow(),
-        last_activity=datetime.datetime.utcnow(),
-        expires_at=expires_at,
-        is_active=True
-    )
-    
-    db.session.add(new_session)
-    db.session.commit()
-    
-    return new_session
-
-# Metoda pobierająca aktywne sesje
-def get_active_sessions_for_user(user_id):
-    """Pobiera aktywne sesje czatu dla użytkownika"""
-    return ChatSession.query.filter(
-        ((ChatSession.initiator_id == user_id) | (ChatSession.recipient_id == user_id)),
-        ChatSession.is_active == True,
-        ChatSession.expires_at > datetime.datetime.utcnow()
-    ).all()
-
-# Dodaj metody do klasy ChatSession
-ChatSession.refresh_session = refresh_session
-ChatSession.create_session = staticmethod(create_session)
-ChatSession.get_active_sessions = staticmethod(get_active_sessions_for_user)
-
-# Nowy endpoint do pobierania znajomych
 @chat_api.route('/api/friends', methods=['GET'])
 @login_required
 def get_friends():
@@ -778,7 +666,6 @@ def get_friends():
         logger.error(f"Błąd pobierania znajomych: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# Endpoint dla zaproszeń do znajomych
 @chat_api.route('/api/friend_requests', methods=['POST'])
 @login_required
 def send_friend_request():
@@ -1032,3 +919,72 @@ def reject_friend_request(request_id):
             'status': 'error',
             'message': f'Błąd podczas odrzucania zaproszenia: {str(e)}'
         }), 500
+
+# === POLLING FALLBACK ===
+
+@chat_api.route('/api/polling/messages', methods=['GET'])
+@login_required
+def polling_messages():
+    """Endpoint fallback do odbierania wiadomości poprzez polling."""
+    try:
+        # Pobierz ostatnie znane ID wiadomości
+        last_id = request.args.get('last_id', 0)
+        try:
+            last_id = int(last_id)
+        except ValueError:
+            last_id = 0
+        
+        # Znajdź aktywne sesje użytkownika
+        active_sessions = ChatSession.query.filter(
+            ((ChatSession.initiator_id == current_user.id) | (ChatSession.recipient_id == current_user.id)),
+            ChatSession.is_active == True,
+            ChatSession.expires_at > datetime.datetime.utcnow()
+        ).all()
+        
+        # IDs sesji
+        session_ids = [session.id for session in active_sessions]
+        
+        # Pobierz nowe wiadomości
+        new_messages = Message.query.filter(
+            Message.session_id.in_(session_ids),
+            Message.id > last_id,
+            Message.sender_id != current_user.id,
+            Message.read == False
+        ).order_by(Message.id).all()
+        
+        # Dane wiadomości do zwrócenia
+        messages = []
+        max_id = last_id
+        
+        for msg in new_messages:
+            # Znajdź sesję dla tej wiadomości
+            session = next((s for s in active_sessions if s.id == msg.session_id), None)
+            if session:
+                # Zbuduj informację o wiadomości
+                max_id = max(max_id, msg.id)
+                messages.append({
+                    'type': 'new_message',
+                    'session_token': session.session_token,
+                    'message': {
+                        'id': msg.id,
+                        'sender_id': msg.sender_id,
+                        'content': msg.content,
+                        'iv': msg.iv,
+                        'timestamp': msg.timestamp.isoformat(),
+                        'is_mine': False
+                    }
+                })
+        
+        return jsonify({
+            'status': 'success',
+            'messages': messages,
+            'last_id': max_id
+        })
+    
+    except Exception as e:
+        logger.error(f"Błąd pollingu wiadomości: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
