@@ -1,6 +1,6 @@
 /**
- * SocketIOHandler - Obsługa połączeń Socket.IO dla Railway
- * Zastępuje WebSocketHandler.js
+ * SocketIOHandler - NAPRAWIONA obsługa połączeń Socket.IO dla Railway
+ * Naprawiono problem z HTTPS/WSS
  */
 class SocketIOHandler {
   constructor() {
@@ -23,7 +23,7 @@ class SocketIOHandler {
   }
   
   /**
-   * Łączy się z serwerem Socket.IO
+   * Łączy się z serwerem Socket.IO - NAPRAWIONE dla HTTPS
    */
   async connect() {
     if (this.connectionAttempts >= this.maxConnectionAttempts) {
@@ -50,7 +50,7 @@ class SocketIOHandler {
         return false;
       }
       
-      // Utwórz połączenie Socket.IO
+      // NAPRAWIONE: Utwórz połączenie Socket.IO z prawidłowym protokołem
       this.socket = io(config.socketUrl, {
         path: config.path || '/socket.io/',
         transports: ['websocket', 'polling'], // Fallback na polling
@@ -59,7 +59,10 @@ class SocketIOHandler {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionAttempts: 5,
-        timeout: 20000
+        timeout: 20000,
+        // NAPRAWIONE: Wymuś bezpieczne połączenie dla HTTPS
+        secure: window.location.protocol === 'https:',
+        forceNew: false
       });
       
       // Skonfiguruj handlery zdarzeń
@@ -74,22 +77,30 @@ class SocketIOHandler {
   }
   
   /**
-   * Pobiera konfigurację Socket.IO z serwera
+   * Pobiera konfigurację Socket.IO z serwera - NAPRAWIONE
    */
   async getSocketConfig() {
     try {
       const response = await fetch('/api/websocket/config');
       if (response.ok) {
-        return await response.json();
+        const config = await response.json();
+        
+        // NAPRAWIONE: Upewnij się, że używamy prawidłowego protokołu
+        if (config && config.socketUrl) {
+          // Jeśli strona jest na HTTPS, upewnij się że Socket.IO też używa HTTPS
+          if (window.location.protocol === 'https:' && config.socketUrl.startsWith('http:')) {
+            config.socketUrl = config.socketUrl.replace('http:', 'https:');
+          }
+          return config;
+        }
       }
     } catch (e) {
       console.warn('Nie udało się pobrać konfiguracji Socket.IO, używam domyślnej');
     }
     
-    // Domyślna konfiguracja
-    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    // NAPRAWIONA domyślna konfiguracja - używa tego samego protokołu co strona
     return {
-      socketUrl: `${protocol}//${window.location.host}`,
+      socketUrl: `${window.location.protocol}//${window.location.host}`,
       path: '/socket.io/'
     };
   }
@@ -132,6 +143,11 @@ class SocketIOHandler {
     this.socket.on('connect_error', (error) => {
       console.error('❌ Błąd połączenia Socket.IO:', error);
       this.isConnected = false;
+      
+      // NAPRAWIONE: Lepsze zarządzanie błędami połączenia
+      if (error.message && error.message.includes('Mixed Content')) {
+        console.error('🚨 Problem z Mixed Content - sprawdź konfigurację HTTPS/WSS');
+      }
     });
     
     // Potwierdzenie połączenia
