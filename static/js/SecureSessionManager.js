@@ -1,5 +1,6 @@
 /**
- * SecureSessionManager - Ujednolicona implementacja zarządzania sesją
+ * SecureSessionManager - NAPRAWIONA wersja zarządzania sesją
+ * Używa UnifiedCrypto zamiast starych modułów
  */
 class SecureSessionManager {
   constructor() {
@@ -30,7 +31,7 @@ class SecureSessionManager {
   }
 
   /**
-   * Konfiguruje handlery untuk WebSocketHandler
+   * Konfiguruje handlery dla WebSocketHandler
    */
   setupWebSocketHandlers() {
     if (!window.wsHandler) {
@@ -107,7 +108,7 @@ class SecureSessionManager {
     }
   }
 
-  // Inicjalizuje bazę danych
+  // Inicjalizuje bazę danych IndexedDB
   async initDatabase() {
     try {
       const request = indexedDB.open('SecureChatMessages', 1);
@@ -116,6 +117,8 @@ class SecureSessionManager {
         const db = event.target.result;
         if (!db.objectStoreNames.contains('messages')) {
           db.createObjectStore('messages', { keyPath: 'id', autoIncrement: true });
+        }
+        if (!db.objectStoreNames.contains('sessions')) {
           db.createObjectStore('sessions', { keyPath: 'token' });
         }
       };
@@ -134,7 +137,7 @@ class SecureSessionManager {
     }
   }
 
-// Pobieranie wiadomości z lokalnego magazynu
+  // Pobieranie wiadomości z lokalnego magazynu
   async loadMessagesFromStorage() {
     if (!this.db) {
       console.error("Baza danych nie jest dostępna");
@@ -198,9 +201,8 @@ class SecureSessionManager {
       return false;
     }
   }
-
-  /**
-   * Inicjalizacja sesji czatu
+/**
+   * Inicjalizacja sesji czatu - NAPRAWIONA
    */
   async initSession(recipientId) {
     try {
@@ -289,11 +291,22 @@ class SecureSessionManager {
       };
     }
   }
+
   /**
-   * Pobieranie klucza sesji
+   * Pobieranie klucza sesji - NAPRAWIONA implementacja z UnifiedCrypto
    */
   async retrieveSessionKey(sessionToken) {
     try {
+      // Sprawdź czy UnifiedCrypto jest dostępny
+      if (!window.unifiedCrypto) {
+        throw new Error('UnifiedCrypto nie jest dostępny');
+      }
+
+      // Sprawdź czy mamy klucz prywatny
+      if (!window.unifiedCrypto.hasPrivateKey()) {
+        throw new Error('Brak klucza prywatnego');
+      }
+
       const response = await fetch(`/api/session/${sessionToken}/key`, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
         credentials: 'same-origin'
@@ -309,37 +322,11 @@ class SecureSessionManager {
         throw new Error(data.message || 'Błąd pobierania klucza sesji');
       }
       
-      // Import klucza prywatnego
-      const privateKeyPEM = localStorage.getItem('private_key_pem');
-      if (!privateKeyPEM) {
-        throw new Error('Brak klucza prywatnego w localStorage');
-      }
+      // NAPRAWIONE: Używamy UnifiedCrypto zamiast starych modułów
+      const sessionKeyBase64 = await window.unifiedCrypto.decryptSessionKey(data.encrypted_key);
       
-      // Importuj klucz prywatny
-      const privateKey = await window.crypto.subtle.importKey(
-        "pkcs8",
-        this._pemToArrayBuffer(privateKeyPEM),
-        {
-          name: "RSA-OAEP",
-          hash: "SHA-256"
-        },
-        false,
-        ["decrypt"]
-      );
-      
-      // Odszyfruj klucz sesji
-      const encryptedKey = this._base64ToArrayBuffer(data.encrypted_key);
-      const sessionKeyBuffer = await window.crypto.subtle.decrypt(
-        {
-          name: "RSA-OAEP"
-        },
-        privateKey,
-        encryptedKey
-      );
-      
-      // Konwertuj na base64 i zapisz
-      const sessionKey = this._arrayBufferToBase64(sessionKeyBuffer);
-      localStorage.setItem(`session_key_${sessionToken}`, sessionKey);
+      // Zapisz klucz sesji
+      window.unifiedCrypto.storeSessionKey(sessionToken, sessionKeyBase64);
       
       // Potwierdź odebranie klucza
       await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
@@ -365,43 +352,24 @@ class SecureSessionManager {
   }
 
   /**
-   * Wysyłanie wiadomości
+   * Wysyłanie wiadomości - NAPRAWIONA implementacja z UnifiedCrypto
    */
   async sendMessage(sessionToken, content) {
     try {
+      // Sprawdź czy UnifiedCrypto jest dostępny
+      if (!window.unifiedCrypto) {
+        throw new Error('UnifiedCrypto nie jest dostępny');
+      }
+
       // Sprawdź czy mamy klucz sesji
-      const sessionKeyBase64 = localStorage.getItem(`session_key_${sessionToken}`);
+      const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
       if (!sessionKeyBase64) {
         throw new Error('Brak klucza sesji');
       }
       
-      // Importuj klucz AES-GCM
-      const sessionKeyBuffer = this._base64ToArrayBuffer(sessionKeyBase64);
-      const sessionKey = await window.crypto.subtle.importKey(
-        "raw",
-        sessionKeyBuffer,
-        {
-          name: "AES-GCM",
-          length: 256
-        },
-        false,
-        ["encrypt"]
-      );
-      
-      // Generuj IV
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      
-      // Szyfruj wiadomość
-      const encoder = new TextEncoder();
-      const encodedContent = encoder.encode(content);
-      const encryptedBuffer = await window.crypto.subtle.encrypt(
-        {
-          name: "AES-GCM",
-          iv: iv
-        },
-        sessionKey,
-        encodedContent
-      );
+      // NAPRAWIONE: Używamy UnifiedCrypto do szyfrowania
+      const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+      const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
       
       // Wyślij na serwer
       const response = await fetch('/api/message/send', {
@@ -413,8 +381,8 @@ class SecureSessionManager {
         credentials: 'same-origin',
         body: JSON.stringify({
           session_token: sessionToken,
-          content: this._arrayBufferToBase64(encryptedBuffer),
-          iv: this._arrayBufferToBase64(iv)
+          content: encryptedData.data,
+          iv: encryptedData.iv
         })
       });
       
@@ -636,75 +604,48 @@ class SecureSessionManager {
     }
   }
 
-// Pomocnicze funkcje konwersji
-  _arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-  
-  _base64ToArrayBuffer(base64) {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
-  }
-  
-  _pemToArrayBuffer(pem) {
-    const pemContent = pem
-      .replace("-----BEGIN PRIVATE KEY-----", "")
-      .replace("-----END PRIVATE KEY-----", "")
-      .replace(/\s+/g, "");
-    return this._base64ToArrayBuffer(pemContent);
-  }
-
   /**
-   * Obsługuje wylogowanie użytkownika
+   * Obsługuje wylogowanie użytkownika - NAPRAWIONA
    */
   async logout() {
-  try {
-    // Wyczyść dane lokalne
-    localStorage.clear();
-    sessionStorage.clear();
-    
-    // Rozłącz WebSocket
-    if (window.wsHandler) {
-      window.wsHandler.disconnect();
+    try {
+      // NAPRAWIONE: Wyczyść klucze kryptograficzne
+      if (window.unifiedCrypto) {
+        window.unifiedCrypto.clearAllKeys();
+      }
+      
+      // Wyczyść dane lokalne
+      localStorage.clear();
+      sessionStorage.clear();
+      
+      // Rozłącz WebSocket
+      if (window.wsHandler) {
+        window.wsHandler.disconnect();
+      }
+      
+      // Wyczyść lokalne dane
+      this.activeSessions = [];
+      this.friends = [];
+      this.messages = {};
+      
+      if (this.db) {
+        this.db.close();
+      }
+      
+      // Małe opóźnienie żeby wszystko się wykonało
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('Przekierowuję na logout...');
+      
+    } catch (error) {
+      console.error('Błąd podczas wylogowania:', error);
+    } finally {
+      // Zawsze przekieruj, nawet jak był błąd
+      window.location.href = '/logout';
     }
-    
-    // Wyczyść lokalne dane
-    this.activeSessions = [];
-    this.friends = [];
-    this.messages = {};
-    
-    if (this.db) {
-      this.db.close();
-    }
-    
-    // Małe opóźnienie żeby wszystko się wykonało
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    console.log('Przekierowuję na logout...');
-    
-  } catch (error) {
-    console.error('Błąd podczas wylogowania:', error);
-  } finally {
-    // Zawsze przekieruj, nawet jak był błąd
-    window.location.href = '/logout';
-  }
-}
-    })
-    .catch(error => {
-      console.error('Błąd podczas wylogowywania:', error);
-      alert('Wystąpił błąd podczas wylogowywania. Spróbuj ponownie.');
-    });
   }
 }
 
 // Inicjalizacja globalnego SessionManager
 window.sessionManager = new SecureSessionManager();
+
