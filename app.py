@@ -110,8 +110,7 @@ def create_app():
     
     # Inicjalizacja panelu admina
     init_admin(app)
-    # Inicjalizacja obsługi bezpiecznych wiadomości
-    initialize_secure_messaging(app)
+ 
     # Uruchom migracje bazy danych
     apply_migrations(app)
     apply_e2ee_migrations(app)
