@@ -18,7 +18,7 @@ from auth import auth_bp
 from chat import chat_bp
 from chat_api import chat_api
 from database_migrations import apply_migrations as apply_e2ee_migrations
-from websocket_routes import init_websocket_routes
+
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
