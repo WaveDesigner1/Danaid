@@ -302,13 +302,13 @@ class ChatInterface {
   /**
    * ZAKTUALIZOWANE: Sprawdza, czy sesja jest gotowa do wysyłania wiadomości
    */
-  async ensureSessionReady() {
+ async ensureSessionReady() {
     if (!this.currentSessionToken) {
       this.showNotification("Brak aktywnej sesji", "error");
       return false;
     }
     
-    // ZAKTUALIZOWANE: Sprawdź, czy klucz sesji istnieje używając UnifiedCrypto
+    // NAPRAWIONE: Sprawdź, czy klucz sesji istnieje używając UnifiedCrypto
     if (!window.unifiedCrypto.hasSessionKey(this.currentSessionToken)) {
       try {
         // Znajdź sesję w liście
@@ -319,13 +319,62 @@ class ChatInterface {
           return false;
         }
         
-        // Sprawdź, czy sesja ma klucz
+        // DODANO: Automatyczne generowanie klucza jeśli nie istnieje
         if (!session.has_key) {
-          this.showNotification("Sesja nie ma ustalonego klucza szyfrowania", "error");
-          return false;
+          console.log("🔑 Generowanie nowego klucza sesji...");
+          this.showNotification("Generowanie klucza szyfrowania...", "info", 2000);
+          
+          // Wygeneruj nowy klucz sesji AES
+          const sessionKey = await window.unifiedCrypto.generateSessionKey();
+          const sessionKeyBase64 = await window.unifiedCrypto.exportSessionKey(sessionKey);
+          
+          // Zapisz klucz lokalnie
+          window.unifiedCrypto.storeSessionKey(this.currentSessionToken, sessionKeyBase64);
+          
+          // Pobierz klucz publiczny drugiego użytkownika
+          const recipientPublicKeyResponse = await fetch(`/api/user/${session.other_user.user_id}/public_key`);
+          if (!recipientPublicKeyResponse.ok) {
+            throw new Error('Nie można pobrać klucza publicznego odbiorcy');
+          }
+          
+          const recipientKeyData = await recipientPublicKeyResponse.json();
+          const recipientPublicKey = await window.unifiedCrypto.importPublicKeyFromPEM(recipientKeyData.public_key);
+          
+          // Zaszyfruj klucz sesji kluczem publicznym odbiorcy
+          const encryptedSessionKey = await window.unifiedCrypto.encryptSessionKey(recipientPublicKey, sessionKey);
+          
+          // Wyślij zaszyfrowany klucz na serwer
+          const keyExchangeResponse = await fetch(`/api/session/${this.currentSessionToken}/exchange_key`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              encrypted_key: encryptedSessionKey
+            })
+          });
+          
+          if (!keyExchangeResponse.ok) {
+            throw new Error('Nie można wymienić klucza sesji');
+          }
+          
+          const keyResult = await keyExchangeResponse.json();
+          if (keyResult.status !== 'success') {
+            throw new Error(keyResult.message || 'Błąd wymiany klucza');
+          }
+          
+          console.log("✅ Klucz sesji wygenerowany i wysłany");
+          this.showNotification("Klucz szyfrowania wygenerowany", "success", 2000);
+          
+          // Odśwież listę sesji
+          await this.loadSessions();
+          
+          return true;
         }
         
-        // Pobierz klucz z serwera
+        // Jeśli sesja ma klucz, ale my go nie mamy - pobierz go
         const result = await this.sessionManager.retrieveSessionKey(this.currentSessionToken);
         
         if (!result.success) {
@@ -339,8 +388,8 @@ class ChatInterface {
           return false;
         }
       } catch (error) {
-        console.error("❌ Błąd podczas pobierania klucza sesji:", error);
-        this.showNotification("Błąd podczas pobierania klucza sesji", "error");
+        console.error("❌ Błąd podczas generowania/pobierania klucza sesji:", error);
+        this.showNotification("Błąd podczas konfiguracji szyfrowania: " + error.message, "error");
         return false;
       }
     }
