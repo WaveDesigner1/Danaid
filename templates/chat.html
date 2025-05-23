@@ -87,17 +87,20 @@
         </div>
     </template>
 
-    <!-- Skrypty - ZAKTUALIZOWANE -->
-    <!-- Konfiguracja WebSocket -->
-    <script src="/ws-config.js"></script>
+    <!-- ZAKTUALIZOWANE SKRYPTY - Socket.IO -->
+    <!-- Socket.IO Client Library -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     
-    <!-- NOWY zunifikowany moduł kryptograficzny -->
+    <!-- Konfiguracja Socket.IO -->
+    <script src="/socket-config.js"></script>
+    
+    <!-- Zunifikowany moduł kryptograficzny -->
     <script src="static/js/UnifiedCrypto.js"></script>
     
-    <!-- Obsługa WebSocket -->
-    <script src="static/js/WebSocketHandler.js"></script>
+    <!-- NOWY obsługiwacz Socket.IO (zastępuje WebSocketHandler) -->
+    <script src="static/js/SocketIOHandler.js"></script>
     
-    <!-- Menedżer sesji -->
+    <!-- Zaktualizowany menedżer sesji -->
     <script src="static/js/SecureSessionManager.js"></script>
     
     <!-- Interfejs użytkownika -->
@@ -105,9 +108,16 @@
     
     <!-- Inicjalizacja aplikacji -->
     <script>
-        console.log("=== DANAID CHAT INICJALIZACJA ===");
+        console.log("=== DANAID CHAT INICJALIZACJA Z SOCKET.IO ===");
         
         // Sprawdź czy wszystkie moduły są załadowane
+        if (typeof io === 'undefined') {
+            console.error("❌ Socket.IO client library nie załadowana");
+            alert("Błąd ładowania Socket.IO. Odśwież stronę.");
+        } else {
+            console.log("✅ Socket.IO client library załadowana");
+        }
+        
         if (typeof UnifiedCrypto === 'undefined') {
             console.error("❌ UnifiedCrypto nie załadowany");
             alert("Błąd ładowania modułu kryptograficznego. Odśwież stronę.");
@@ -115,10 +125,10 @@
             console.log("✅ UnifiedCrypto załadowany");
         }
         
-        if (typeof WebSocketHandler === 'undefined') {
-            console.error("❌ WebSocketHandler nie załadowany");
+        if (typeof SocketIOHandler === 'undefined') {
+            console.error("❌ SocketIOHandler nie załadowany");
         } else {
-            console.log("✅ WebSocketHandler załadowany");
+            console.log("✅ SocketIOHandler załadowany");
         }
         
         if (typeof SecureSessionManager === 'undefined') {
@@ -144,7 +154,7 @@
             console.log("✅ Użytkownik jest zalogowany");
         }
         
-        console.log("=== DANAID CHAT GOTOWY ===");
+        console.log("=== DANAID CHAT Z SOCKET.IO GOTOWY ===");
     </script>
 </body>
 </html>
