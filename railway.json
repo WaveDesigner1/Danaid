@@ -6,7 +6,6 @@
     "restartPolicy": "always"
   },
   "variables": {
-    "PORT": "8080",
-    "WEBSOCKET_PORT": "8081"
+    "PORT": "8080"
   }
 }
