@@ -12,6 +12,7 @@ class ChatInterface {
     this.currentSessionToken = null;
     this.currentUser = null;
     this.friends = [];
+    this.sessions = [];
     this.pendingRequests = [];
     
     // Sprawdź czy UnifiedCrypto jest dostępny
@@ -76,9 +77,16 @@ class ChatInterface {
     this.adminLink.style.marginLeft = '15px';
     this.adminLink.classList.add('admin-btn');
     this.adminLink.href = '/admin_dashboard';
+    
+    console.log('🔧 Elementy DOM zainicjalizowane:', {
+      friendsList: !!this.friendsList,
+      messagesContainer: !!this.messagesContainer,
+      messageInput: !!this.messageInput,
+      sendButton: !!this.sendButton
+    });
   }
-  
-  /**
+
+/**
    * Inicjalizacja nasłuchiwania zdarzeń
    */
   initializeEvents() {
@@ -141,6 +149,8 @@ class ChatInterface {
         this.loadPendingRequests();
       };
     }
+    
+    console.log('✅ Wydarzenia zainicjalizowane');
   }
 
   /**
@@ -176,7 +186,7 @@ class ChatInterface {
     console.log(`✅ Dane użytkownika załadowane: ${this.currentUser.username}`);
   }
 
-  /**
+/**
    * Ładuje listę znajomych z serwera
    */
   async loadFriends() {
@@ -220,6 +230,67 @@ class ChatInterface {
     } catch (error) {
       console.error('❌ Błąd ładowania sesji:', error);
       this.showNotification('Błąd ładowania sesji czatu', 'error');
+    }
+  }
+
+  /**
+   * POPRAWIONA: Ładuje wiadomości dla sesji
+   */
+  async loadMessages(sessionToken) {
+    if (!this.sessionManager) {
+      console.error('❌ SessionManager nie jest dostępny');
+      return;
+    }
+    
+    if (this.messagesContainer) {
+      this.messagesContainer.innerHTML = '';
+    }
+    
+    try {
+      console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken);
+      
+      // NAPRAWIONE: Użyj poprawionej metody getLocalMessages
+      const result = this.sessionManager.getLocalMessages(sessionToken);
+      
+      console.log('📨 Wynik ładowania wiadomości:', result);
+      
+      if (result && result.status === 'success') {
+        const messages = result.messages || [];
+        console.log(`📝 Ładuję ${messages.length} wiadomości`);
+        
+        messages.forEach(message => {
+          console.log('💬 Dodaję wiadomość:', {
+            id: message.id,
+            content: message.content?.substring(0, 50) + "...",
+            sender_id: message.sender_id,
+            is_mine: message.is_mine
+          });
+          this.addMessageToUI(message);
+        });
+        
+        this.scrollToBottom();
+        
+        // Opcjonalnie: spróbuj pobrać nowsze wiadomości z serwera
+        if (messages.length === 0) {
+          console.log('📡 Brak lokalnych wiadomości, próbuję pobrać z serwera...');
+          try {
+            const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
+            if (serverResult.status === 'success' && serverResult.messages.length > 0) {
+              console.log(`📥 Pobrano ${serverResult.messages.length} wiadomości z serwera`);
+              // Przeładuj po pobraniu z serwera
+              setTimeout(() => this.loadMessages(sessionToken), 100);
+            }
+          } catch (serverError) {
+            console.warn('⚠️ Nie można pobrać z serwera:', serverError);
+          }
+        }
+      } else {
+        console.warn('⚠️ Brak wiadomości lub błąd:', result);
+      }
+    } catch (error) {
+      console.error('❌ Błąd ładowania wiadomości:', error);
+      console.error('❌ Stack trace:', error.stack);
+      this.showNotification('Błąd ładowania wiadomości', 'error');
     }
   }
 
@@ -283,6 +354,17 @@ class ChatInterface {
       if (result.status === 'success') {
         // Wiadomość została wysłana pomyślnie
         console.log("✅ Wiadomość wysłana pomyślnie");
+        
+        // Dodaj wiadomość do UI od razu (optymistyczne UI)
+        const newMessage = {
+          id: result.messageData?.id || Date.now().toString(),
+          sender_id: parseInt(this.currentUser.id),
+          content: messageContent,
+          timestamp: result.messageData?.timestamp || new Date().toISOString(),
+          is_mine: true
+        };
+        
+        this.addMessageToUI(newMessage);
       } else {
         // Przywróć treść w przypadku błędu
         this.messageInput.value = messageContent;
@@ -302,7 +384,7 @@ class ChatInterface {
   /**
    * ZAKTUALIZOWANE: Sprawdza, czy sesja jest gotowa do wysyłania wiadomości
    */
- async ensureSessionReady() {
+  async ensureSessionReady() {
     if (!this.currentSessionToken) {
       this.showNotification("Brak aktywnej sesji", "error");
       return false;
@@ -397,7 +479,183 @@ class ChatInterface {
     return true;
   }
 
+/**
+   * POPRAWIONA: Dodaje wiadomość do UI z debugowaniem
+   */
+  addMessageToUI(message) {
+    console.log('🎨 addMessageToUI wywołane z:', {
+      message: message,
+      hasContainer: !!this.messagesContainer,
+      containerExists: !!document.getElementById('messages'),
+      currentUser: this.currentUser
+    });
+    
+    if (!this.messagesContainer) {
+      console.error('❌ messagesContainer nie istnieje!');
+      // Spróbuj znaleźć ponownie
+      this.messagesContainer = document.getElementById('messages');
+      if (!this.messagesContainer) {
+        console.error('❌ Nie można znaleźć elementu #messages w DOM');
+        return;
+      }
+    }
+    
+    if (!message) {
+      console.error('❌ Brak wiadomości do wyświetlenia');
+      return;
+    }
+    
+    try {
+      const messageElement = this.createMessageElement(message);
+      console.log('✅ Element wiadomości utworzony:', messageElement);
+      
+      this.messagesContainer.appendChild(messageElement);
+      console.log('✅ Element dodany do kontenera');
+      
+      this.scrollToBottom();
+      console.log('✅ Przewinięto do dołu');
+      
+      // Debug: sprawdź ile wiadomości jest teraz w kontenerze
+      console.log('📊 Liczba wiadomości w kontenerze:', this.messagesContainer.children.length);
+      
+    } catch (error) {
+      console.error('❌ Błąd w addMessageToUI:', error);
+      console.error('❌ Stack trace:', error.stack);
+    }
+  }
+  
   /**
+   * POPRAWIONA: Tworzy element wiadomości z debugowaniem
+   */
+  createMessageElement(message) {
+    console.log('🏗️ createMessageElement dla:', {
+      content: message.content,
+      sender_id: message.sender_id,
+      current_user_id: this.currentUser?.id,
+      timestamp: message.timestamp
+    });
+    
+    const messageDiv = document.createElement('div');
+    
+    // Sprawdź czy to nasza wiadomość
+    const isSent = message.sender_id === parseInt(this.currentUser.id) || message.is_mine;
+    console.log('📤 Czy wiadomość wysłana przez nas?', {
+      isSent,
+      message_sender_id: message.sender_id,
+      current_user_id: parseInt(this.currentUser.id),
+      is_mine: message.is_mine
+    });
+    
+    messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.textContent = message.content || '[Pusta wiadomość]';
+    
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'message-info';
+    
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'message-time';
+    timeSpan.textContent = this.formatTime(message.timestamp);
+    
+    // Debug: sprawdź czy elementy są tworzone
+    console.log('🔧 Elementy utworzone:', {
+      messageDiv: !!messageDiv,
+      contentDiv: !!contentDiv,
+      infoDiv: !!infoDiv,
+      timeSpan: !!timeSpan,
+      content: contentDiv.textContent,
+      className: messageDiv.className
+    });
+    
+    infoDiv.appendChild(timeSpan);
+    messageDiv.appendChild(contentDiv);
+    messageDiv.appendChild(infoDiv);
+    
+    // Dodaj style inline dla pewności
+    messageDiv.style.cssText = `
+      margin-bottom: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      max-width: 70%;
+      word-wrap: break-word;
+      ${isSent ? 
+        'background: #007bff; color: white; margin-left: auto; text-align: right;' : 
+        'background: #f1f1f1; color: black; margin-right: auto; text-align: left;'
+      }
+    `;
+    
+    contentDiv.style.cssText = 'margin-bottom: 5px; font-size: 14px;';
+    infoDiv.style.cssText = 'font-size: 12px; opacity: 0.7;';
+    
+    console.log('✅ Element wiadomości gotowy:', messageDiv);
+    
+    return messageDiv;
+  }
+
+  /**
+   * Formatuje czas wiadomości
+   */
+  formatTime(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    if (date >= today) {
+      return timeStr;
+    } else if (date >= yesterday) {
+      return `Wczoraj, ${timeStr}`;
+    } else {
+      return `${date.toLocaleDateString()} ${timeStr}`;
+    }
+  }
+  
+  /**
+   * Przewija do końca kontener wiadomości
+   */
+  scrollToBottom() {
+    if (this.messagesContainer) {
+      this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    }
+  }
+
+  /**
+   * POPRAWIONA: Wyświetla nową wiadomość - obsługa przychodzących wiadomości
+   */
+  displayNewMessage(sessionToken, message) {
+    console.log('🆕 Otrzymano nową wiadomość:', {
+      sessionToken,
+      message: {
+        id: message.id,
+        content: message.content?.substring(0, 50) + "...",
+        sender_id: message.sender_id
+      },
+      currentSession: this.currentSessionToken
+    });
+    
+    // Jeśli to aktualna sesja, wyświetl od razu
+    if (sessionToken === this.currentSessionToken) {
+      console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
+      this.addMessageToUI(message);
+    } else {
+      // Jeśli to inna sesja, pokaż powiadomienie
+      const session = this.sessions?.find(s => s.token === sessionToken);
+      if (session) {
+        console.log('🔔 Powiadomienie o wiadomości z innej sesji');
+        this.showNotification(`Nowa wiadomość od ${session.other_user.username}`, 'info');
+        
+        // Dodaj wskaźnik nieprzeczytanych wiadomości
+        this.updateUnreadIndicator(sessionToken);
+      }
+    }
+  }
+
+/**
    * Aktualizuje listę sesji
    */
   updateSessionsList(sessions) {
@@ -544,7 +802,7 @@ class ChatInterface {
   }
 
   /**
-   * Przełącza aktywną sesję
+   * POPRAWIONA: Przełącza aktywną sesję z wyczyszczeniem wskaźnika
    */
   switchSession(sessionToken) {
     if (!sessionToken || sessionToken === this.currentSessionToken) return;
@@ -555,6 +813,12 @@ class ChatInterface {
     friendItems.forEach(item => {
       if (item.dataset.sessionToken === sessionToken) {
         item.classList.add('active');
+        
+        // Usuń wskaźnik nieprzeczytanych wiadomości
+        const badge = item.querySelector('.unread-badge');
+        if (badge) {
+          badge.remove();
+        }
       } else {
         item.classList.remove('active');
       }
@@ -581,248 +845,87 @@ class ChatInterface {
   }
 
   /**
-   * Ładuje wiadomości dla sesji
+   * DODANA: Aktualizacja wskaźnika nieprzeczytanych wiadomości
    */
-  async loadMessages(sessionToken) {
-  if (!this.sessionManager) {
-    console.error('❌ SessionManager nie jest dostępny');
-    return;
-  }
-  
-  if (this.messagesContainer) {
-    this.messagesContainer.innerHTML = '';
-  }
-  
-  try {
-    console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken);
-    
-    // NAPRAWIONE: Sprawdź dostępne metody w sessionManager
-    console.log('🔍 Dostępne metody sessionManager:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.sessionManager)));
-    
-    let result;
-    
-    // Spróbuj różne nazwy metod
-    if (typeof this.sessionManager.getLocalMessages === 'function') {
-      result = this.sessionManager.getLocalMessages(sessionToken);
-    } else if (typeof this.sessionManager.getMessagesForSession === 'function') {
-      result = this.sessionManager.getMessagesForSession(sessionToken);
-    } else if (typeof this.sessionManager.loadMessagesForSession === 'function') {
-      result = await this.sessionManager.loadMessagesForSession(sessionToken);
-    } else {
-      // Fallback: sprawdź bezpośrednio w messages object
-      console.log('⚠️ Brak metody getLocalMessages, sprawdzam bezpośrednio messages');
-      
-      if (this.sessionManager.messages && this.sessionManager.messages[sessionToken]) {
-        result = {
-          status: 'success',
-          messages: this.sessionManager.messages[sessionToken]
-        };
-      } else {
-        result = {
-          status: 'success',
-          messages: []
-        };
+  updateUnreadIndicator(sessionToken) {
+    const friendItem = document.querySelector(`[data-session-token="${sessionToken}"]`);
+    if (friendItem) {
+      let badge = friendItem.querySelector('.unread-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'unread-badge';
+        badge.style.cssText = `
+          background: #ff4444;
+          color: white;
+          border-radius: 50%;
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          margin-left: auto;
+          font-weight: bold;
+        `;
+        friendItem.appendChild(badge);
       }
-    }
-    
-    console.log('📨 Wynik ładowania wiadomości:', result);
-    
-    if (result && result.status === 'success') {
-      const messages = result.messages || [];
-      console.log(`📝 Ładuję ${messages.length} wiadomości`);
       
-      messages.forEach(message => {
-        console.log('💬 Dodaję wiadomość:', message);
-        this.addMessageToUI(message);
-      });
-      
-      this.scrollToBottom();
-    } else {
-      console.warn('⚠️ Brak wiadomości lub błąd:', result);
-    }
-  } catch (error) {
-    console.error('❌ Błąd ładowania wiadomości:', error);
-    console.error('❌ Stack trace:', error.stack);
-    
-    // Fallback: spróbuj załadować z IndexedDB bezpośrednio
-    try {
-      console.log('🔄 Próbuję załadować z IndexedDB...');
-      await this.loadMessagesFromIndexedDB(sessionToken);
-    } catch (dbError) {
-      console.error('❌ Błąd ładowania z IndexedDB:', dbError);
-      this.showNotification('Błąd ładowania wiadomości', 'error');
+      const currentCount = parseInt(badge.textContent) || 0;
+      badge.textContent = currentCount + 1;
+      badge.style.display = 'flex';
     }
   }
-}
 
 /**
- * DODANA: Metoda fallback do ładowania z IndexedDB
- */
-async loadMessages(sessionToken) {
-  if (!this.sessionManager) {
-    console.error('❌ SessionManager nie jest dostępny');
-    return;
-  }
-  
-  if (this.messagesContainer) {
-    this.messagesContainer.innerHTML = '';
-  }
-  
-  try {
-    console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken);
+   * Wyświetla powiadomienie
+   */
+  showNotification(message, type = 'info', duration = 5000) {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
     
-    // NAPRAWIONE: Użyj poprawionej metody getLocalMessages
-    const result = this.sessionManager.getLocalMessages(sessionToken);
+    // Stylizacja
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.padding = '15px 20px';
+    notification.style.borderRadius = '5px';
+    notification.style.zIndex = '10000';
+    notification.style.maxWidth = '300px';
+    notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
     
-    console.log('📨 Wynik ładowania wiadomości:', result);
+    // Kolory w zależności od typu
+    switch(type) {
+      case 'success':
+        notification.style.backgroundColor = '#4CAF50';
+        notification.style.color = 'white';
+        break;
+      case 'error':
+        notification.style.backgroundColor = '#F44336';
+        notification.style.color = 'white';
+        break;
+      case 'warning':
+        notification.style.backgroundColor = '#FF9800';
+        notification.style.color = 'white';
+        break;
+      default:
+        notification.style.backgroundColor = '#2196F3';
+        notification.style.color = 'white';
+    }
     
-    if (result && result.status === 'success') {
-      const messages = result.messages || [];
-      console.log(`📝 Ładuję ${messages.length} wiadomości`);
-      
-      messages.forEach(message => {
-        console.log('💬 Dodaję wiadomość:', {
-          id: message.id,
-          content: message.content?.substring(0, 50) + "...",
-          sender_id: message.sender_id,
-          is_mine: message.is_mine
-        });
-        this.addMessageToUI(message);
-      });
-      
-      this.scrollToBottom();
-      
-      // Opcjonalnie: spróbuj pobrać nowsze wiadomości z serwera
-      if (messages.length === 0) {
-        console.log('📡 Brak lokalnych wiadomości, próbuję pobrać z serwera...');
-        try {
-          const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
-          if (serverResult.status === 'success' && serverResult.messages.length > 0) {
-            console.log(`📥 Pobrano ${serverResult.messages.length} wiadomości z serwera`);
-            // Przeładuj po pobraniu z serwera
-            this.loadMessages(sessionToken);
-          }
-        } catch (serverError) {
-          console.warn('⚠️ Nie można pobrać z serwera:', serverError);
-        }
+    document.body.appendChild(notification);
+    
+    // Usuń po określonym czasie
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
       }
-    } else {
-      console.warn('⚠️ Brak wiadomości lub błąd:', result);
-    }
-  } catch (error) {
-    console.error('❌ Błąd ładowania wiadomości:', error);
-    console.error('❌ Stack trace:', error.stack);
-    this.showNotification('Błąd ładowania wiadomości', 'error');
+    }, duration);
   }
-}
 
-/**
- * POPRAWIONA: Metoda displayNewMessage - obsługa przychodzących wiadomości
- */
-displayNewMessage(sessionToken, message) {
-  console.log('🆕 Otrzymano nową wiadomość:', {
-    sessionToken,
-    message: {
-      id: message.id,
-      content: message.content?.substring(0, 50) + "...",
-      sender_id: message.sender_id
-    },
-    currentSession: this.currentSessionToken
-  });
-  
-  // Jeśli to aktualna sesja, wyświetl od razu
-  if (sessionToken === this.currentSessionToken) {
-    console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
-    this.addMessageToUI(message);
-  } else {
-    // Jeśli to inna sesja, pokaż powiadomienie
-    const session = this.sessions?.find(s => s.token === sessionToken);
-    if (session) {
-      console.log('🔔 Powiadomienie o wiadomości z innej sesji');
-      this.showNotification(`Nowa wiadomość od ${session.other_user.username}`, 'info');
-      
-      // Dodaj wskaźnik nieprzeczytanych wiadomości
-      this.updateUnreadIndicator(sessionToken);
-    }
-  }
-}
-
-/**
- * DODANA: Aktualizacja wskaźnika nieprzeczytanych wiadomości
- */
-updateUnreadIndicator(sessionToken) {
-  const friendItem = document.querySelector(`[data-session-token="${sessionToken}"]`);
-  if (friendItem) {
-    let badge = friendItem.querySelector('.unread-badge');
-    if (!badge) {
-      badge = document.createElement('span');
-      badge.className = 'unread-badge';
-      badge.style.cssText = `
-        background: #ff4444;
-        color: white;
-        border-radius: 50%;
-        width: 20px;
-        height: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        margin-left: auto;
-        font-weight: bold;
-      `;
-      friendItem.appendChild(badge);
-    }
-    
-    const currentCount = parseInt(badge.textContent) || 0;
-    badge.textContent = currentCount + 1;
-    badge.style.display = 'flex';
-  }
-}
-
-/**
- * POPRAWIONA: Przełączanie sesji z wyczyszczeniem wskaźnika
- */
-switchSession(sessionToken) {
-  if (!sessionToken || sessionToken === this.currentSessionToken) return;
-  
-  this.currentSessionToken = sessionToken;
-  
-  const friendItems = document.querySelectorAll('.friend-item');
-  friendItems.forEach(item => {
-    if (item.dataset.sessionToken === sessionToken) {
-      item.classList.add('active');
-      
-      // Usuń wskaźnik nieprzeczytanych wiadomości
-      const badge = item.querySelector('.unread-badge');
-      if (badge) {
-        badge.remove();
-      }
-    } else {
-      item.classList.remove('active');
-    }
-  });
-  
-  const session = this.sessions.find(s => s.token === sessionToken);
-  if (!session) {
-    console.error(`❌ Nie znaleziono sesji o tokenie ${sessionToken}`);
-    this.showNotification("Błąd: nie znaleziono sesji", "error");
-    return;
-  }
-  
-  if (this.chatHeader) {
-    this.chatHeader.innerHTML = `<h2>${session.other_user.username}</h2>`;
-    
-    const statusSpan = document.createElement('span');
-    statusSpan.className = `status-indicator ${session.other_user.is_online ? 'online' : 'offline'}`;
-    statusSpan.style.display = 'inline-block';
-    statusSpan.style.marginLeft = '10px';
-    this.chatHeader.querySelector('h2').appendChild(statusSpan);
-  }
-  
-  this.loadMessages(sessionToken);
-}
-
-  // Metody dla znajomych i zaproszeń...
+  /**
+   * Wysyła zaproszenie do znajomych
+   */
   async sendFriendRequest() {
     const usernameInput = document.getElementById('friend-user-id');
     const statusDiv = document.getElementById('friend-request-status');
@@ -875,8 +978,10 @@ switchSession(sessionToken) {
     }
   }
 
+  /**
+   * Ładuje oczekujące zaproszenia
+   */
   async loadPendingRequests() {
-    // Implementacja ładowania oczekujących zaproszeń
     if (!this.sessionManager) return;
     
     try {
@@ -890,6 +995,9 @@ switchSession(sessionToken) {
     }
   }
 
+  /**
+   * Aktualizuje badge z liczbą zaproszeń
+   */
   updateRequestBadge() {
     if (this.requestBadge) {
       const count = this.pendingRequests.length;
@@ -902,13 +1010,49 @@ switchSession(sessionToken) {
     }
   }
 
+  /**
+   * Inicjalizuje powiadomienia o zaproszeniach
+   */
   initializeFriendRequestNotifications() {
     this.loadPendingRequests();
   }
 
+  /**
+   * Pokazuje modal z zaproszeniami do znajomych
+   */
   showFriendRequestsModal() {
-    // Implementacja modalu zaproszeń
     console.log('Wyświetlanie modalu zaproszeń:', this.pendingRequests);
+    // Implementacja modalu zaproszeń - można rozszerzyć
+    if (this.pendingRequests.length > 0) {
+      const requestsList = this.pendingRequests.map(req => 
+        `${req.sender_username} (${req.created_at})`
+      ).join('\n');
+      
+      if (confirm(`Masz ${this.pendingRequests.length} oczekujących zaproszeń:\n${requestsList}\n\nCzy chcesz przejść do panelu zarządzania?`)) {
+        // Można przekierować do dedykowanego panelu
+        window.location.href = '/friends';
+      }
+    } else {
+      this.showNotification('Brak oczekujących zaproszeń', 'info');
+    }
+  }
+
+  /**
+   * DODANA: Funkcja testowa do dodawania wiadomości
+   */
+  testAddMessage() {
+    console.log('🧪 Test dodawania wiadomości...');
+    
+    const testMessage = {
+      id: 'test-' + Date.now(),
+      content: 'To jest wiadomość testowa',
+      sender_id: parseInt(this.currentUser.id),
+      timestamp: new Date().toISOString(),
+      is_mine: true
+    };
+    
+    console.log('📨 Dodaję wiadomość testową:', testMessage);
+    this.addMessageToUI(testMessage);
   }
 }
 
