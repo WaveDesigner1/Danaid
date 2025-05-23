@@ -27,12 +27,8 @@ COPY . .
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Ekspozycja portów
-EXPOSE 8080 8081
-
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/ || exit 1
+# Ekspozycja portu (tylko 8080 - Socket.IO działa na tym samym porcie)
+EXPOSE 8080
 
 # Uruchom aplikację
 CMD ["python", "main.py"]
