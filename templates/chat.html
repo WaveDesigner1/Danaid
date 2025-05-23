@@ -87,10 +87,64 @@
         </div>
     </template>
 
-    <!-- Skrypty -->
-    <script src="static/js/WebSocketHandler.js"></script>
-    <script src="static/js/SecureSessionManager.js"></script>
-    <script src="static/js/ChatInterface.js"></script>
+    <!-- Skrypty - ZAKTUALIZOWANE -->
+    <!-- Konfiguracja WebSocket -->
     <script src="/ws-config.js"></script>
+    
+    <!-- NOWY zunifikowany moduł kryptograficzny -->
+    <script src="static/js/UnifiedCrypto.js"></script>
+    
+    <!-- Obsługa WebSocket -->
+    <script src="static/js/WebSocketHandler.js"></script>
+    
+    <!-- Menedżer sesji -->
+    <script src="static/js/SecureSessionManager.js"></script>
+    
+    <!-- Interfejs użytkownika -->
+    <script src="static/js/ChatInterface.js"></script>
+    
+    <!-- Inicjalizacja aplikacji -->
+    <script>
+        console.log("=== DANAID CHAT INICJALIZACJA ===");
+        
+        // Sprawdź czy wszystkie moduły są załadowane
+        if (typeof UnifiedCrypto === 'undefined') {
+            console.error("❌ UnifiedCrypto nie załadowany");
+            alert("Błąd ładowania modułu kryptograficznego. Odśwież stronę.");
+        } else {
+            console.log("✅ UnifiedCrypto załadowany");
+        }
+        
+        if (typeof WebSocketHandler === 'undefined') {
+            console.error("❌ WebSocketHandler nie załadowany");
+        } else {
+            console.log("✅ WebSocketHandler załadowany");
+        }
+        
+        if (typeof SecureSessionManager === 'undefined') {
+            console.error("❌ SecureSessionManager nie załadowany");
+        } else {
+            console.log("✅ SecureSessionManager załadowany");
+        }
+        
+        if (typeof ChatInterface === 'undefined') {
+            console.error("❌ ChatInterface nie załadowany");
+        } else {
+            console.log("✅ ChatInterface załadowany");
+        }
+        
+        // Sprawdź sesję użytkownika
+        const isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true' || 
+                          localStorage.getItem('isLoggedIn') === 'true';
+        
+        if (!isLoggedIn) {
+            console.warn("⚠️ Użytkownik nie jest zalogowany");
+            window.location.href = '/';
+        } else {
+            console.log("✅ Użytkownik jest zalogowany");
+        }
+        
+        console.log("=== DANAID CHAT GOTOWY ===");
+    </script>
 </body>
 </html>
