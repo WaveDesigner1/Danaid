@@ -1,6 +1,6 @@
 /**
- * ChatInterface - NAPRAWIONA wersja interfejsu użytkownika czatu
- * Używa UnifiedCrypto i naprawionego SecureSessionManager
+ * ChatInterface - ZAKTUALIZOWANA wersja interfejsu użytkownika czatu
+ * Używa UnifiedCrypto i SocketIOHandler zamiast WebSocketHandler
  */
 class ChatInterface {
   constructor(sessionManager) {
@@ -21,8 +21,8 @@ class ChatInterface {
       return;
     }
     
-    // Załaduj konfigurację WebSocket, a następnie zainicjuj interfejs
-    this.loadWebSocketConfig().then(() => {
+    // Załaduj konfigurację Socket.IO, a następnie zainicjuj interfejs
+    this.loadSocketIOConfig().then(() => {
       // Inicjalizacja 
       this.initializeEvents();
       this.loadUserData();
@@ -34,25 +34,26 @@ class ChatInterface {
     // Regularne aktualizacje i sprawdzanie zaproszeń
     setInterval(() => this.loadPendingRequests(), 30000);
     
-    console.log("✅ ChatInterface zainicjalizowany");
+    console.log("✅ ChatInterface zainicjalizowany z Socket.IO");
   }
 
   /**
-   * Ładuje konfigurację WebSocket
+   * Ładuje konfigurację Socket.IO
    */
-  async loadWebSocketConfig() {
+  async loadSocketIOConfig() {
     try {
       const response = await fetch('/api/websocket/config');
       if (response.ok) {
         const config = await response.json();
-        if (config && config.wsUrl) {
-          window._env = window._env || {};
-          window._env.wsUrl = config.wsUrl;
-          console.log('✅ Pobrano konfigurację WebSocket:', config.wsUrl);
+        if (config && config.socketUrl) {
+          window._socketConfig = window._socketConfig || {};
+          window._socketConfig.socketUrl = config.socketUrl;
+          window._socketConfig.path = config.path;
+          console.log('✅ Pobrano konfigurację Socket.IO:', config.socketUrl);
         }
       }
     } catch (e) {
-      console.warn('⚠️ Nie udało się pobrać konfiguracji WebSocket:', e);
+      console.warn('⚠️ Nie udało się pobrać konfiguracji Socket.IO:', e);
     }
   }
   
@@ -126,7 +127,7 @@ class ChatInterface {
       notificationIcon.addEventListener('click', () => this.showFriendRequestsModal());
     }
 
-    // Nasłuchiwanie na zdarzenia z menedżera sesji - NAPRAWIONE
+    // Nasłuchiwanie na zdarzenia z menedżera sesji - ZAKTUALIZOWANE dla Socket.IO
     if (this.sessionManager) {
       this.sessionManager.onMessageReceived = (sessionToken, message) => 
         this.displayNewMessage(sessionToken, message);
@@ -223,7 +224,7 @@ class ChatInterface {
   }
 
 /**
-   * NAPRAWIONE: Funkcja obsługująca wysyłanie wiadomości z UnifiedCrypto
+   * ZAKTUALIZOWANE: Funkcja obsługująca wysyłanie wiadomości z UnifiedCrypto
    */
   async sendMessage() {
     const content = this.messageInput.value.trim();
@@ -276,7 +277,7 @@ class ChatInterface {
       // Wyczyść pole wprowadzania od razu
       this.messageInput.value = '';
       
-      // NAPRAWIONE: Wyślij wiadomość przez menedżer sesji z UnifiedCrypto
+      // ZAKTUALIZOWANE: Wyślij wiadomość przez menedżer sesji z UnifiedCrypto
       const result = await this.sessionManager.sendMessage(this.currentSessionToken, messageContent);
       
       if (result.status === 'success') {
@@ -299,7 +300,7 @@ class ChatInterface {
   }
 
   /**
-   * NAPRAWIONE: Sprawdza, czy sesja jest gotowa do wysyłania wiadomości
+   * ZAKTUALIZOWANE: Sprawdza, czy sesja jest gotowa do wysyłania wiadomości
    */
   async ensureSessionReady() {
     if (!this.currentSessionToken) {
@@ -307,7 +308,7 @@ class ChatInterface {
       return false;
     }
     
-    // NAPRAWIONE: Sprawdź, czy klucz sesji istnieje używając UnifiedCrypto
+    // ZAKTUALIZOWANE: Sprawdź, czy klucz sesji istnieje używając UnifiedCrypto
     if (!window.unifiedCrypto.hasSessionKey(this.currentSessionToken)) {
       try {
         // Znajdź sesję w liście
@@ -348,18 +349,24 @@ class ChatInterface {
   }
 
   /**
-   * Reszta metod pozostaje bez zmian - kopiuję je z oryginalnego pliku
+   * Aktualizuje listę sesji
    */
   updateSessionsList(sessions) {
     this.sessions = sessions;
     this.renderFriendsList();
   }
   
+  /**
+   * Aktualizuje listę znajomych
+   */
   updateFriendsList(friends) {
     this.friends = friends;
     this.renderFriendsList();
   }
   
+  /**
+   * Aktualizuje status online użytkowników
+   */
   updateOnlineStatus(onlineUsers) {
     const friendItems = document.querySelectorAll('.friend-item');
     friendItems.forEach(item => {
@@ -378,6 +385,9 @@ class ChatInterface {
     });
   }
 
+  /**
+   * Renderuje listę znajomych
+   */
   renderFriendsList() {
     if (!this.friendsList) return;
     
@@ -414,6 +424,9 @@ class ChatInterface {
     }
   }
 
+  /**
+   * Tworzy element listy znajomych
+   */
   createFriendListItem(user, sessionToken = null) {
     const li = document.createElement('li');
     li.className = 'friend-item';
@@ -456,6 +469,9 @@ class ChatInterface {
     return li;
   }
 
+  /**
+   * Inicjuje sesję czatu
+   */
   async initSession(userId) {
     try {
       if (!this.sessionManager) {
@@ -478,6 +494,9 @@ class ChatInterface {
     }
   }
 
+  /**
+   * Przełącza aktywną sesję
+   */
   switchSession(sessionToken) {
     if (!sessionToken || sessionToken === this.currentSessionToken) return;
     
@@ -512,6 +531,9 @@ class ChatInterface {
     this.loadMessages(sessionToken);
   }
 
+  /**
+   * Ładuje wiadomości dla sesji
+   */
   async loadMessages(sessionToken) {
     if (!this.sessionManager) return;
     
@@ -533,6 +555,9 @@ class ChatInterface {
     }
   }
 
+  /**
+   * Dodaje wiadomość do UI
+   */
   addMessageToUI(message) {
     if (!this.messagesContainer) return;
     
@@ -541,6 +566,9 @@ class ChatInterface {
     this.scrollToBottom();
   }
   
+  /**
+   * Tworzy element wiadomości
+   */
   createMessageElement(message) {
     const messageDiv = document.createElement('div');
     
@@ -565,6 +593,9 @@ class ChatInterface {
     return messageDiv;
   }
 
+  /**
+   * Formatuje czas wiadomości
+   */
   formatTime(timestamp) {
     const date = new Date(timestamp);
     const now = new Date();
@@ -583,12 +614,18 @@ class ChatInterface {
     }
   }
   
+  /**
+   * Przewija do końca kontener wiadomości
+   */
   scrollToBottom() {
     if (this.messagesContainer) {
       this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
     }
   }
 
+  /**
+   * Wyświetla nową wiadomość
+   */
   displayNewMessage(sessionToken, message) {
     if (sessionToken === this.currentSessionToken) {
       this.addMessageToUI(message);
@@ -600,7 +637,54 @@ class ChatInterface {
     }
   }
 
-  // Pozostałe metody (znajomi, powiadomienia) pozostają bez zmian...
+  /**
+   * Wyświetla powiadomienie
+   */
+  showNotification(message, type = 'info', duration = 5000) {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
+    
+    // Stylizacja
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.right = '20px';
+    notification.style.padding = '15px 20px';
+    notification.style.borderRadius = '5px';
+    notification.style.zIndex = '10000';
+    notification.style.maxWidth = '300px';
+    notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+    
+    // Kolory w zależności od typu
+    switch(type) {
+      case 'success':
+        notification.style.backgroundColor = '#4CAF50';
+        notification.style.color = 'white';
+        break;
+      case 'error':
+        notification.style.backgroundColor = '#F44336';
+        notification.style.color = 'white';
+        break;
+      case 'warning':
+        notification.style.backgroundColor = '#FF9800';
+        notification.style.color = 'white';
+        break;
+      default:
+        notification.style.backgroundColor = '#2196F3';
+        notification.style.color = 'white';
+    }
+    
+    document.body.appendChild(notification);
+    
+    // Usuń po określonym czasie
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, duration);
+  }
+
+  // Metody dla znajomych i zaproszeń...
   async sendFriendRequest() {
     const usernameInput = document.getElementById('friend-user-id');
     const statusDiv = document.getElementById('friend-request-status');
@@ -625,8 +709,70 @@ class ChatInterface {
       
       if (!this.sessionManager) {
         throw new Error('Menedżer sesji nie jest dostępny');
-
-        
-
-
+      }
       
+      const result = await this.sessionManager.sendFriendRequest(username);
+      
+      if (result.success) {
+        statusDiv.textContent = result.message;
+        statusDiv.className = 'search-status search-success';
+        usernameInput.value = '';
+        
+        // Odśwież listę znajomych
+        await this.loadFriends();
+        
+        // Zamknij modal po chwili
+        setTimeout(() => {
+          const modal = document.getElementById('add-friend-modal');
+          if (modal) modal.style.display = 'none';
+        }, 2000);
+      } else {
+        statusDiv.textContent = result.message;
+        statusDiv.className = 'search-status search-error';
+      }
+    } catch (error) {
+      console.error('❌ Błąd wysyłania zaproszenia:', error);
+      statusDiv.textContent = 'Błąd wysyłania zaproszenia: ' + error.message;
+      statusDiv.className = 'search-status search-error';
+    }
+  }
+
+  async loadPendingRequests() {
+    // Implementacja ładowania oczekujących zaproszeń
+    if (!this.sessionManager) return;
+    
+    try {
+      const result = await this.sessionManager.getPendingFriendRequests();
+      if (result.success) {
+        this.pendingRequests = result.requests;
+        this.updateRequestBadge();
+      }
+    } catch (error) {
+      console.error('❌ Błąd ładowania zaproszeń:', error);
+    }
+  }
+
+  updateRequestBadge() {
+    if (this.requestBadge) {
+      const count = this.pendingRequests.length;
+      if (count > 0) {
+        this.requestBadge.textContent = count;
+        this.requestBadge.style.display = 'inline-block';
+      } else {
+        this.requestBadge.style.display = 'none';
+      }
+    }
+  }
+
+  initializeFriendRequestNotifications() {
+    this.loadPendingRequests();
+  }
+
+  showFriendRequestsModal() {
+    // Implementacja modalu zaproszeń
+    console.log('Wyświetlanie modalu zaproszeń:', this.pendingRequests);
+  }
+}
+
+// Inicjalizacja globalnego interfejsu
+window.chatInterface = new ChatInterface();
