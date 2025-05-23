@@ -658,37 +658,61 @@ class ChatInterface {
 /**
  * DODANA: Metoda fallback do ładowania z IndexedDB
  */
-async loadMessagesFromIndexedDB(sessionToken) {
-  if (!this.sessionManager.db) {
-    console.error('❌ Baza IndexedDB nie jest dostępna');
+async loadMessages(sessionToken) {
+  if (!this.sessionManager) {
+    console.error('❌ SessionManager nie jest dostępny');
     return;
   }
   
+  if (this.messagesContainer) {
+    this.messagesContainer.innerHTML = '';
+  }
+  
   try {
-    const tx = this.sessionManager.db.transaction(['messages'], 'readonly');
-    const store = tx.objectStore('messages');
+    console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken);
     
-    const messages = await new Promise((resolve, reject) => {
-      const request = store.getAll();
-      request.onsuccess = () => {
-        const allMessages = request.result;
-        // Filtruj wiadomości dla tej sesji
-        const sessionMessages = allMessages.filter(msg => msg.sessionToken === sessionToken);
-        resolve(sessionMessages);
-      };
-      request.onerror = () => reject(request.error);
-    });
+    // NAPRAWIONE: Użyj poprawionej metody getLocalMessages
+    const result = this.sessionManager.getLocalMessages(sessionToken);
     
-    console.log(`📦 Załadowano ${messages.length} wiadomości z IndexedDB`);
+    console.log('📨 Wynik ładowania wiadomości:', result);
     
-    messages.forEach(message => {
-      this.addMessageToUI(message);
-    });
-    
-    this.scrollToBottom();
+    if (result && result.status === 'success') {
+      const messages = result.messages || [];
+      console.log(`📝 Ładuję ${messages.length} wiadomości`);
+      
+      messages.forEach(message => {
+        console.log('💬 Dodaję wiadomość:', {
+          id: message.id,
+          content: message.content?.substring(0, 50) + "...",
+          sender_id: message.sender_id,
+          is_mine: message.is_mine
+        });
+        this.addMessageToUI(message);
+      });
+      
+      this.scrollToBottom();
+      
+      // Opcjonalnie: spróbuj pobrać nowsze wiadomości z serwera
+      if (messages.length === 0) {
+        console.log('📡 Brak lokalnych wiadomości, próbuję pobrać z serwera...');
+        try {
+          const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
+          if (serverResult.status === 'success' && serverResult.messages.length > 0) {
+            console.log(`📥 Pobrano ${serverResult.messages.length} wiadomości z serwera`);
+            // Przeładuj po pobraniu z serwera
+            this.loadMessages(sessionToken);
+          }
+        } catch (serverError) {
+          console.warn('⚠️ Nie można pobrać z serwera:', serverError);
+        }
+      }
+    } else {
+      console.warn('⚠️ Brak wiadomości lub błąd:', result);
+    }
   } catch (error) {
-    console.error('❌ Błąd ładowania z IndexedDB:', error);
-    throw error;
+    console.error('❌ Błąd ładowania wiadomości:', error);
+    console.error('❌ Stack trace:', error.stack);
+    this.showNotification('Błąd ładowania wiadomości', 'error');
   }
 }
 
@@ -698,7 +722,11 @@ async loadMessagesFromIndexedDB(sessionToken) {
 displayNewMessage(sessionToken, message) {
   console.log('🆕 Otrzymano nową wiadomość:', {
     sessionToken,
-    message,
+    message: {
+      id: message.id,
+      content: message.content?.substring(0, 50) + "...",
+      sender_id: message.sender_id
+    },
     currentSession: this.currentSessionToken
   });
   
@@ -713,7 +741,7 @@ displayNewMessage(sessionToken, message) {
       console.log('🔔 Powiadomienie o wiadomości z innej sesji');
       this.showNotification(`Nowa wiadomość od ${session.other_user.username}`, 'info');
       
-      // Opcjonalnie: dodaj wskaźnik nieprzeczytanych wiadomości
+      // Dodaj wskaźnik nieprzeczytanych wiadomości
       this.updateUnreadIndicator(sessionToken);
     }
   }
@@ -740,6 +768,7 @@ updateUnreadIndicator(sessionToken) {
         justify-content: center;
         font-size: 12px;
         margin-left: auto;
+        font-weight: bold;
       `;
       friendItem.appendChild(badge);
     }
@@ -750,96 +779,48 @@ updateUnreadIndicator(sessionToken) {
   }
 }
 
-  /**
-   * Formatuje czas wiadomości
-   */
-  formatTime(timestamp) {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
-    if (date >= today) {
-      return timeStr;
-    } else if (date >= yesterday) {
-      return `Wczoraj, ${timeStr}`;
+/**
+ * POPRAWIONA: Przełączanie sesji z wyczyszczeniem wskaźnika
+ */
+switchSession(sessionToken) {
+  if (!sessionToken || sessionToken === this.currentSessionToken) return;
+  
+  this.currentSessionToken = sessionToken;
+  
+  const friendItems = document.querySelectorAll('.friend-item');
+  friendItems.forEach(item => {
+    if (item.dataset.sessionToken === sessionToken) {
+      item.classList.add('active');
+      
+      // Usuń wskaźnik nieprzeczytanych wiadomości
+      const badge = item.querySelector('.unread-badge');
+      if (badge) {
+        badge.remove();
+      }
     } else {
-      return `${date.toLocaleDateString()} ${timeStr}`;
+      item.classList.remove('active');
     }
+  });
+  
+  const session = this.sessions.find(s => s.token === sessionToken);
+  if (!session) {
+    console.error(`❌ Nie znaleziono sesji o tokenie ${sessionToken}`);
+    this.showNotification("Błąd: nie znaleziono sesji", "error");
+    return;
   }
   
-  /**
-   * Przewija do końca kontener wiadomości
-   */
-  scrollToBottom() {
-    if (this.messagesContainer) {
-      this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-    }
+  if (this.chatHeader) {
+    this.chatHeader.innerHTML = `<h2>${session.other_user.username}</h2>`;
+    
+    const statusSpan = document.createElement('span');
+    statusSpan.className = `status-indicator ${session.other_user.is_online ? 'online' : 'offline'}`;
+    statusSpan.style.display = 'inline-block';
+    statusSpan.style.marginLeft = '10px';
+    this.chatHeader.querySelector('h2').appendChild(statusSpan);
   }
-
-  /**
-   * Wyświetla nową wiadomość
-   */
-  displayNewMessage(sessionToken, message) {
-    if (sessionToken === this.currentSessionToken) {
-      this.addMessageToUI(message);
-    } else {
-      const session = this.sessions.find(s => s.token === sessionToken);
-      if (session) {
-        this.showNotification(`Nowa wiadomość od ${session.other_user.username}`, 'info');
-      }
-    }
-  }
-
-  /**
-   * Wyświetla powiadomienie
-   */
-  showNotification(message, type = 'info', duration = 5000) {
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
-    
-    // Stylizacja
-    notification.style.position = 'fixed';
-    notification.style.top = '20px';
-    notification.style.right = '20px';
-    notification.style.padding = '15px 20px';
-    notification.style.borderRadius = '5px';
-    notification.style.zIndex = '10000';
-    notification.style.maxWidth = '300px';
-    notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-    
-    // Kolory w zależności od typu
-    switch(type) {
-      case 'success':
-        notification.style.backgroundColor = '#4CAF50';
-        notification.style.color = 'white';
-        break;
-      case 'error':
-        notification.style.backgroundColor = '#F44336';
-        notification.style.color = 'white';
-        break;
-      case 'warning':
-        notification.style.backgroundColor = '#FF9800';
-        notification.style.color = 'white';
-        break;
-      default:
-        notification.style.backgroundColor = '#2196F3';
-        notification.style.color = 'white';
-    }
-    
-    document.body.appendChild(notification);
-    
-    // Usuń po określonym czasie
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.parentNode.removeChild(notification);
-      }
-    }, duration);
-  }
+  
+  this.loadMessages(sessionToken);
+}
 
   // Metody dla znajomych i zaproszeń...
   async sendFriendRequest() {
