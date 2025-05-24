@@ -1,6 +1,6 @@
 /**
- * ChatInterface - POPRAWIONA wersja z automatyczną wymianą kluczy i real-time messaging
- * Używa UnifiedCrypto i SocketIOHandler z automatyczną obsługą stanów sesji
+ * ChatInterface - ZAKTUALIZOWANA wersja interfejsu użytkownika czatu
+ * Używa UnifiedCrypto i SocketIOHandler zamiast WebSocketHandler
  */
 class ChatInterface {
   constructor(sessionManager) {
@@ -14,7 +14,6 @@ class ChatInterface {
     this.friends = [];
     this.sessions = [];
     this.pendingRequests = [];
-    this.sessionStates = {}; // NOWE: Śledzenie stanów sesji
     
     // Sprawdź czy UnifiedCrypto jest dostępny
     if (!window.unifiedCrypto) {
@@ -31,64 +30,16 @@ class ChatInterface {
       this.initializeFriendRequestNotifications();
       this.loadFriends();
       this.loadSessions();
-      
-      // NOWE: Ustaw callback dla zakończenia wymiany kluczy
-      if (this.sessionManager) {
-        this.sessionManager.onKeyExchangeCompleted = (sessionToken) => {
-          this.handleKeyExchangeCompleted(sessionToken);
-        };
-      }
     });
     
-    // Regularne aktualizacje
+    // Regularne aktualizacje i sprawdzanie zaproszeń
     setInterval(() => this.loadPendingRequests(), 30000);
-    setInterval(() => this.refreshActiveSessions(), 60000); // NOWE: Odświeżanie sesji
     
-    console.log("✅ ChatInterface zainicjalizowany z automatyczną wymianą kluczy");
+    console.log("✅ ChatInterface zainicjalizowany z Socket.IO");
   }
 
   /**
-   * NOWA: Obsługuje zakończenie wymiany kluczy
-   */
-  handleKeyExchangeCompleted(sessionToken) {
-    console.log('🎉 Wymiana kluczy zakończona dla sesji:', sessionToken?.substring(0, 10) + '...');
-    
-    // Zaktualizuj stan sesji
-    if (this.sessionStates[sessionToken]) {
-      this.sessionStates[sessionToken].keyExchangeCompleted = true;
-      this.sessionStates[sessionToken].isReady = true;
-    }
-    
-    // Jeśli to aktywna sesja, pokaż powiadomienie
-    if (sessionToken === this.currentSessionToken) {
-      this.showNotification("🔐 Szyfrowanie końcowo-końcowe aktywne", "success", 3000);
-      
-      // Włącz pole wprowadzania wiadomości
-      if (this.messageInput) {
-        this.messageInput.disabled = false;
-        this.messageInput.placeholder = "Napisz wiadomość...";
-      }
-      
-      if (this.sendButton) {
-        this.sendButton.disabled = false;
-      }
-    }
-    
-    // Odśwież listę sesji
-    this.loadSessions();
-  }
-
-  /**
-   * NOWA: Odświeża aktywne sesje
-   */
-  async refreshActiveSessions() {
-    if (this.sessionManager) {
-      await this.sessionManager.getActiveSessions();
-    }
-  }
-
-  /**
-   * Ładuje konfigurację Socket.IO - BEZ ZMIAN
+   * Ładuje konfigurację Socket.IO
    */
   async loadSocketIOConfig() {
     try {
@@ -108,7 +59,7 @@ class ChatInterface {
   }
   
   /**
-   * Inicjalizacja elementów DOM - BEZ ZMIAN
+   * Inicjalizacja elementów DOM
    */
   initializeDOMElements() {
     this.friendsList = document.getElementById('friend-list');
@@ -135,8 +86,8 @@ class ChatInterface {
     });
   }
 
-  /**
-   * POPRAWIONA: Inicjalizacja nasłuchiwania zdarzeń z obsługą stanów sesji
+   /**
+   * Inicjalizacja nasłuchiwania zdarzeń
    */
   initializeEvents() {
     // Sprawdź, czy wszystkie elementy DOM istnieją
@@ -149,17 +100,12 @@ class ChatInterface {
     // Przycisk wysyłania wiadomości
     this.sendButton.addEventListener('click', () => this.sendMessage());
     
-    // Obsługa Enter do wysyłania wiadomości + Shift+Enter dla nowej linii
+    // Obsługa Enter do wysyłania wiadomości
     this.messageInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.sendMessage();
       }
-    });
-    
-    // NOWE: Obsługa pisania (typing indicators w przyszłości)
-    this.messageInput.addEventListener('input', () => {
-      // Można dodać typing indicators
     });
     
     // Obsługa modalu dodawania znajomych
@@ -189,7 +135,7 @@ class ChatInterface {
       notificationIcon.addEventListener('click', () => this.showFriendRequestsModal());
     }
 
-    // Obsługa przycisku wylogowania
+    // DODANE: Obsługa przycisku wylogowania
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', (e) => {
@@ -213,7 +159,7 @@ class ChatInterface {
       console.warn('⚠️ Przycisk #logout-btn nie znaleziony');
     }
 
-    // POPRAWIONE: Nasłuchiwanie na zdarzenia z menedżera sesji
+    // Nasłuchiwanie na zdarzenia z menedżera sesji - ZAKTUALIZOWANE dla Socket.IO
     if (this.sessionManager) {
       this.sessionManager.onMessageReceived = (sessionToken, message) => 
         this.displayNewMessage(sessionToken, message);
@@ -228,351 +174,11 @@ class ChatInterface {
       };
     }
     
-    console.log('✅ Wydarzenia zainicjalizowane z obsługą stanów sesji');
-  }
-
-/**
-   * POPRAWIONA: Wybiera znajomego i automatycznie inicjuje sesję z wymianą kluczy
-   */
-  async selectFriend(friend) {
-    console.log('👤 Wybrano znajomego:', friend.username);
-    
-    try {
-      // Pokaż wskaźnik ładowania
-      this.showSessionStatus("Łączenie z " + friend.username + "...", "loading");
-      
-      // Usuń aktywny stan z innych elementów
-      document.querySelectorAll('.friend-item').forEach(item => {
-        item.classList.remove('active');
-      });
-      
-      // Dodaj aktywny stan do wybranego elementu
-      const friendElement = document.querySelector(`[data-user-id="${friend.user_id}"]`);
-      if (friendElement) {
-        friendElement.classList.add('active');
-      }
-      
-      // Zaktualizuj nagłówek czatu
-      if (this.chatHeader) {
-        this.chatHeader.innerHTML = `
-          <div class="chat-header-info">
-            <h3>${friend.username}</h3>
-            <span class="status ${friend.is_online ? 'online' : 'offline'}">
-              ${friend.is_online ? 'Online' : 'Offline'}
-            </span>
-          </div>
-          <div class="session-status" id="session-status">
-            <span class="status-text">Inicjalizacja...</span>
-          </div>
-        `;
-      }
-      
-      // NOWE: Wyłącz pole wprowadzania do czasu zakończenia wymiany kluczy
-      if (this.messageInput) {
-        this.messageInput.disabled = true;
-        this.messageInput.placeholder = "Przygotowywanie szyfrowania...";
-      }
-      
-      if (this.sendButton) {
-        this.sendButton.disabled = true;
-      }
-      
-      // Inicjuj sesję z automatyczną wymianą kluczy
-      const result = await this.sessionManager.initSession(friend.user_id);
-      
-      if (result.status === 'success') {
-        this.currentSessionToken = result.session_token;
-        console.log('✅ Sesja zainicjalizowana:', this.currentSessionToken?.substring(0, 10) + '...');
-        
-        // Zapisz stan sesji
-        this.sessionStates[this.currentSessionToken] = {
-          friendId: friend.user_id,
-          friendUsername: friend.username,
-          isReady: result.session?.is_ready || false,
-          needsKeyExchange: result.session?.needs_key_exchange || false,
-          keyExchangeCompleted: result.session?.is_ready || false
-        };
-        
-        // Załaduj wiadomości dla tej sesji
-        await this.loadMessages(this.currentSessionToken);
-        
-        // Sprawdź stan wymiany kluczy
-        await this.checkSessionReadiness();
-        
-        // Wyczyść licznik nieprzeczytanych dla tej sesji
-        const session = this.sessions.find(s => s.token === this.currentSessionToken);
-        if (session) {
-          session.unread_count = 0;
-          this.renderFriendsList();
-        }
-        
-      } else {
-        console.error('❌ Błąd inicjalizacji sesji:', result.message);
-        this.showNotification(result.message || 'Błąd inicjalizacji sesji', 'error');
-        this.showSessionStatus("Błąd połączenia", "error");
-        
-        // Przywróć pole wprowadzania
-        if (this.messageInput) {
-          this.messageInput.disabled = false;
-          this.messageInput.placeholder = "Napisz wiadomość...";
-        }
-        
-        if (this.sendButton) {
-          this.sendButton.disabled = false;
-        }
-      }
-    } catch (error) {
-      console.error('❌ Błąd wyboru znajomego:', error);
-      this.showNotification('Błąd inicjalizacji czatu', 'error');
-      this.showSessionStatus("Błąd", "error");
-    }
+    console.log('✅ Wydarzenia zainicjalizowane');
   }
 
   /**
-   * NOWA: Sprawdza gotowość sesji i aktualizuje UI
-   */
-  async checkSessionReadiness() {
-    if (!this.currentSessionToken) return;
-    
-    try {
-      const response = await fetch(`/api/session/${this.currentSessionToken}/validate`, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'same-origin'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.status === 'success' && data.session) {
-          const session = data.session;
-          
-          // Aktualizuj stan sesji
-          if (this.sessionStates[this.currentSessionToken]) {
-            this.sessionStates[this.currentSessionToken].isReady = session.is_ready || false;
-            this.sessionStates[this.currentSessionToken].needsKeyExchange = session.needs_key_exchange || false;
-            this.sessionStates[this.currentSessionToken].keyExchangeCompleted = !session.needs_key_exchange;
-          }
-          
-          // Pokaż odpowiedni status
-          if (session.is_ready) {
-            this.showSessionStatus("🔐 Bezpieczne połączenie", "ready");
-            
-            // Włącz pole wprowadzania
-            if (this.messageInput) {
-              this.messageInput.disabled = false;
-              this.messageInput.placeholder = "Napisz wiadomość...";
-              this.messageInput.focus();
-            }
-            
-            if (this.sendButton) {
-              this.sendButton.disabled = false;
-            }
-          } else if (session.needs_key_exchange) {
-            if (session.is_initiator) {
-              this.showSessionStatus("🔑 Generowanie kluczy...", "loading");
-            } else {
-              this.showSessionStatus("🔑 Oczekiwanie na klucze...", "waiting");
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('❌ Błąd sprawdzania gotowości sesji:', error);
-    }
-  }
-
-  /**
-   * NOWA: Pokazuje status sesji w nagłówku
-   */
-  showSessionStatus(message, type = "info") {
-    const statusElement = document.getElementById('session-status');
-    if (statusElement) {
-      const statusText = statusElement.querySelector('.status-text');
-      if (statusText) {
-        statusText.textContent = message;
-        
-        // Usuń poprzednie klasy statusu
-        statusElement.classList.remove('loading', 'waiting', 'ready', 'error');
-        
-        // Dodaj nową klasę
-        if (type) {
-          statusElement.classList.add(type);
-        }
-      }
-    }
-  }
-
-  /**
-   * POPRAWIONA: Inicjuje sesję czatu (używana wewnętrznie)
-   */
-  async initSession(userId) {
-    try {
-      console.log('🚀 Inicjalizacja sesji z użytkownikiem:', userId);
-      
-      const result = await this.sessionManager.initSession(userId);
-      
-      if (result.status === 'success') {
-        this.currentSessionToken = result.session_token;
-        console.log('✅ Sesja zainicjalizowana:', this.currentSessionToken);
-        
-        // Załaduj wiadomości dla tej sesji
-        await this.loadMessages(this.currentSessionToken);
-        
-        // Sprawdź gotowość sesji
-        await this.checkSessionReadiness();
-        
-        // Wyczyść licznik nieprzeczytanych dla tej sesji
-        const session = this.sessions.find(s => s.token === this.currentSessionToken);
-        if (session) {
-          session.unread_count = 0;
-          this.renderFriendsList();
-        }
-        
-      } else {
-        console.error('❌ Błąd inicjalizacji sesji:', result.message);
-        this.showNotification(result.message || 'Błąd inicjalizacji sesji', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Błąd initSession:', error);
-      this.showNotification('Błąd połączenia z serwerem', 'error');
-    }
-  }
-
-  /**
-   * POPRAWIONA: Wysyłanie wiadomości z kontrolą gotowości sesji
-   */
-  async sendMessage() {
-    const content = this.messageInput.value.trim();
-    if (!content) return;
-    
-    // Sprawdź czy UnifiedCrypto jest dostępny
-    if (!window.unifiedCrypto) {
-      this.showNotification("Moduł kryptograficzny nie jest dostępny", "error");
-      return;
-    }
-    
-    // Sprawdź czy mamy aktywną sesję
-    if (!this.currentSessionToken) {
-      this.showNotification("Brak aktywnej sesji czatu", "error");
-      return;
-    }
-    
-    // NOWE: Sprawdź czy sesja jest gotowa
-    const sessionState = this.sessionStates[this.currentSessionToken];
-    if (sessionState && !sessionState.keyExchangeCompleted) {
-      this.showNotification("Poczekaj na zakończenie wymiany kluczy", "warning");
-      return;
-    }
-    
-    // Zablokuj pole wprowadzania na czas wysyłania
-    this.messageInput.disabled = true;
-    this.sendButton.disabled = true;
-    
-    try {
-      // Zapamiętaj treść na wypadek błędu
-      const messageContent = content;
-      
-      // Wyczyść pole wprowadzania od razu
-      this.messageInput.value = '';
-      
-      // Wyślij wiadomość przez menedżer sesji
-      const result = await this.sessionManager.sendMessage(this.currentSessionToken, messageContent);
-      
-      if (result.status === 'success') {
-        console.log("✅ Wiadomość wysłana pomyślnie");
-        
-        // Dodaj wiadomość do UI od razu (optymistyczne UI)
-        const newMessage = {
-          id: result.messageData?.id || Date.now().toString(),
-          sender_id: parseInt(this.currentuser.id),
-          content: messageContent,
-          timestamp: result.messageData?.timestamp || new Date().toISOString(),
-          is_mine: true
-        };
-        
-        this.addMessageToUI(newMessage);
-        
-      } else {
-        // Przywróć treść w przypadku błędu
-        this.messageInput.value = messageContent;
-        this.showNotification(result.message || 'Błąd wysyłania wiadomości', "error");
-      }
-      
-    } catch (error) {
-      console.error('❌ Błąd wysyłania wiadomości:', error);
-      this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, "error");
-      
-      // Przywróć treść w przypadku błędu
-      this.messageInput.value = content;
-      
-    } finally {
-      // Odblokuj pole wprowadzania
-      this.messageInput.disabled = false;
-      this.sendButton.disabled = false;
-      this.messageInput.focus();
-    }
-  }
-
-/**
-   * POPRAWIONA: Wyświetla nową wiadomość z automatycznym przełączaniem sesji
-   */
-  displayNewMessage(sessionToken, message) {
-    console.log('🆕 Otrzymano nową wiadomość:', {
-      sessionToken: sessionToken?.substring(0, 10) + '...',
-      message: {
-        id: message.id,
-        content: message.content?.substring(0, 50) + "...",
-        sender_id: message.sender_id
-      },
-      currentSession: this.currentSessionToken?.substring(0, 10) + '...',
-      isCurrentSession: sessionToken === this.currentSessionToken
-    });
-    
-    // Jeśli to aktualna sesja, wyświetl od razu
-    if (sessionToken === this.currentSessionToken) {
-      console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
-      this.addMessageToUI(message);
-      this.playNotificationSound();
-    } else {
-      // NOWE: Jeśli to inna sesja, ale nie mamy aktywnej - automatycznie przełącz
-      if (!this.currentSessionToken) {
-        console.log('🔄 Brak aktywnej sesji - automatyczne przełączenie');
-        
-        // Znajdź sesję i przełącz na nią
-        const session = this.sessions.find(s => s.token === sessionToken);
-        if (session && session.other_user) {
-          const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
-          if (friend) {
-            this.selectFriend(friend);
-            
-            // Po przełączeniu, wyświetl wiadomość
-            setTimeout(() => {
-              this.addMessageToUI(message);
-              this.playNotificationSound();
-            }, 1000);
-          }
-        }
-      } else {
-        // Jeśli to inna sesja, zaktualizuj wskaźnik nieprzeczytanych wiadomości
-        console.log('📊 Wiadomość w innej sesji - aktualizuję wskaźniki');
-        this.updateUnreadCount(sessionToken);
-        this.playNotificationSound();
-        
-        // NOWE: Pokaż powiadomienie o nowej wiadomości z innej sesji
-        const session = this.sessions.find(s => s.token === sessionToken);
-        if (session && session.other_user) {
-          this.showNotification(
-            `Nowa wiadomość od ${session.other_user.username}`, 
-            "info", 
-            5000
-          );
-        }
-      }
-    }
-  }
-
-  /**
-   * Ładuje dane użytkownika - BEZ ZMIAN
+   * Ładuje dane użytkownika i dodaje przycisk panelu administratora jeśli potrzeba
    */
   loadUserData() {
     this.currentUser = {
@@ -603,9 +209,8 @@ class ChatInterface {
     
     console.log(`✅ Dane użytkownika załadowane: ${this.currentUser.username}`);
   }
-
   /**
-   * Ładuje listę znajomych - BEZ ZMIAN
+   * Ładuje listę znajomych z serwera
    */
   async loadFriends() {
     try {
@@ -626,7 +231,7 @@ class ChatInterface {
   }
 
   /**
-   * POPRAWIONA: Ładuje aktywne sesje z obsługą stanów
+   * Ładuje aktywne sesje czatu z serwera
    */
   async loadSessions() {
     try {
@@ -636,27 +241,9 @@ class ChatInterface {
       if (result.status === 'success') {
         this.updateSessionsList(result.sessions);
         
-        // NOWE: Aktualizuj stany sesji
-        result.sessions.forEach(session => {
-          this.sessionStates[session.token] = {
-            friendId: session.other_user?.user_id,
-            friendUsername: session.other_user?.username,
-            isReady: session.is_ready || false,
-            needsKeyExchange: session.needs_key_exchange || false,
-            keyExchangeCompleted: session.is_ready || false
-          };
-        });
-        
-        // Jeśli nie mamy aktywnej sesji, ale są dostępne sesje, wybierz pierwszą gotową
-        if (!this.currentSessionToken && result.sessions.length > 0) {
-          const readySession = result.sessions.find(s => s.is_ready);
-          if (readySession) {
-            const friend = this.friends.find(f => f.user_id === readySession.other_user.user_id);
-            if (friend) {
-              console.log('🔄 Automatyczne przełączenie na gotową sesję:', readySession.token?.substring(0, 10) + '...');
-              this.selectFriend(friend);
-            }
-          }
+        // Wybierz pierwszą sesję, jeśli jest dostępna
+        if (result.sessions.length > 0 && !this.currentSessionToken) {
+          this.switchSession(result.sessions[0].token);
         }
         
         console.log(`✅ Załadowano ${result.sessions.length} aktywnych sesji`);
@@ -670,7 +257,7 @@ class ChatInterface {
   }
 
   /**
-   * POPRAWIONA: Ładuje wiadomości z kontrolą gotowości sesji
+   * POPRAWIONA: Ładuje wiadomości dla sesji
    */
   async loadMessages(sessionToken) {
     if (!this.sessionManager) {
@@ -683,29 +270,9 @@ class ChatInterface {
     }
     
     try {
-      console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken?.substring(0, 10) + '...');
+      console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken);
       
-      // Sprawdź stan sesji
-      const sessionState = this.sessionStates[sessionToken];
-      if (sessionState && !sessionState.keyExchangeCompleted) {
-        console.log('⏳ Sesja nie jest jeszcze gotowa, czekam...');
-        
-        // Pokaż komunikat o oczekiwaniu
-        if (this.messagesContainer) {
-          this.messagesContainer.innerHTML = `
-            <div class="system-message">
-              <div class="loading-indicator">
-                <div class="spinner"></div>
-                <p>Przygotowywanie bezpiecznego połączenia...</p>
-              </div>
-            </div>
-          `;
-        }
-        
-        return;
-      }
-      
-      // Załaduj lokalne wiadomości
+      // NAPRAWIONE: Użyj poprawionej metody getLocalMessages
       const result = this.sessionManager.getLocalMessages(sessionToken);
       
       console.log('📨 Wynik ładowania wiadomości:', result);
@@ -714,55 +281,239 @@ class ChatInterface {
         const messages = result.messages || [];
         console.log(`📝 Ładuję ${messages.length} wiadomości`);
         
-        if (messages.length === 0) {
-          // Pokaż komunikat o braku wiadomości
-          if (this.messagesContainer) {
-            this.messagesContainer.innerHTML = `
-              <div class="system-message">
-                <p>🔐 Bezpieczna rozmowa została rozpoczęta</p>
-                <p>Wiadomości są szyfrowane końcowo-końcowo</p>
-              </div>
-            `;
-          }
-        } else {
-          messages.forEach(message => {
-            this.addMessageToUI(message);
+        messages.forEach(message => {
+          console.log('💬 Dodaję wiadomość:', {
+            id: message.id,
+            content: message.content?.substring(0, 50) + "...",
+            sender_id: message.sender_id,
+            is_mine: message.is_mine
           });
-        }
+          this.addMessageToUI(message);
+        });
         
         this.scrollToBottom();
         
-        // Spróbuj pobrać nowsze wiadomości z serwera
-        try {
-          const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
-          if (serverResult.status === 'success' && serverResult.messages.length > messages.length) {
-            console.log(`📥 Pobrano ${serverResult.messages.length - messages.length} nowych wiadomości z serwera`);
-            // Przeładuj po pobraniu z serwera
-            setTimeout(() => this.loadMessages(sessionToken), 100);
+        // Opcjonalnie: spróbuj pobrać nowsze wiadomości z serwera
+        if (messages.length === 0) {
+          console.log('📡 Brak lokalnych wiadomości, próbuję pobrać z serwera...');
+          try {
+            const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
+            if (serverResult.status === 'success' && serverResult.messages.length > 0) {
+              console.log(`📥 Pobrano ${serverResult.messages.length} wiadomości z serwera`);
+              // Przeładuj po pobraniu z serwera
+              setTimeout(() => this.loadMessages(sessionToken), 100);
+            }
+          } catch (serverError) {
+            console.warn('⚠️ Nie można pobrać z serwera:', serverError);
           }
-        } catch (serverError) {
-          console.warn('⚠️ Nie można pobrać z serwera:', serverError);
         }
       } else {
         console.warn('⚠️ Brak wiadomości lub błąd:', result);
       }
     } catch (error) {
       console.error('❌ Błąd ładowania wiadomości:', error);
+      console.error('❌ Stack trace:', error.stack);
       this.showNotification('Błąd ładowania wiadomości', 'error');
+    }
+  }
+  /**
+   * ZAKTUALIZOWANE: Funkcja obsługująca wysyłanie wiadomości z UnifiedCrypto
+   */
+  async sendMessage() {
+    const content = this.messageInput.value.trim();
+    if (!content) return;
+    
+    // Sprawdź czy UnifiedCrypto jest dostępny
+    if (!window.unifiedCrypto) {
+      this.showNotification("Moduł kryptograficzny nie jest dostępny", "error");
+      return;
+    }
+    
+    // Zablokuj pole wprowadzania i przycisk wysyłania na czas wysyłania
+    this.messageInput.disabled = true;
+    this.sendButton.disabled = true;
+    
+    try {
+      // Sprawdź, czy mamy token sesji
+      if (!this.currentSessionToken) {
+        console.error("❌ Brak aktywnej sesji");
+        
+        // Sprawdź, czy mamy wybrane jakieś okno czatu
+        const activeItem = document.querySelector('.friend-item.active');
+        if (activeItem) {
+          this.showNotification("Błąd sesji czatu. Spróbuj odświeżyć stronę.", "error");
+        } else {
+          this.showNotification("Wybierz znajomego z listy, aby rozpocząć rozmowę", "info");
+          
+          // Automatycznie wybierz pierwszego znajomego
+          if (this.friends && this.friends.length > 0) {
+            try {
+              await this.initSession(this.friends[0].user_id);
+              setTimeout(() => this.sendMessage(), 500);
+            } catch (e) {
+              console.error("❌ Błąd automatycznego wyboru znajomego:", e);
+            }
+          }
+        }
+        return;
+      }
+      
+      // Sprawdź gotowość sesji przed wysłaniem
+      const isSessionReady = await this.ensureSessionReady();
+      if (!isSessionReady) {
+        return;
+      }
+      
+      // Zapamiętaj treść na wypadek błędu
+      const messageContent = content;
+      
+      // Wyczyść pole wprowadzania od razu
+      this.messageInput.value = '';
+      
+      // ZAKTUALIZOWANE: Wyślij wiadomość przez menedżer sesji z UnifiedCrypto
+      const result = await this.sessionManager.sendMessage(this.currentSessionToken, messageContent);
+      
+      if (result.status === 'success') {
+        // Wiadomość została wysłana pomyślnie
+        console.log("✅ Wiadomość wysłana pomyślnie");
+        
+        // Dodaj wiadomość do UI od razu (optymistyczne UI)
+        const newMessage = {
+          id: result.messageData?.id || Date.now().toString(),
+          sender_id: parseInt(this.currentUser.id),
+          content: messageContent,
+          timestamp: result.messageData?.timestamp || new Date().toISOString(),
+          is_mine: true
+        };
+        
+        this.addMessageToUI(newMessage);
+      } else {
+        // Przywróć treść w przypadku błędu
+        this.messageInput.value = messageContent;
+        this.showNotification(result.message || 'Błąd wysyłania wiadomości', "error");
+      }
+    } catch (error) {
+      console.error('❌ Błąd wysyłania wiadomości:', error);
+      this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, "error");
+    } finally {
+      // Odblokuj pole wprowadzania i przycisk
+      this.messageInput.disabled = false;
+      this.sendButton.disabled = false;
+      this.messageInput.focus();
     }
   }
 
   /**
-   * POPRAWIONA: Dodaje wiadomość do UI z lepszym formatowaniem
+   * ZAKTUALIZOWANE: Sprawdza, czy sesja jest gotowa do wysyłania wiadomości
+   */
+  async ensureSessionReady() {
+    if (!this.currentSessionToken) {
+      this.showNotification("Brak aktywnej sesji", "error");
+      return false;
+    }
+    
+    // NAPRAWIONE: Sprawdź, czy klucz sesji istnieje używając UnifiedCrypto
+    if (!window.unifiedCrypto.hasSessionKey(this.currentSessionToken)) {
+      try {
+        // Znajdź sesję w liście
+        const session = this.sessions.find(s => s.token === this.currentSessionToken);
+        
+        if (!session) {
+          this.showNotification("Sesja nie istnieje", "error");
+          return false;
+        }
+        
+        // DODANO: Automatyczne generowanie klucza jeśli nie istnieje
+        if (!session.has_key) {
+          console.log("🔑 Generowanie nowego klucza sesji...");
+          this.showNotification("Generowanie klucza szyfrowania...", "info", 2000);
+          
+          // Wygeneruj nowy klucz sesji AES
+          const sessionKey = await window.unifiedCrypto.generateSessionKey();
+          const sessionKeyBase64 = await window.unifiedCrypto.exportSessionKey(sessionKey);
+          
+          // Zapisz klucz lokalnie
+          window.unifiedCrypto.storeSessionKey(this.currentSessionToken, sessionKeyBase64);
+          
+          // Pobierz klucz publiczny drugiego użytkownika
+          const recipientPublicKeyResponse = await fetch(`/api/user/${session.other_user.user_id}/public_key`);
+          if (!recipientPublicKeyResponse.ok) {
+            throw new Error('Nie można pobrać klucza publicznego odbiorcy');
+          }
+          
+          const recipientKeyData = await recipientPublicKeyResponse.json();
+          const recipientPublicKey = await window.unifiedCrypto.importPublicKeyFromPEM(recipientKeyData.public_key);
+          
+          // Zaszyfruj klucz sesji kluczem publicznym odbiorcy
+          const encryptedSessionKey = await window.unifiedCrypto.encryptSessionKey(recipientPublicKey, sessionKey);
+          
+          // Wyślij zaszyfrowany klucz na serwer
+          const keyExchangeResponse = await fetch(`/api/session/${this.currentSessionToken}/exchange_key`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              encrypted_key: encryptedSessionKey
+            })
+          });
+          
+          if (!keyExchangeResponse.ok) {
+            throw new Error('Nie można wymienić klucza sesji');
+          }
+          
+          const keyResult = await keyExchangeResponse.json();
+          if (keyResult.status !== 'success') {
+            throw new Error(keyResult.message || 'Błąd wymiany klucza');
+          }
+          
+          console.log("✅ Klucz sesji wygenerowany i wysłany");
+          this.showNotification("Klucz szyfrowania wygenerowany", "success", 2000);
+          
+          // Odśwież listę sesji
+          await this.loadSessions();
+          
+          return true;
+        }
+        
+        // Jeśli sesja ma klucz, ale my go nie mamy - pobierz go
+        const result = await this.sessionManager.retrieveSessionKey(this.currentSessionToken);
+        
+        if (!result.success) {
+          this.showNotification("Nie można pobrać klucza sesji: " + result.message, "error");
+          return false;
+        }
+        
+        // Sprawdź, czy klucz został pobrany
+        if (!window.unifiedCrypto.hasSessionKey(this.currentSessionToken)) {
+          this.showNotification("Nie udało się odszyfrować klucza sesji", "error");
+          return false;
+        }
+      } catch (error) {
+        console.error("❌ Błąd podczas generowania/pobierania klucza sesji:", error);
+        this.showNotification("Błąd podczas konfiguracji szyfrowania: " + error.message, "error");
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  /**
+   * POPRAWIONA: Dodaje wiadomość do UI z debugowaniem
    */
   addMessageToUI(message) {
     console.log('🎨 addMessageToUI wywołane z:', {
       message: message,
-      hasContainer: !!this.messagesContainer
+      hasContainer: !!this.messagesContainer,
+      containerExists: !!document.getElementById('messages'),
+      currentUser: this.currentUser
     });
     
     if (!this.messagesContainer) {
       console.error('❌ messagesContainer nie istnieje!');
+      // Spróbuj znaleźć ponownie
       this.messagesContainer = document.getElementById('messages');
       if (!this.messagesContainer) {
         console.error('❌ Nie można znaleźć elementu #messages w DOM');
@@ -776,33 +527,45 @@ class ChatInterface {
     }
     
     try {
-      // Usuń komunikat systemowy jeśli istnieje
-      const systemMessage = this.messagesContainer.querySelector('.system-message');
-      if (systemMessage) {
-        systemMessage.remove();
-      }
-      
       const messageElement = this.createMessageElement(message);
       console.log('✅ Element wiadomości utworzony:', messageElement);
       
       this.messagesContainer.appendChild(messageElement);
-      this.scrollToBottom();
-      
       console.log('✅ Element dodany do kontenera');
+      
+      this.scrollToBottom();
+      console.log('✅ Przewinięto do dołu');
+      
+      // Debug: sprawdź ile wiadomości jest teraz w kontenerze
+      console.log('📊 Liczba wiadomości w kontenerze:', this.messagesContainer.children.length);
       
     } catch (error) {
       console.error('❌ Błąd w addMessageToUI:', error);
+      console.error('❌ Stack trace:', error.stack);
     }
   }
   
   /**
-   * POPRAWIONA: Tworzy element wiadomości z lepszym stylem
+   * POPRAWIONA: Tworzy element wiadomości z debugowaniem
    */
   createMessageElement(message) {
+    console.log('🏗️ createMessageElement dla:', {
+      content: message.content,
+      sender_id: message.sender_id,
+      current_user_id: this.currentUser?.id,
+      timestamp: message.timestamp
+    });
+    
     const messageDiv = document.createElement('div');
     
     // Sprawdź czy to nasza wiadomość
     const isSent = message.sender_id === parseInt(this.currentUser.id) || message.is_mine;
+    console.log('📤 Czy wiadomość wysłana przez nas?', {
+      isSent,
+      message_sender_id: message.sender_id,
+      current_user_id: parseInt(this.currentUser.id),
+      is_mine: message.is_mine
+    });
     
     messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
     
@@ -817,9 +580,37 @@ class ChatInterface {
     timeSpan.className = 'message-time';
     timeSpan.textContent = this.formatTime(message.timestamp);
     
+    // Debug: sprawdź czy elementy są tworzone
+    console.log('🔧 Elementy utworzone:', {
+      messageDiv: !!messageDiv,
+      contentDiv: !!contentDiv,
+      infoDiv: !!infoDiv,
+      timeSpan: !!timeSpan,
+      content: contentDiv.textContent,
+      className: messageDiv.className
+    });
+    
     infoDiv.appendChild(timeSpan);
     messageDiv.appendChild(contentDiv);
     messageDiv.appendChild(infoDiv);
+    
+    // Dodaj style inline dla pewności
+    messageDiv.style.cssText = `
+      margin-bottom: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      max-width: 70%;
+      word-wrap: break-word;
+      ${isSent ? 
+        'background: #007bff; color: white; margin-left: auto; text-align: right;' : 
+        'background: #f1f1f1; color: black; margin-right: auto; text-align: left;'
+      }
+    `;
+    
+    contentDiv.style.cssText = 'margin-bottom: 5px; font-size: 14px;';
+    infoDiv.style.cssText = 'font-size: 12px; opacity: 0.7;';
+    
+    console.log('✅ Element wiadomości gotowy:', messageDiv);
     
     return messageDiv;
   }
@@ -855,7 +646,35 @@ class ChatInterface {
   }
 
   /**
-   * Aktualizuje liczbę nieprzeczytanych wiadomości
+   * POPRAWIONA: Wyświetla nową wiadomość - obsługa przychodzących wiadomości
+   */
+  displayNewMessage(sessionToken, message) {
+    console.log('🆕 Otrzymano nową wiadomość:', {
+      sessionToken,
+      message: {
+        id: message.id,
+        content: message.content?.substring(0, 50) + "...",
+        sender_id: message.sender_id
+      },
+      currentSession: this.currentSessionToken
+    });
+    
+    // Jeśli to aktualna sesja, wyświetl od razu
+    if (sessionToken === this.currentSessionToken) {
+      console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
+      this.addMessageToUI(message);
+    } else {
+      // Jeśli to inna sesja, zaktualizuj wskaźnik nieprzeczytanych wiadomości
+      console.log('📊 Wiadomość w innej sesji - aktualizuję wskaźniki');
+      this.updateUnreadCount(sessionToken);
+    }
+    
+    // Odtwórz dźwięk powiadomienia (jeśli włączony)
+    this.playNotificationSound();
+  }
+
+  /**
+   * Aktualizuje liczbę nieprzeczytanych wiadomości dla sesji
    */
   updateUnreadCount(sessionToken) {
     const session = this.sessions.find(s => s.token === sessionToken);
@@ -869,6 +688,7 @@ class ChatInterface {
    * Odtwarza dźwięk powiadomienia
    */
   playNotificationSound() {
+    // Sprawdź czy użytkownik ma włączone powiadomienia dźwiękowe
     const soundEnabled = localStorage.getItem('notification_sound') !== 'false';
     if (soundEnabled) {
       try {
@@ -890,7 +710,7 @@ class ChatInterface {
   }
 
   /**
-   * POPRAWIONA: Renderuje listę znajomych z wskaźnikami sesji
+   * Renderuje listę znajomych
    */
   renderFriendsList() {
     if (!this.friendsList) return;
@@ -904,7 +724,7 @@ class ChatInterface {
   }
 
   /**
-   * POPRAWIONA: Tworzy element znajomego z wskaźnikami stanu sesji
+   * Tworzy element znajomego na liście
    */
   createFriendElement(friend) {
     const li = document.createElement('li');
@@ -912,7 +732,7 @@ class ChatInterface {
     li.dataset.userId = friend.user_id;
     
     // Znajdź sesję dla tego znajomego
-    const session = this.sessions.find(s => s.other_user && s.other_user.user_id === friend.user_id);
+    const session = this.sessions.find(s => s.other_user.user_id === friend.user_id);
     const unreadCount = session?.unread_count || 0;
     
     li.innerHTML = `
@@ -926,15 +746,83 @@ class ChatInterface {
         </div>
       </div>
       ${unreadCount > 0 ? `<div class="unread-count">${unreadCount}</div>` : ''}
-      `;
+    `;
     
     li.addEventListener('click', () => this.selectFriend(friend));
     
     return li;
   }
 
-      /**
-   * Przełącza na wybraną sesję - BEZ ZMIAN
+  /**
+   * Wybiera znajomego i inicjuje sesję czatu
+   */
+  async selectFriend(friend) {
+    console.log('👤 Wybrano znajomego:', friend.username);
+    
+    // Usuń aktywny stan z innych elementów
+    document.querySelectorAll('.friend-item').forEach(item => {
+      item.classList.remove('active');
+    });
+    
+    // Dodaj aktywny stan do wybranego elementu
+    const friendElement = document.querySelector(`[data-user-id="${friend.user_id}"]`);
+    if (friendElement) {
+      friendElement.classList.add('active');
+    }
+    
+    // Zaktualizuj nagłówek czatu
+    if (this.chatHeader) {
+      this.chatHeader.innerHTML = `
+        <h3>${friend.username}</h3>
+        <span class="status ${friend.is_online ? 'online' : 'offline'}">
+          ${friend.is_online ? 'Online' : 'Offline'}
+        </span>
+      `;
+    }
+    
+    try {
+      await this.initSession(friend.user_id);
+    } catch (error) {
+      console.error('❌ Błąd wyboru znajomego:', error);
+      this.showNotification('Błąd inicjalizacji czatu', 'error');
+    }
+  }
+
+  /**
+   * Inicjuje sesję czatu z danym użytkownikiem
+   */
+  async initSession(userId) {
+    try {
+      console.log('🚀 Inicjalizacja sesji z użytkownikiem:', userId);
+      
+      const result = await this.sessionManager.initSession(userId);
+      
+      if (result.status === 'success') {
+        this.currentSessionToken = result.session_token;
+        console.log('✅ Sesja zainicjalizowana:', this.currentSessionToken);
+        
+        // Załaduj wiadomości dla tej sesji
+        await this.loadMessages(this.currentSessionToken);
+        
+        // Wyczyść licznik nieprzeczytanych dla tej sesji
+        const session = this.sessions.find(s => s.token === this.currentSessionToken);
+        if (session) {
+          session.unread_count = 0;
+          this.renderFriendsList();
+        }
+        
+      } else {
+        console.error('❌ Błąd inicjalizacji sesji:', result.message);
+        this.showNotification(result.message || 'Błąd inicjalizacji sesji', 'error');
+      }
+    } catch (error) {
+      console.error('❌ Błąd initSession:', error);
+      this.showNotification('Błąd połączenia z serwerem', 'error');
+    }
+  }
+
+  /**
+   * Przełącza na wybraną sesję
    */
   async switchSession(sessionToken) {
     console.log('🔄 Przełączanie na sesję:', sessionToken);
@@ -953,7 +841,7 @@ class ChatInterface {
   }
 
   /**
-   * Aktualizuje status online użytkowników - BEZ ZMIAN
+   * Aktualizuje status online użytkowników
    */
   updateOnlineStatus(onlineUsers) {
     console.log('🟢 Aktualizacja statusu online:', onlineUsers);
@@ -966,7 +854,7 @@ class ChatInterface {
   }
 
   /**
-   * Aktualizuje listę znajomych - BEZ ZMIAN
+   * Aktualizuje listę znajomych
    */
   updateFriendsList(friends) {
     this.friends = friends || [];
@@ -975,14 +863,14 @@ class ChatInterface {
   }
 
   /**
-   * Inicjalizuje powiadomienia o zaproszeniach - BEZ ZMIAN
+   * Inicjalizuje powiadomienia o zaproszeniach do znajomych
    */
   initializeFriendRequestNotifications() {
     this.loadPendingRequests();
   }
 
   /**
-   * Ładuje oczekujące zaproszenia - BEZ ZMIAN
+   * Ładuje oczekujące zaproszenia do znajomych
    */
   async loadPendingRequests() {
     try {
@@ -1001,7 +889,7 @@ class ChatInterface {
   }
 
   /**
-   * Aktualizuje wskaźnik zaproszeń - BEZ ZMIAN
+   * Aktualizuje wskaźnik liczby zaproszeń
    */
   updateRequestBadge() {
     if (this.requestBadge) {
@@ -1016,7 +904,7 @@ class ChatInterface {
   }
 
   /**
-   * Wysyła zaproszenie do znajomego - BEZ ZMIAN
+   * Wysyła zaproszenie do znajomego
    */
   async sendFriendRequest() {
     const usernameInput = document.getElementById('friend-username-input');
@@ -1058,11 +946,12 @@ class ChatInterface {
   }
 
   /**
-   * Pokazuje modal z zaproszeniami - BEZ ZMIAN
+   * Pokazuje modal z zaproszeniami do znajomych
    */
   showFriendRequestsModal() {
     console.log('📨 Pokazuję modal z zaproszeniami');
     
+    // Tworzy i wyświetla modal z listą zaproszeń
     let modal = document.getElementById('friend-requests-modal');
     if (!modal) {
       modal = document.createElement('div');
@@ -1081,6 +970,7 @@ class ChatInterface {
       `;
       document.body.appendChild(modal);
       
+      // Obsługa zamykania modala
       modal.querySelector('.modal-close').addEventListener('click', () => {
         modal.style.display = 'none';
       });
@@ -1092,6 +982,7 @@ class ChatInterface {
       });
     }
     
+    // Wypełnij listę zaproszeń
     const requestsList = modal.querySelector('#friend-requests-list');
     if (requestsList) {
       if (this.pendingRequests.length === 0) {
@@ -1120,7 +1011,7 @@ class ChatInterface {
   }
 
   /**
-   * Akceptuje zaproszenie - BEZ ZMIAN
+   * Akceptuje zaproszenie do znajomych
    */
   async acceptFriendRequest(requestId) {
     try {
@@ -1138,8 +1029,9 @@ class ChatInterface {
       if (result.status === 'success') {
         this.showNotification('Zaproszenie zaakceptowane!', 'success');
         this.loadPendingRequests();
-        this.loadFriends();
+        this.loadFriends(); // Odśwież listę znajomych
         
+        // Zamknij modal jeśli nie ma więcej zaproszeń
         if (this.pendingRequests.length <= 1) {
           const modal = document.getElementById('friend-requests-modal');
           if (modal) modal.style.display = 'none';
@@ -1154,7 +1046,7 @@ class ChatInterface {
   }
 
   /**
-   * Odrzuca zaproszenie - BEZ ZMIAN
+   * Odrzuca zaproszenie do znajomych
    */
   async declineFriendRequest(requestId) {
     try {
@@ -1173,6 +1065,7 @@ class ChatInterface {
         this.showNotification('Zaproszenie odrzucone', 'info');
         this.loadPendingRequests();
         
+        // Zamknij modal jeśli nie ma więcej zaproszeń
         if (this.pendingRequests.length <= 1) {
           const modal = document.getElementById('friend-requests-modal');
           if (modal) modal.style.display = 'none';
@@ -1187,15 +1080,17 @@ class ChatInterface {
   }
 
   /**
-   * Pokazuje powiadomienie - BEZ ZMIAN
+   * Pokazuje powiadomienie
    */
   showNotification(message, type = 'info', duration = 5000) {
     console.log(`📢 Powiadomienie [${type}]:`, message);
     
+    // Utwórz element powiadomienia
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
     
+    // Dodaj style
     notification.style.cssText = `
       position: fixed;
       top: 20px;
@@ -1214,6 +1109,7 @@ class ChatInterface {
     
     document.body.appendChild(notification);
     
+    // Usuń po określonym czasie
     setTimeout(() => {
       if (notification.parentNode) {
         notification.parentNode.removeChild(notification);
@@ -1222,7 +1118,7 @@ class ChatInterface {
   }
 }
 
-// Eksportuj klasę
+// Eksportuj klasę lub ustaw jako globalną
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = ChatInterface;
 } else {
