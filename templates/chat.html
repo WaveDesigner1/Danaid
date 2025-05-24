@@ -4,64 +4,63 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Danaid - Bezpieczny Czat</title>
-    <link rel="stylesheet" href="static/css/chat_style.css">
+    <!-- ZMIANA: Zunifikowany CSS zamiast chat_style.css -->
+    <link rel="stylesheet" href="static/css/app.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 </head>
-<body>
-    <div class="app-container">
-        <!-- Górny pasek -->
-        <div class="top-bar">
-            <div class="logo">
-                <h1>Danaid</h1>
+<body class="chat-app">
+    <!-- Górny pasek -->
+    <div class="chat-header">
+        <div class="logo">
+            <h1>Danaid</h1>
+        </div>
+        <div class="user-controls">
+            <!-- Ikona powiadomień o zaproszeniach -->
+            <div id="friend-request-notification" class="notification-icon">
+                <i class="fas fa-user-plus"></i>
+                <span id="friend-request-count" class="notification-badge" style="display: none;">0</span>
             </div>
-            <div class="user-controls">
-                <!-- Ikona powiadomień o zaproszeniach -->
-                <div id="friend-request-notification" class="notification-icon">
-                    <i class="fas fa-user-plus"></i>
-                    <span id="friend-request-count" class="notification-badge" style="display: none;">0</span>
-                </div>
-                
-                <span id="username">Użytkownik</span>
-                <button id="logout-btn">
-                    <i class="fas fa-sign-out-alt"></i> Wyloguj
+            
+            <span id="username">Użytkownik</span>
+            <button id="logout-btn" class="btn btn-primary btn-sm">
+                <i class="fas fa-sign-out-alt"></i> Wyloguj
+            </button>
+        </div>
+    </div>
+
+    <!-- Główny kontener -->
+    <div class="chat-main">
+        <!-- Panel boczny z listą znajomych -->
+        <div class="chat-sidebar">
+            <div class="sidebar-header">
+                <h2>Znajomi</h2>
+                <button id="add-friend-btn" class="btn btn-primary btn-sm">
+                    <i class="fas fa-user-plus"></i> Dodaj
                 </button>
             </div>
+            <ul id="friend-list" class="friend-list">
+                <!-- Lista znajomych będzie tutaj -->
+            </ul>
         </div>
 
-        <!-- Główny kontener -->
-        <div class="main-container">
-            <!-- Panel boczny z listą znajomych -->
-            <div class="sidebar">
-                <div class="sidebar-header">
-                    <h2>Znajomi</h2>
-                    <button id="add-friend-btn">
-                        <i class="fas fa-user-plus"></i> Dodaj
-                    </button>
-                </div>
-                <ul id="friend-list" class="friend-list">
-                    <!-- Lista znajomych będzie tutaj -->
-                </ul>
+        <!-- Obszar czatu -->
+        <div class="chat-area">
+            <!-- Nagłówek czatu -->
+            <div id="chat-header" class="chat-area-header">
+                <h2>Wybierz rozmowę</h2>
             </div>
 
-            <!-- Obszar czatu -->
-            <div class="chat-area">
-                <!-- Nagłówek czatu -->
-                <div id="chat-header" class="chat-header">
-                    <h2>Wybierz rozmowę</h2>
-                </div>
+            <!-- Obszar wiadomości -->
+            <div id="messages" class="messages-container">
+                <!-- Wiadomości będą tutaj -->
+            </div>
 
-                <!-- Obszar wiadomości -->
-                <div id="messages" class="messages">
-                    <!-- Wiadomości będą tutaj -->
-                </div>
-
-                <!-- Pole wprowadzania wiadomości -->
-                <div class="message-input-container">
-                    <textarea id="message-input" placeholder="Napisz wiadomość..."></textarea>
-                    <button id="send-button">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                </div>
+            <!-- Pole wprowadzania wiadomości -->
+            <div class="message-input-area">
+                <textarea id="message-input" class="message-input" placeholder="Napisz wiadomość..."></textarea>
+                <button id="send-button" class="send-button">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
             </div>
         </div>
     </div>
@@ -69,46 +68,36 @@
     <!-- Modal dodawania znajomych -->
     <div id="add-friend-modal" class="modal">
         <div class="modal-content">
-            <span class="search-close">&times;</span>
-            <h2>Dodaj znajomego</h2>
-            <div class="search-form">
-                <input type="text" id="friend-username-input" placeholder="Nazwa użytkownika" />
-                <button id="send-friend-request-btn">Wyślij zaproszenie</button>
+            <div class="modal-header">
+                <h3>Dodaj znajomego</h3>
+                <button class="modal-close">&times;</button>
             </div>
-            <div id="friend-request-status" class="search-status" style="display: none;"></div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <input type="text" id="friend-username-input" placeholder="Nazwa użytkownika" />
+                </div>
+                <button id="send-friend-request-btn" class="btn btn-primary">Wyślij zaproszenie</button>
+                <div id="friend-request-status" style="display: none; margin-top: 10px;"></div>
+            </div>
         </div>
     </div>
 
-    <!-- Szablon powiadomień -->
-    <template id="notification-template">
-        <div class="notification">
-            <span class="notification-content"></span>
-            <button class="notification-close">&times;</button>
-        </div>
-    </template>
-
-    <!-- ZAKTUALIZOWANE SKRYPTY - Socket.IO -->
+    <!-- ZAKTUALIZOWANE SKRYPTY - Nowe zoptymalizowane pliki -->
     <!-- Socket.IO Client Library -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     
     <!-- Konfiguracja Socket.IO -->
     <script src="/socket-config.js"></script>
     
-    <!-- Zunifikowany moduł kryptograficzny -->
-    <script src="static/js/UnifiedCrypto.js"></script>
+    <!-- ZMIANA: Nowy zunifikowany moduł kryptograficzny -->
+    <script src="static/js/crypto.js"></script>
     
-    <!-- NOWY obsługiwacz Socket.IO (zastępuje WebSocketHandler) -->
-    <script src="static/js/SocketIOHandler.js"></script>
-    
-    <!-- Zaktualizowany menedżer sesji -->
-    <script src="static/js/SecureSessionManager.js"></script>
-    
-    <!-- Interfejs użytkownika -->
-    <script src="static/js/ChatInterface.js"></script>
+    <!-- ZMIANA: Nowy zunifikowany Chat Manager (zastępuje wszystkie stare moduły) -->
+    <script src="static/js/chat.js"></script>
     
     <!-- Inicjalizacja aplikacji -->
     <script>
-        console.log("=== DANAID CHAT INICJALIZACJA Z SOCKET.IO ===");
+        console.log("=== DANAID CHAT INICJALIZACJA (ZOPTYMALIZOWANA) ===");
         
         // Sprawdź czy wszystkie moduły są załadowane
         if (typeof io === 'undefined') {
@@ -118,29 +107,17 @@
             console.log("✅ Socket.IO client library załadowana");
         }
         
-        if (typeof UnifiedCrypto === 'undefined') {
-            console.error("❌ UnifiedCrypto nie załadowany");
+        if (typeof window.cryptoManager === 'undefined') {
+            console.error("❌ CryptoManager nie załadowany");
             alert("Błąd ładowania modułu kryptograficznego. Odśwież stronę.");
         } else {
-            console.log("✅ UnifiedCrypto załadowany");
+            console.log("✅ CryptoManager załadowany");
         }
         
-        if (typeof SocketIOHandler === 'undefined') {
-            console.error("❌ SocketIOHandler nie załadowany");
+        if (typeof window.chatManager === 'undefined') {
+            console.error("❌ ChatManager nie załadowany");
         } else {
-            console.log("✅ SocketIOHandler załadowany");
-        }
-        
-        if (typeof SecureSessionManager === 'undefined') {
-            console.error("❌ SecureSessionManager nie załadowany");
-        } else {
-            console.log("✅ SecureSessionManager załadowany");
-        }
-        
-        if (typeof ChatInterface === 'undefined') {
-            console.error("❌ ChatInterface nie załadowany");
-        } else {
-            console.log("✅ ChatInterface załadowany");
+            console.log("✅ ChatManager załadowany");
         }
         
         // Sprawdź sesję użytkownika
@@ -154,31 +131,7 @@
             console.log("✅ Użytkownik jest zalogowany");
         }
         
-        console.log("=== DANAID CHAT Z SOCKET.IO GOTOWY ===");
-        
-        // *** DODAJ TĘ CZĘŚĆ - INICJALIZACJA CHATINTERFACE ***
-        // Inicjalizuj ChatInterface po załadowaniu wszystkich modułów
-        function initializeChatInterface() {
-            try {
-                if (typeof ChatInterface !== 'undefined' && window.sessionManager) {
-                    console.log("🚀 Inicjalizuję ChatInterface...");
-                    
-                    // Stwórz globalną instancję ChatInterface
-                    window.chatInterface = new ChatInterface(window.sessionManager);
-                    
-                    console.log("✅ ChatInterface zainicjalizowany pomyślnie!");
-                } else {
-                    console.error("❌ ChatInterface lub SessionManager nie są dostępne");
-                    setTimeout(initializeChatInterface, 1000); // Spróbuj ponownie za sekundę
-                }
-            } catch (error) {
-                console.error("❌ Błąd inicjalizacji ChatInterface:", error);
-                setTimeout(initializeChatInterface, 2000); // Spróbuj znów za 2 sekundy
-            }
-        }
-        
-        // Inicjalizuj po małym opóźnieniu, żeby wszystkie moduły były gotowe
-        setTimeout(initializeChatInterface, 500);
+        console.log("=== DANAID CHAT ZOPTYMALIZOWANY GOTOWY ===");
     </script>
 </body>
 </html>
