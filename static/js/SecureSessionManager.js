@@ -407,51 +407,52 @@ class SecureSessionManager {
    * Inicjalizacja sesji czatu - ZAKTUALIZOWANA dla Socket.IO
    */
   async initSession(recipientId) {
-    try {
-      if (!this.user.id) {
-        throw new Error("Użytkownik nie jest zalogowany");
-      }
-      
-      const response = await fetch('/api/session/init', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ recipient_id: recipientId })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Błąd inicjacji sesji: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'Błąd inicjacji sesji');
-      }
-      
-      const session = data.session;
-      console.log("Sesja zainicjowana pomyślnie:", session);
-      
-      // Aktualizuj listy
-      await this.getActiveSessions();
-      
-      return {
-        success: true,
-        session: session
-      };
-    } catch (error) {
-      console.error('Błąd inicjacji sesji:', error);
-      return {
-        status: 'success',
-        session_token: session.token,
-        session: session
-      };
+  try {
+    if (!this.user.id) {
+      throw new Error("Użytkownik nie jest zalogowany");
     }
+    
+    const response = await fetch('/api/session/init', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ recipient_id: recipientId })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Błąd inicjacji sesji: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.status !== 'success') {
+      throw new Error(data.message || 'Błąd inicjacji sesji');
+    }
+    
+    const session = data.session;
+    console.log("Sesja zainicjowana pomyślnie:", session);
+    
+    // Aktualizuj listy
+    await this.getActiveSessions();
+    
+    // NAPRAWIONE: Zwracaj zgodny format
+    return {
+      status: 'success',
+      session_token: session.token,
+      session: session
+    };
+  } catch (error) {
+    console.error('Błąd inicjacji sesji:', error);
+    // NAPRAWIONE: Zwracaj błąd zamiast success
+    return {
+      status: 'error',
+      message: error.message
+    };
   }
-
+}
   /**
    * Pobieranie aktywnych sesji
    */
