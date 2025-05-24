@@ -2,6 +2,8 @@
  * ChatInterface - POPRAWIONA wersja z automatyczną wymianą kluczy
  * Używa UnifiedCrypto i SocketIOHandler z real-time messaging
  */
+
+// ZABEZPIECZENIA PRZECIWKO PĘTLI
 let messageLoadingInProgress = new Set();
 let lastLoadTime = {};
 let switchSessionTimeout = null;
@@ -168,10 +170,10 @@ class ChatInterface {
         if (result.sessions.length > 0 && !this.currentSessionToken) {
           const readySession = result.sessions.find(s => !s.needs_key_exchange);
           if (readySession) {
-            this.switchSession(readySession.token);
+            this.switchToSession(readySession.token); // ZMIENIONE NA switchToSession
           } else if (result.sessions.length > 0) {
             // Jeśli żadna nie jest gotowa, wybierz pierwszą
-            this.switchSession(result.sessions[0].token);
+            this.switchToSession(result.sessions[0].token); // ZMIENIONE NA switchToSession
           }
         }
         
@@ -277,6 +279,53 @@ class ChatInterface {
   }
 
   /**
+   * NOWA: Wysyłanie wiadomości
+   */
+  async sendMessage() {
+    if (!this.messageInput || !this.currentSessionToken) {
+      console.error('❌ Brak wymaganych elementów do wysłania wiadomości');
+      return;
+    }
+    
+    const content = this.messageInput.value.trim();
+    if (!content) {
+      console.log('⚠️ Pusta wiadomość - ignoruję');
+      return;
+    }
+    
+    try {
+      console.log('📤 Wysyłanie wiadomości...');
+      
+      // Wyczyść pole input od razu
+      this.messageInput.value = '';
+      
+      // Wyślij przez SessionManager
+      const result = await this.sessionManager.sendMessage(this.currentSessionToken, content);
+      
+      if (result.status === 'success') {
+        console.log('✅ Wiadomość wysłana pomyślnie');
+        
+        // Dodaj wiadomość do UI od razu (optimistic update)
+        if (result.messageData) {
+          this.addMessageToUI(result.messageData);
+        }
+      } else {
+        console.error('❌ Błąd wysyłania:', result.message);
+        this.showNotification(result.message || 'Błąd wysyłania wiadomości', 'error');
+        
+        // Przywróć tekst w input przy błędzie
+        this.messageInput.value = content;
+      }
+    } catch (error) {
+      console.error('❌ Błąd sendMessage:', error);
+      this.showNotification('Błąd wysyłania wiadomości', 'error');
+      
+      // Przywróć tekst w input przy błędzie
+      this.messageInput.value = content;
+    }
+  }
+
+  /**
    * POPRAWIONA: Wybiera znajomego i automatycznie uruchamia wymianę kluczy
    */
   async selectFriend(friend) {
@@ -357,7 +406,7 @@ class ChatInterface {
   }
 
   /**
-   * Przełącza na wybraną sesję
+   * Przełącza na wybraną sesję (ISTNIEJĄCA - bez zabezpieczeń)
    */
   async switchSession(sessionToken) {
     console.log('🔄 Przełączanie na sesję:', sessionToken?.substring(0, 10) + '...');
@@ -392,65 +441,128 @@ class ChatInterface {
     }
   }
 
+  /**
+   * NOWA: Przełączanie na sesję - ZABEZPIECZONE PRZED PĘTLĄ
+   */
+  switchToSession(sessionToken) {
+    console.log('🔄 [PROTECTED] Przełączanie na sesję:', sessionToken?.substring(0, 10) + '...');
+    
+    // ZABEZPIECZENIE 1: Sprawdź czy to nie ta sama sesja
+    if (this.currentSessionToken === sessionToken) {
+      console.log('⚠️ Już jesteś w tej sesji - ignoruję');
+      return;
+    }
+    
+    // ZABEZPIECZENIE 2: Debouncing - anuluj poprzednie wywołanie
+    if (switchSessionTimeout) {
+      clearTimeout(switchSessionTimeout);
+    }
+    
+    // ZABEZPIECZENIE 3: Sprawdź czy nie przełączaliśmy niedawno
+    const now = Date.now();
+    const lastSwitch = lastSwitchTime[sessionToken] || 0;
+    if (now - lastSwitch < 500) { // 500ms debounce
+      console.log('⏳ Zbyt częste przełączanie - ignoruję');
+      return;
+    }
+    
+    // Opóźnij przełączanie o 100ms
+    switchSessionTimeout = setTimeout(async () => {
+      lastSwitchTime[sessionToken] = Date.now();
+      await this.switchSession(sessionToken); // Wywołaj istniejącą metodę
+    }, 100);
+  }
+
 /**
-   * POPRAWIONA: Wysyłanie wiadomości - uproszczone
+   * POPRAWIONA: Ładowanie wiadomości - ZABEZPIECZONE PRZED PĘTLĄ
    */
   async loadMessages(sessionToken) {
-  try {
-    console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken?.substring(0, 10) + '...');
-    
-    // ZABEZPIECZENIE 1: Sprawdź czy już ładujemy dla tej sesji
-    if (messageLoadingInProgress.has(sessionToken)) {
-      console.log('⚠️ Ładowanie wiadomości już w toku dla:', sessionToken?.substring(0, 10) + '...');
-      return;
-    }
-    
-    // ZABEZPIECZENIE 2: Sprawdź czy nie ładowaliśmy niedawno (debouncing)
-    const now = Date.now();
-    const lastLoad = lastLoadTime[sessionToken] || 0;
-    if (now - lastLoad < 1000) { // 1 sekunda debounce
-      console.log('⏳ Zbyt częste ładowanie - ignoruję');
-      return;
-    }
-    
-    // Dodaj do listy w toku
-    messageLoadingInProgress.add(sessionToken);
-    lastLoadTime[sessionToken] = now;
-    
-    if (!sessionToken) {
-      console.error('❌ Brak tokenu sesji');
-      return;
-    }
-    
-    // 1. Najpierw załaduj lokalne wiadomości
-    const localResult = window.sessionManager.getLocalMessages(sessionToken);
-    const localMessages = localResult.messages || [];
-    
-    console.log(`📝 Ładuję ${localMessages.length} wiadomości`);
-    
-    // Wyświetl lokalne wiadomości natychmiast
-    if (localMessages.length > 0) {
-      this.displayMessages(localMessages);
-    }
-    
-    // 2. Następnie pobierz z serwera (z zabezpieczeniem)
-    const serverResult = await window.sessionManager.fetchMessagesFromServer(sessionToken);
-    
-    if (serverResult.status === 'success' && serverResult.messages.length > 0) {
-      console.log(`📥 Pobrano ${serverResult.messages.length} nowych wiadomości z serwera`);
+    try {
+      console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken?.substring(0, 10) + '...');
       
-      // Wyświetl wszystkie wiadomości (lokalne + nowe z serwera)
-      const allLocalMessages = window.sessionManager.getLocalMessages(sessionToken);
-      this.displayMessages(allLocalMessages.messages || []);
+      // ZABEZPIECZENIE 1: Sprawdź czy już ładujemy dla tej sesji
+      if (messageLoadingInProgress.has(sessionToken)) {
+        console.log('⚠️ Ładowanie wiadomości już w toku dla:', sessionToken?.substring(0, 10) + '...');
+        return;
+      }
+      
+      // ZABEZPIECZENIE 2: Sprawdź czy nie ładowaliśmy niedawno (debouncing)
+      const now = Date.now();
+      const lastLoad = lastLoadTime[sessionToken] || 0;
+      if (now - lastLoad < 1000) { // 1 sekunda debounce
+        console.log('⏳ Zbyt częste ładowanie - ignoruję');
+        return;
+      }
+      
+      // Dodaj do listy w toku
+      messageLoadingInProgress.add(sessionToken);
+      lastLoadTime[sessionToken] = now;
+      
+      if (!sessionToken) {
+        console.error('❌ Brak tokenu sesji');
+        return;
+      }
+      
+      // 1. Najpierw załaduj lokalne wiadomości
+      const localResult = window.sessionManager.getLocalMessages(sessionToken);
+      const localMessages = localResult.messages || [];
+      
+      console.log(`📝 Ładuję ${localMessages.length} wiadomości`);
+      
+      // Wyświetl lokalne wiadomości natychmiast
+      if (localMessages.length > 0) {
+        this.displayMessages(localMessages);
+      }
+      
+      // 2. Następnie pobierz z serwera (z zabezpieczeniem)
+      const serverResult = await window.sessionManager.fetchMessagesFromServer(sessionToken);
+      
+      if (serverResult.status === 'success' && serverResult.messages.length > 0) {
+        console.log(`📥 Pobrano ${serverResult.messages.length} nowych wiadomości z serwera`);
+        
+        // Wyświetl wszystkie wiadomości (lokalne + nowe z serwera)
+        const allLocalMessages = window.sessionManager.getLocalMessages(sessionToken);
+        this.displayMessages(allLocalMessages.messages || []);
+      }
+      
+    } catch (error) {
+      console.error('❌ Błąd ładowania wiadomości:', error);
+    } finally {
+      // ZAWSZE usuń z listy w toku
+      messageLoadingInProgress.delete(sessionToken);
+    }
+  }
+
+  /**
+   * NOWA: Wyświetla listę wiadomości
+   */
+  displayMessages(messages) {
+    if (!this.messagesContainer) {
+      console.error('❌ messagesContainer nie istnieje!');
+      return;
     }
     
-  } catch (error) {
-    console.error('❌ Błąd ładowania wiadomości:', error);
-  } finally {
-    // ZAWSZE usuń z listy w toku
-    messageLoadingInProgress.delete(sessionToken);
+    try {
+      // Wyczyść kontener
+      this.messagesContainer.innerHTML = '';
+      
+      if (!messages || messages.length === 0) {
+        this.messagesContainer.innerHTML = '<div class="system-message">Brak wiadomości</div>';
+        return;
+      }
+      
+      // Wyświetl wszystkie wiadomości
+      messages.forEach(message => {
+        const messageElement = this.createMessageElement(message);
+        this.messagesContainer.appendChild(messageElement);
+      });
+      
+      this.scrollToBottom();
+      
+    } catch (error) {
+      console.error('❌ Błąd wyświetlania wiadomości:', error);
+    }
   }
-}
 
   /**
    * POPRAWIONA: Real-time wyświetlanie nowych wiadomości
@@ -482,7 +594,7 @@ class ChatInterface {
         if (session && session.other_user) {
           const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
           if (friend) {
-            this.switchSession(sessionToken);
+            this.switchToSession(sessionToken); // ZMIENIONE NA switchToSession
             
             // Po przełączeniu, wyświetl wiadomość
             setTimeout(() => {
@@ -556,33 +668,6 @@ class ChatInterface {
     messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
     
     const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-content';
-    contentDiv.textContent = message.content || '[Pusta wiadomość]';
-    
-    const infoDiv = document.createElement('div');
-    infoDiv.className = 'message-info';
-    
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'message-time';
-    timeSpan.textContent = this.formatTime(message.timestamp);
-    
-    infoDiv.appendChild(timeSpan);
-    messageDiv.appendChild(contentDiv);
-    messageDiv.appendChild(infoDiv);
-    
-    // Dodaj style inline
-    messageDiv.style.cssText = `
-      margin-bottom: 10px;
-      padding: 10px;
-      border-radius: 8px;
-      max-width: 70%;
-      word-wrap: break-word;
-      ${isSent ? 
-        'background: #007bff; color: white; margin-left: auto; text-align: right;' : 
-        'background: #f1f1f1; color: black; margin-right: auto; text-align: left;'
-      }
-    `;
-    
     contentDiv.style.cssText = 'margin-bottom: 5px; font-size: 14px;';
     infoDiv.style.cssText = 'font-size: 12px; opacity: 0.7;';
     
@@ -646,7 +731,7 @@ class ChatInterface {
     }
   }
 
-/**
+  /**
    * Aktualizuje listę sesji
    */
   updateSessionsList(sessions) {
@@ -991,5 +1076,32 @@ document.addEventListener('DOMContentLoaded', () => {
   initChatInterface();
 });
 
-console.log("✅ ChatInterface załadowany z automatyczną wymianą kluczy i real-time messaging");
+console.log("✅ ChatInterface załadowany z automatyczną wymianą kluczy i real-time messaging");.className = 'message-content';
+    contentDiv.textContent = message.content || '[Pusta wiadomość]';
+    
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'message-info';
+    
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'message-time';
+    timeSpan.textContent = this.formatTime(message.timestamp);
+    
+    infoDiv.appendChild(timeSpan);
+    messageDiv.appendChild(contentDiv);
+    messageDiv.appendChild(infoDiv);
+    
+    // Dodaj style inline
+    messageDiv.style.cssText = `
+      margin-bottom: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      max-width: 70%;
+      word-wrap: break-word;
+      ${isSent ? 
+        'background: #007bff; color: white; margin-left: auto; text-align: right;' : 
+        'background: #f1f1f1; color: black; margin-right: auto; text-align: left;'
+      }
+    `;
+    
+    contentDiv
 
