@@ -2,7 +2,7 @@
  * ChatInterface - MINIMALNY DZIAŁAJĄCY
  */
 
-// Zabezpieczenia
+// Zabezpieczenia - TYLKO JEDNA DEKLARACJA!
 let messageLoadingInProgress = new Set();
 let lastLoadTime = {};
 
@@ -68,11 +68,11 @@ class ChatInterface {
         }
       } else {
         console.error('❌ Błąd wysyłania:', result.message);
-        this.messageInput.value = content; // Przywróć tekst
+        this.messageInput.value = content;
       }
     } catch (error) {
       console.error('❌ Błąd sendMessage:', error);
-      this.messageInput.value = content; // Przywróć tekst
+      this.messageInput.value = content;
     }
   }
   
