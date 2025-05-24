@@ -908,42 +908,48 @@ class SecureSessionManager {
    */
   async logout() {
     try {
-      // ZAKTUALIZOWANE: Wyczyść klucze kryptograficzne
+      console.log('🚪 Rozpoczynam wylogowanie...');
+      
+      // 1. Wyczyść klucze kryptograficzne
       if (window.unifiedCrypto) {
         window.unifiedCrypto.clearAllKeys();
+        console.log('🔑 Klucze kryptograficzne wyczyszczone');
       }
       
-      // Wyczyść dane lokalne
-      localStorage.clear();
-      sessionStorage.clear();
-      
-      // Rozłącz Socket.IO
+      // 2. Rozłącz Socket.IO
       if (window.wsHandler) {
         window.wsHandler.disconnect();
+        console.log('🔌 Socket.IO rozłączony');
       }
       
-      // Wyczyść lokalne dane
+      // 3. Wyczyść dane lokalne
+      localStorage.clear();
+      sessionStorage.clear();
+      console.log('💾 Pamięć lokalna wyczyszczona');
+      
+      // 4. Wyczyść lokalne dane aplikacji
       this.activeSessions = [];
       this.friends = [];
       this.messages = {};
       
+      // 5. Zamknij bazę danych
       if (this.db) {
         this.db.close();
+        console.log('🗄️ Baza danych zamknięta');
       }
       
-      // Małe opóźnienie żeby wszystko się wykonało
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // 6. Małe opóźnienie żeby wszystko się wykonało
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      console.log('Przekierowuję na logout...');
+      console.log('✅ Wylogowanie zakończone, przekierowuję...');
       
     } catch (error) {
-      console.error('Błąd podczas wylogowania:', error);
+      console.error('❌ Błąd podczas wylogowania:', error);
     } finally {
-      // Zawsze przekieruj, nawet jak był błąd
+      // 7. ZAWSZE przekieruj na endpoint logout (który przekieruje na /)
+      console.log('🔄 Przekierowanie na /logout...');
       window.location.href = '/logout';
     }
   }
-}
-
 // Inicjalizacja globalnego SessionManager
 window.sessionManager = new SecureSessionManager();
