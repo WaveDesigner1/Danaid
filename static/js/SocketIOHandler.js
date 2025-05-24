@@ -4,13 +4,15 @@
  */
 
 // DODANE: Lepsze obsługa zdarzeń Real-time w setupEventHandlers()
+// 1. NAPRAWA: SocketIOHandler.js - zastąp metodę setupEventHandlers całkowicie
+// (Usuń stary kod i wklej ten)
+
 setupEventHandlers() {
   if (!this.socket) return;
   
   // Połączenie nawiązane
   this.socket.on('connect', () => {
     console.log('✅ Socket.IO połączony pomyślnie');
-    console.log('Socket ID:', this.socket.id);
     this.isConnected = true;
     this._running = true;
     this.connectionAttempts = 0;
@@ -22,61 +24,17 @@ setupEventHandlers() {
     
     // Wyślij zaległe wiadomości
     this.processPendingMessages();
-    
-    // NOWE: Poproś o synchronizację po połączeniu
-    this.socket.emit('sync_request', {
-      user_id: this.userId,
-      timestamp: new Date().toISOString()
-    });
   });
   
-  // Rozłączenie
-  this.socket.on('disconnect', (reason) => {
-    this.isConnected = false;
-    this._running = false;
-    console.log(`🔌 Socket.IO rozłączony: ${reason}`);
-    
-    if (reason !== 'io client disconnect') {
-      console.log('⏳ Automatyczne połączenie ponowne...');
-    }
-  });
-  
-  // Błędy połączenia
-  this.socket.on('connect_error', (error) => {
-    console.error('❌ Błąd połączenia Socket.IO:', error);
-    this.isConnected = false;
-    
-    if (error.message && error.message.includes('Mixed Content')) {
-      console.error('🚨 Problem z Mixed Content - sprawdź konfigurację HTTPS/WSS');
-    }
-  });
-  
-  // Potwierdzenie połączenia
-  this.socket.on('connection_ack', (data) => {
-    console.log('✅ Połączenie Socket.IO potwierdzone:', data.message);
-  });
-  
-  // POPRAWIONA: Otrzymane wiadomości - lepsze debugowanie
+  // Obsługa wiadomości
   this.socket.on('message', (data) => {
-    console.log('📨 [SOCKET] Otrzymano wiadomość:', {
-      type: data.type,
-      hasSessionToken: !!data.session_token,
-      hasMessage: !!data.message,
-      messageId: data.message?.id
-    });
+    console.log('📨 [SOCKET] Otrzymano wiadomość:', data.type);
     this.handleMessage(data);
   });
   
-  // DODANE: Obsługa nowych wiadomości (dedykowane zdarzenie)
+  // Nowe wiadomości
   this.socket.on('new_message', (data) => {
-    console.log('🆕 [SOCKET] Dedykowane zdarzenie new_message:', {
-      session_token: data.session_token?.substring(0, 10) + '...',
-      message_id: data.message?.id,
-      sender_id: data.message?.sender_id,
-      content_preview: data.message?.content?.substring(0, 30) + '...'
-    });
-    
-    // Przekaż do głównego handlera
+    console.log('🆕 [SOCKET] Nowa wiadomość');
     this.handleMessage({
       type: 'new_message',
       session_token: data.session_token,
@@ -84,100 +42,68 @@ setupEventHandlers() {
     });
   });
   
-  // DODANE: Obsługa wymiany kluczy
-  this.socket.on('session_key_received', (data) => {
-    console.log('🔑 [SOCKET] Otrzymano klucz sesji:', {
-      session_token: data.session_token?.substring(0, 10) + '...',
-      has_encrypted_key: !!data.encrypted_key
-    });
-    
-    this.handleMessage({
-      type: 'session_key_received',
-      session_token: data.session_token,
-      encrypted_key: data.encrypted_key
-    });
-  });
-  
-  // DODANE: Potwierdzenie zakończenia wymiany kluczy
-  this.socket.on('key_exchange_completed', (data) => {
-    console.log('✅ [SOCKET] Wymiana kluczy zakończona:', {
-      session_token: data.session_token?.substring(0, 10) + '...'
-    });
-    
-    this.handleMessage({
-      type: 'key_exchange_completed',
-      session_token: data.session_token
-    });
-  });
-  
-  // Potwierdzenie dostarczenia wiadomości
-  this.socket.on('message_delivered', (data) => {
-    console.log('✅ Wiadomość dostarczona:', data);
-    if (this.handlers['message_delivered']) {
-      this.handlers['message_delivered'](data);
-    }
-  });
-  
-  // DODANE: Synchronizacja po reconnect
-  this.socket.on('sync_response', (data) => {
-    console.log('🔄 [SOCKET] Otrzymano dane synchronizacji:', {
-      sessions_count: data.sessions?.length || 0,
-      messages_count: data.messages?.length || 0
-    });
-    
-    // Przekaż dane synchronizacji do handlera
-    if (data.sessions) {
-      this.handleMessage({
-        type: 'session_update',
-        sessions: data.sessions
-      });
-    }
-    
-    if (data.messages) {
-      data.messages.forEach(msg => {
-        this.handleMessage({
-          type: 'new_message',
-          session_token: msg.session_token,
-          message: msg
-        });
-      });
-    }
-  });
-  
-  // Błędy od serwera
+  // Błędy
   this.socket.on('error', (error) => {
-    console.error('❌ Błąd od serwera Socket.IO:', error);
+    console.error('❌ Błąd Socket.IO:', error);
   });
   
-  // Ping/Pong dla keep-alive
-  this.socket.on('pong', (data) => {
-    console.log('🏓 Otrzymano pong:', data.timestamp);
-  });
-  
-  // DODANE: Status użytkowników online
-  this.socket.on('user_status_change', (data) => {
-    console.log('🟢 [SOCKET] Zmiana statusu użytkownika:', {
-      user_id: data.user_id,
-      is_online: data.is_online
-    });
-    
-    this.handleMessage({
-      type: 'user_status_change',
-      user_id: data.user_id,
-      is_online: data.is_online
-    });
-  });
-  
-  this.socket.on('online_users', (data) => {
-    console.log('👥 [SOCKET] Lista użytkowników online:', data.users?.length || 0);
-    
-    this.handleMessage({
-      type: 'online_users',
-      users: data.users
-    });
-  });
+  console.log('✅ Socket.IO handlers skonfigurowane');
 }
 
+// 2. NAPRAWA: SecureSessionManager.js - dodaj auto-wymianę kluczy w getActiveSessions
+// (Dodaj na końcu metody getActiveSessions, przed return)
+
+// DODAJ TO na końcu getActiveSessions() przed return:
+for (const session of this.activeSessions) {
+  if (session.needs_key_exchange && session.is_initiator && 
+      !this.keyExchangeInProgress.has(session.token)) {
+    console.log('🔑 Auto-wymiana kluczy dla sesji:', session.token?.substring(0, 10) + '...');
+    setTimeout(() => {
+      this.startAutomaticKeyExchange(session.token, session);
+    }, 1000);
+  }
+}
+
+// 3. NAPRAWA: Dodaj sprawdzenie klucza przed wysyłaniem w sendMessage
+// (Zamień początek metody sendMessage w SecureSessionManager.js)
+
+async sendMessage(sessionToken, content) {
+  try {
+    console.log('🚀 Wysyłanie wiadomości...');
+    
+    if (!window.unifiedCrypto) {
+      throw new Error('UnifiedCrypto nie jest dostępny');
+    }
+
+    // NAPRAWIONE: Sprawdź i wygeneruj klucz jeśli brak
+    let sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+    if (!sessionKeyBase64) {
+      console.log('⚠️ Brak klucza sesji - próbuję wygenerować...');
+      
+      // Znajdź sesję
+      const session = this.activeSessions.find(s => s.token === sessionToken);
+      if (!session) {
+        throw new Error('Nie znaleziono sesji');
+      }
+      
+      // Uruchom wymianę kluczy
+      if (session.is_initiator) {
+        const keyResult = await this.startAutomaticKeyExchange(sessionToken, session);
+        if (!keyResult.success) {
+          throw new Error('Nie można wygenerować klucza: ' + keyResult.message);
+        }
+        
+        // Poczekaj chwilę na klucz
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+        
+        if (!sessionKeyBase64) {
+          throw new Error('Klucz nadal niedostępny - spróbuj ponownie');
+        }
+      } else {
+        throw new Error('Czekam na klucz od rozmówcy - spróbuj za chwilę');
+      }
+    }
 // POPRAWIONA: Obsługa wiadomości z lepszym routingiem
 handleMessage(data) {
   try {
