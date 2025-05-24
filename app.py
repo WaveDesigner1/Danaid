@@ -17,7 +17,10 @@ import sys
 from models import db, User, ChatSession, Message
 from admin import init_admin
 from auth import auth_bp
-from chat import chat_bp
+from chat import chat_bp  # ✅ chat.py zawiera teraz wszystko (chat + chat_api + socketio)
+# ❌ USUNIĘTE: from chat_api import chat_api  # Scalono z chat.py
+# ❌ USUNIĘTE: from database_migrations import apply_e2ee_migrations  # Wbudowano w chat.py
+# 🔧 WARUNKOWO: init_socketio_handler może być w chat.py lub zintegrowane bezpośrednio
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
@@ -108,21 +111,28 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = 'auth.index'
     
-    # Rejestracja blueprintów
+    # 🔄 ZOPTYMALIZOWANE BLUEPRINTY (po scaleniu)
     app.register_blueprint(auth_bp)
-    app.register_blueprint(chat_bp)
-    app.register_blueprint(chat_api)
+    app.register_blueprint(chat_bp)  # ✅ chat_bp zawiera teraz wszystkie endpointy z chat_api
+    # ❌ USUNIĘTE: app.register_blueprint(chat_api)  # Scalono z chat_bp
     
     # Inicjalizacja panelu admina
     init_admin(app)
     
-    # Inicjalizacja Socket.IO handler
-    init_socketio_handler(socketio)
+    # 🔄 ZOPTYMALIZOWANE SOCKET.IO (sprawdź czy funkcja istnieje)
+    try:
+        from chat import init_socketio_handler
+        init_socketio_handler(socketio)
+        print("✅ Socket.IO handler zainicjalizowany z chat.py")
+    except ImportError:
+        print("⚠️  init_socketio_handler nie znaleziono - może być zintegrowane bezpośrednio w chat.py")
+        pass
  
-    # Uruchom migracje bazy danych
+    # 🔄 MIGRACJE TERAZ W CHAT.PY
+    # Uruchom migracje bazy danych (scalono z chat.py)
     apply_migrations(app)
-    apply_e2ee_migrations(app)
-    
+    # ❌ USUNIĘTE: apply_e2ee_migrations(app)  # Wbudowano w apply_migrations
+
     # Socket.IO konfiguracja dla frontendu
     @app.route('/api/websocket/config')
     def websocket_config():
@@ -147,8 +157,8 @@ def create_app():
         
         js_content = f"window._socketConfig = {json.dumps(config)};"
         return Response(js_content, mimetype='application/javascript')
-    
-    # Reszta endpointów pozostaje bez zmian...
+
+    # Debug endpoint
     @app.route('/db-debug')
     def db_debug():
         try:
@@ -244,5 +254,5 @@ def create_app():
             response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
         return response
     
+    # 🔄 RETURN TUPLE (app, socketio) dla nowej architektury
     return app, socketio
-
