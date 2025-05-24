@@ -1,6 +1,6 @@
 /**
- * ChatInterface - ZAKTUALIZOWANA wersja interfejsu użytkownika czatu
- * Używa UnifiedCrypto i SocketIOHandler zamiast WebSocketHandler
+ * ChatInterface - POPRAWIONA wersja z automatyczną wymianą kluczy i real-time messaging
+ * Używa UnifiedCrypto i SocketIOHandler z automatyczną obsługą stanów sesji
  */
 class ChatInterface {
   constructor(sessionManager) {
@@ -14,6 +14,7 @@ class ChatInterface {
     this.friends = [];
     this.sessions = [];
     this.pendingRequests = [];
+    this.sessionStates = {}; // NOWE: Śledzenie stanów sesji
     
     // Sprawdź czy UnifiedCrypto jest dostępny
     if (!window.unifiedCrypto) {
@@ -30,16 +31,64 @@ class ChatInterface {
       this.initializeFriendRequestNotifications();
       this.loadFriends();
       this.loadSessions();
+      
+      // NOWE: Ustaw callback dla zakończenia wymiany kluczy
+      if (this.sessionManager) {
+        this.sessionManager.onKeyExchangeCompleted = (sessionToken) => {
+          this.handleKeyExchangeCompleted(sessionToken);
+        };
+      }
     });
     
-    // Regularne aktualizacje i sprawdzanie zaproszeń
+    // Regularne aktualizacje
     setInterval(() => this.loadPendingRequests(), 30000);
+    setInterval(() => this.refreshActiveSessions(), 60000); // NOWE: Odświeżanie sesji
     
-    console.log("✅ ChatInterface zainicjalizowany z Socket.IO");
+    console.log("✅ ChatInterface zainicjalizowany z automatyczną wymianą kluczy");
   }
 
   /**
-   * Ładuje konfigurację Socket.IO
+   * NOWA: Obsługuje zakończenie wymiany kluczy
+   */
+  handleKeyExchangeCompleted(sessionToken) {
+    console.log('🎉 Wymiana kluczy zakończona dla sesji:', sessionToken?.substring(0, 10) + '...');
+    
+    // Zaktualizuj stan sesji
+    if (this.sessionStates[sessionToken]) {
+      this.sessionStates[sessionToken].keyExchangeCompleted = true;
+      this.sessionStates[sessionToken].isReady = true;
+    }
+    
+    // Jeśli to aktywna sesja, pokaż powiadomienie
+    if (sessionToken === this.currentSessionToken) {
+      this.showNotification("🔐 Szyfrowanie końcowo-końcowe aktywne", "success", 3000);
+      
+      // Włącz pole wprowadzania wiadomości
+      if (this.messageInput) {
+        this.messageInput.disabled = false;
+        this.messageInput.placeholder = "Napisz wiadomość...";
+      }
+      
+      if (this.sendButton) {
+        this.sendButton.disabled = false;
+      }
+    }
+    
+    // Odśwież listę sesji
+    this.loadSessions();
+  }
+
+  /**
+   * NOWA: Odświeża aktywne sesje
+   */
+  async refreshActiveSessions() {
+    if (this.sessionManager) {
+      await this.sessionManager.getActiveSessions();
+    }
+  }
+
+  /**
+   * Ładuje konfigurację Socket.IO - BEZ ZMIAN
    */
   async loadSocketIOConfig() {
     try {
@@ -59,7 +108,7 @@ class ChatInterface {
   }
   
   /**
-   * Inicjalizacja elementów DOM
+   * Inicjalizacja elementów DOM - BEZ ZMIAN
    */
   initializeDOMElements() {
     this.friendsList = document.getElementById('friend-list');
@@ -86,8 +135,8 @@ class ChatInterface {
     });
   }
 
-   /**
-   * Inicjalizacja nasłuchiwania zdarzeń
+  /**
+   * POPRAWIONA: Inicjalizacja nasłuchiwania zdarzeń z obsługą stanów sesji
    */
   initializeEvents() {
     // Sprawdź, czy wszystkie elementy DOM istnieją
@@ -100,12 +149,17 @@ class ChatInterface {
     // Przycisk wysyłania wiadomości
     this.sendButton.addEventListener('click', () => this.sendMessage());
     
-    // Obsługa Enter do wysyłania wiadomości
+    // Obsługa Enter do wysyłania wiadomości + Shift+Enter dla nowej linii
     this.messageInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         this.sendMessage();
       }
+    });
+    
+    // NOWE: Obsługa pisania (typing indicators w przyszłości)
+    this.messageInput.addEventListener('input', () => {
+      // Można dodać typing indicators
     });
     
     // Obsługa modalu dodawania znajomych
@@ -135,7 +189,7 @@ class ChatInterface {
       notificationIcon.addEventListener('click', () => this.showFriendRequestsModal());
     }
 
-    // DODANE: Obsługa przycisku wylogowania
+    // Obsługa przycisku wylogowania
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', (e) => {
@@ -159,7 +213,7 @@ class ChatInterface {
       console.warn('⚠️ Przycisk #logout-btn nie znaleziony');
     }
 
-    // Nasłuchiwanie na zdarzenia z menedżera sesji - ZAKTUALIZOWANE dla Socket.IO
+    // POPRAWIONE: Nasłuchiwanie na zdarzenia z menedżera sesji
     if (this.sessionManager) {
       this.sessionManager.onMessageReceived = (sessionToken, message) => 
         this.displayNewMessage(sessionToken, message);
@@ -174,11 +228,302 @@ class ChatInterface {
       };
     }
     
-    console.log('✅ Wydarzenia zainicjalizowane');
+    console.log('✅ Wydarzenia zainicjalizowane z obsługą stanów sesji');
+  }
+
+/**
+ * ChatInterface - POPRAWIONA wersja z automatyczną wymianą kluczy i real-time messaging
+ * Używa UnifiedCrypto i SocketIOHandler z automatyczną obsługą stanów sesji
+ */
+class ChatInterface {
+  constructor(sessionManager) {
+    // Inicjalizacja menedżera sesji
+    this.sessionManager = sessionManager || window.sessionManager;
+    this.initializeDOMElements();
+    
+    // Stan aplikacji
+    this.currentSessionToken = null;
+    this.currentUser = null;
+    this.friends = [];
+    this.sessions = [];
+    this.pendingRequests = [];
+    this.sessionStates = {}; // NOWE: Śledzenie stanów sesji
+    
+    // Sprawdź czy UnifiedCrypto jest dostępny
+    if (!window.unifiedCrypto) {
+      console.error("❌ UnifiedCrypto nie jest dostępny!");
+      this.showNotification("Błąd ładowania modułu kryptograficznego", "error");
+      return;
+    }
+    
+    // Załaduj konfigurację Socket.IO, a następnie zainicjuj interfejs
+    this.loadSocketIOConfig().then(() => {
+      // Inicjalizacja 
+      this.initializeEvents();
+      this.loadUserData();
+      this.initializeFriendRequestNotifications();
+      this.loadFriends();
+      this.loadSessions();
+      
+      // NOWE: Ustaw callback dla zakończenia wymiany kluczy
+      if (this.sessionManager) {
+        this.sessionManager.onKeyExchangeCompleted = (sessionToken) => {
+          this.handleKeyExchangeCompleted(sessionToken);
+        };
+      }
+    });
+    
+    // Regularne aktualizacje
+    setInterval(() => this.loadPendingRequests(), 30000);
+    setInterval(() => this.refreshActiveSessions(), 60000); // NOWE: Odświeżanie sesji
+    
+    console.log("✅ ChatInterface zainicjalizowany z automatyczną wymianą kluczy");
   }
 
   /**
-   * Ładuje dane użytkownika i dodaje przycisk panelu administratora jeśli potrzeba
+   * NOWA: Obsługuje zakończenie wymiany kluczy
+   */
+  handleKeyExchangeCompleted(sessionToken) {
+    console.log('🎉 Wymiana kluczy zakończona dla sesji:', sessionToken?.substring(0, 10) + '...');
+    
+    // Zaktualizuj stan sesji
+    if (this.sessionStates[sessionToken]) {
+      this.sessionStates[sessionToken].keyExchangeCompleted = true;
+      this.sessionStates[sessionToken].isReady = true;
+    }
+    
+    // Jeśli to aktywna sesja, pokaż powiadomienie
+    if (sessionToken === this.currentSessionToken) {
+      this.showNotification("🔐 Szyfrowanie końcowo-końcowe aktywne", "success", 3000);
+      
+      // Włącz pole wprowadzania wiadomości
+      if (this.messageInput) {
+        this.messageInput.disabled = false;
+        this.messageInput.placeholder = "Napisz wiadomość...";
+      }
+      
+      if (this.sendButton) {
+        this.sendButton.disabled = false;
+      }
+    }
+    
+    // Odśwież listę sesji
+    this.loadSessions();
+  }
+
+  /**
+   * NOWA: Odświeża aktywne sesje
+   */
+  async refreshActiveSessions() {
+    if (this.sessionManager) {
+      await this.sessionManager.getActiveSessions();
+    }
+  }
+
+  /**
+   * Ładuje konfigurację Socket.IO - BEZ ZMIAN
+   */
+  async loadSocketIOConfig() {
+    try {
+      const response = await fetch('/api/websocket/config');
+      if (response.ok) {
+        const config = await response.json();
+        if (config && config.socketUrl) {
+          window._socketConfig = window._socketConfig || {};
+          window._socketConfig.socketUrl = config.socketUrl;
+          window._socketConfig.path = config.path;
+          console.log('✅ Pobrano konfigurację Socket.IO:', config.socketUrl);
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Nie udało się pobrać konfiguracji Socket.IO:', e);
+    }
+  }
+  
+  /**
+   * Inicjalizacja elementów DOM - BEZ ZMIAN
+   */
+  initializeDOMElements() {
+    this.friendsList = document.getElementById('friend-list');
+    this.messagesContainer = document.getElementById('messages');
+    this.messageInput = document.getElementById('message-input');
+    this.sendButton = document.getElementById('send-button');
+    this.addFriendBtn = document.getElementById('add-friend-btn');
+    this.chatHeader = document.getElementById('chat-header');
+    this.requestBadge = document.getElementById('friend-request-count');
+    
+    // Utwórz link do panelu admin jeśli potrzeba
+    this.adminLink = document.createElement('a');
+    this.adminLink.id = 'admin-panel-link';
+    this.adminLink.innerHTML = '<i class="fas fa-cog"></i> Admin Panel';
+    this.adminLink.style.marginLeft = '15px';
+    this.adminLink.classList.add('admin-btn');
+    this.adminLink.href = '/admin_dashboard';
+    
+    console.log('🔧 Elementy DOM zainicjalizowane:', {
+      friendsList: !!this.friendsList,
+      messagesContainer: !!this.messagesContainer,
+      messageInput: !!this.messageInput,
+      sendButton: !!this.sendButton
+    });
+  }
+
+  /**
+   * POPRAWIONA: Inicjalizacja nasłuchiwania zdarzeń z obsługą stanów sesji
+   */
+  initializeEvents() {
+    // Sprawdź, czy wszystkie elementy DOM istnieją
+    if (!this.friendsList || !this.messagesContainer || !this.messageInput || 
+        !this.sendButton || !this.addFriendBtn || !this.chatHeader) {
+      console.error('❌ Brak wymaganych elementów DOM');
+      return;
+    }
+
+    // Przycisk wysyłania wiadomości
+    this.sendButton.addEventListener('click', () => this.sendMessage());
+    
+    // Obsługa Enter do wysyłania wiadomości + Shift+Enter dla nowej linii
+    this.messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.sendMessage();
+      }
+    });
+    
+    // NOWE: Obsługa pisania (typing indicators w przyszłości)
+    this.messageInput.addEventListener('input', () => {
+      // Można dodać typing indicators
+    });
+    
+    // Obsługa modalu dodawania znajomych
+    this.addFriendBtn.addEventListener('click', () => {
+      const modal = document.getElementById('add-friend-modal');
+      if (modal) modal.style.display = 'block';
+    });
+    
+    // Zamykanie modalu dodawania znajomego
+    const closeBtn = document.querySelector('.search-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        const modal = document.getElementById('add-friend-modal');
+        if (modal) modal.style.display = 'none';
+      });
+    }
+    
+    // Przycisk wysyłania zaproszenia
+    const sendFriendRequestBtn = document.getElementById('send-friend-request-btn');
+    if (sendFriendRequestBtn) {
+      sendFriendRequestBtn.addEventListener('click', () => this.sendFriendRequest());
+    }
+    
+    // Obsługa kliknięcia w powiadomienie o zaproszeniach
+    const notificationIcon = document.getElementById('friend-request-notification');
+    if (notificationIcon) {
+      notificationIcon.addEventListener('click', () => this.showFriendRequestsModal());
+    }
+
+    // Obsługa przycisku wylogowania
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        
+        console.log('🚪 Rozpoczynam wylogowanie...');
+        
+        if (this.sessionManager && typeof this.sessionManager.logout === 'function') {
+          this.sessionManager.logout();
+        } else {
+          // Fallback - bezpośrednie przekierowanie
+          console.log('🚪 Wylogowanie fallback...');
+          localStorage.clear();
+          sessionStorage.clear();
+          window.location.href = '/logout';
+        }
+      });
+      
+      console.log('✅ Przycisk wylogowania skonfigurowany');
+    } else {
+      console.warn('⚠️ Przycisk #logout-btn nie znaleziony');
+    }
+
+    // POPRAWIONE: Nasłuchiwanie na zdarzenia z menedżera sesji
+    if (this.sessionManager) {
+      this.sessionManager.onMessageReceived = (sessionToken, message) => 
+        this.displayNewMessage(sessionToken, message);
+      this.sessionManager.onSessionsUpdated = (sessions) => 
+        this.updateSessionsList(sessions);
+      this.sessionManager.onFriendsUpdated = (friends) => 
+        this.updateFriendsList(friends);
+      this.sessionManager.onOnlineStatusChanged = (onlineUsers) => 
+        this.updateOnlineStatus(onlineUsers);
+      this.sessionManager.onFriendRequestReceived = () => {
+        this.loadPendingRequests();
+      };
+    }
+    
+    console.log('✅ Wydarzenia zainicjalizowane z obsługą stanów sesji');
+  }
+
+/**
+   * POPRAWIONA: Wyświetla nową wiadomość z automatycznym przełączaniem sesji
+   */
+  displayNewMessage(sessionToken, message) {
+    console.log('🆕 Otrzymano nową wiadomość:', {
+      sessionToken: sessionToken?.substring(0, 10) + '...',
+      message: {
+        id: message.id,
+        content: message.content?.substring(0, 50) + "...",
+        sender_id: message.sender_id
+      },
+      currentSession: this.currentSessionToken?.substring(0, 10) + '...',
+      isCurrentSession: sessionToken === this.currentSessionToken
+    });
+    
+    // Jeśli to aktualna sesja, wyświetl od razu
+    if (sessionToken === this.currentSessionToken) {
+      console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
+      this.addMessageToUI(message);
+      this.playNotificationSound();
+    } else {
+      // NOWE: Jeśli to inna sesja, ale nie mamy aktywnej - automatycznie przełącz
+      if (!this.currentSessionToken) {
+        console.log('🔄 Brak aktywnej sesji - automatyczne przełączenie');
+        
+        // Znajdź sesję i przełącz na nią
+        const session = this.sessions.find(s => s.token === sessionToken);
+        if (session && session.other_user) {
+          const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
+          if (friend) {
+            this.selectFriend(friend);
+            
+            // Po przełączeniu, wyświetl wiadomość
+            setTimeout(() => {
+              this.addMessageToUI(message);
+              this.playNotificationSound();
+            }, 1000);
+          }
+        }
+      } else {
+        // Jeśli to inna sesja, zaktualizuj wskaźnik nieprzeczytanych wiadomości
+        console.log('📊 Wiadomość w innej sesji - aktualizuję wskaźniki');
+        this.updateUnreadCount(sessionToken);
+        this.playNotificationSound();
+        
+        // NOWE: Pokaż powiadomienie o nowej wiadomości z innej sesji
+        const session = this.sessions.find(s => s.token === sessionToken);
+        if (session && session.other_user) {
+          this.showNotification(
+            `Nowa wiadomość od ${session.other_user.username}`, 
+            "info", 
+            5000
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Ładuje dane użytkownika - BEZ ZMIAN
    */
   loadUserData() {
     this.currentUser = {
@@ -209,8 +554,9 @@ class ChatInterface {
     
     console.log(`✅ Dane użytkownika załadowane: ${this.currentUser.username}`);
   }
+
   /**
-   * Ładuje listę znajomych z serwera
+   * Ładuje listę znajomych - BEZ ZMIAN
    */
   async loadFriends() {
     try {
@@ -231,7 +577,7 @@ class ChatInterface {
   }
 
   /**
-   * Ładuje aktywne sesje czatu z serwera
+   * POPRAWIONA: Ładuje aktywne sesje z obsługą stanów
    */
   async loadSessions() {
     try {
@@ -241,9 +587,27 @@ class ChatInterface {
       if (result.status === 'success') {
         this.updateSessionsList(result.sessions);
         
-        // Wybierz pierwszą sesję, jeśli jest dostępna
-        if (result.sessions.length > 0 && !this.currentSessionToken) {
-          this.switchSession(result.sessions[0].token);
+        // NOWE: Aktualizuj stany sesji
+        result.sessions.forEach(session => {
+          this.sessionStates[session.token] = {
+            friendId: session.other_user?.user_id,
+            friendUsername: session.other_user?.username,
+            isReady: session.is_ready || false,
+            needsKeyExchange: session.needs_key_exchange || false,
+            keyExchangeCompleted: session.is_ready || false
+          };
+        });
+        
+        // Jeśli nie mamy aktywnej sesji, ale są dostępne sesje, wybierz pierwszą gotową
+        if (!this.currentSessionToken && result.sessions.length > 0) {
+          const readySession = result.sessions.find(s => s.is_ready);
+          if (readySession) {
+            const friend = this.friends.find(f => f.user_id === readySession.other_user.user_id);
+            if (friend) {
+              console.log('🔄 Automatyczne przełączenie na gotową sesję:', readySession.token?.substring(0, 10) + '...');
+              this.selectFriend(friend);
+            }
+          }
         }
         
         console.log(`✅ Załadowano ${result.sessions.length} aktywnych sesji`);
@@ -257,7 +621,7 @@ class ChatInterface {
   }
 
   /**
-   * POPRAWIONA: Ładuje wiadomości dla sesji
+   * POPRAWIONA: Ładuje wiadomości z kontrolą gotowości sesji
    */
   async loadMessages(sessionToken) {
     if (!this.sessionManager) {
@@ -270,9 +634,29 @@ class ChatInterface {
     }
     
     try {
-      console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken);
+      console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken?.substring(0, 10) + '...');
       
-      // NAPRAWIONE: Użyj poprawionej metody getLocalMessages
+      // Sprawdź stan sesji
+      const sessionState = this.sessionStates[sessionToken];
+      if (sessionState && !sessionState.keyExchangeCompleted) {
+        console.log('⏳ Sesja nie jest jeszcze gotowa, czekam...');
+        
+        // Pokaż komunikat o oczekiwaniu
+        if (this.messagesContainer) {
+          this.messagesContainer.innerHTML = `
+            <div class="system-message">
+              <div class="loading-indicator">
+                <div class="spinner"></div>
+                <p>Przygotowywanie bezpiecznego połączenia...</p>
+              </div>
+            </div>
+          `;
+        }
+        
+        return;
+      }
+      
+      // Załaduj lokalne wiadomości
       const result = this.sessionManager.getLocalMessages(sessionToken);
       
       console.log('📨 Wynik ładowania wiadomości:', result);
@@ -281,239 +665,55 @@ class ChatInterface {
         const messages = result.messages || [];
         console.log(`📝 Ładuję ${messages.length} wiadomości`);
         
-        messages.forEach(message => {
-          console.log('💬 Dodaję wiadomość:', {
-            id: message.id,
-            content: message.content?.substring(0, 50) + "...",
-            sender_id: message.sender_id,
-            is_mine: message.is_mine
+        if (messages.length === 0) {
+          // Pokaż komunikat o braku wiadomości
+          if (this.messagesContainer) {
+            this.messagesContainer.innerHTML = `
+              <div class="system-message">
+                <p>🔐 Bezpieczna rozmowa została rozpoczęta</p>
+                <p>Wiadomości są szyfrowane końcowo-końcowo</p>
+              </div>
+            `;
+          }
+        } else {
+          messages.forEach(message => {
+            this.addMessageToUI(message);
           });
-          this.addMessageToUI(message);
-        });
+        }
         
         this.scrollToBottom();
         
-        // Opcjonalnie: spróbuj pobrać nowsze wiadomości z serwera
-        if (messages.length === 0) {
-          console.log('📡 Brak lokalnych wiadomości, próbuję pobrać z serwera...');
-          try {
-            const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
-            if (serverResult.status === 'success' && serverResult.messages.length > 0) {
-              console.log(`📥 Pobrano ${serverResult.messages.length} wiadomości z serwera`);
-              // Przeładuj po pobraniu z serwera
-              setTimeout(() => this.loadMessages(sessionToken), 100);
-            }
-          } catch (serverError) {
-            console.warn('⚠️ Nie można pobrać z serwera:', serverError);
+        // Spróbuj pobrać nowsze wiadomości z serwera
+        try {
+          const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
+          if (serverResult.status === 'success' && serverResult.messages.length > messages.length) {
+            console.log(`📥 Pobrano ${serverResult.messages.length - messages.length} nowych wiadomości z serwera`);
+            // Przeładuj po pobraniu z serwera
+            setTimeout(() => this.loadMessages(sessionToken), 100);
           }
+        } catch (serverError) {
+          console.warn('⚠️ Nie można pobrać z serwera:', serverError);
         }
       } else {
         console.warn('⚠️ Brak wiadomości lub błąd:', result);
       }
     } catch (error) {
       console.error('❌ Błąd ładowania wiadomości:', error);
-      console.error('❌ Stack trace:', error.stack);
       this.showNotification('Błąd ładowania wiadomości', 'error');
-    }
-  }
-  /**
-   * ZAKTUALIZOWANE: Funkcja obsługująca wysyłanie wiadomości z UnifiedCrypto
-   */
-  async sendMessage() {
-    const content = this.messageInput.value.trim();
-    if (!content) return;
-    
-    // Sprawdź czy UnifiedCrypto jest dostępny
-    if (!window.unifiedCrypto) {
-      this.showNotification("Moduł kryptograficzny nie jest dostępny", "error");
-      return;
-    }
-    
-    // Zablokuj pole wprowadzania i przycisk wysyłania na czas wysyłania
-    this.messageInput.disabled = true;
-    this.sendButton.disabled = true;
-    
-    try {
-      // Sprawdź, czy mamy token sesji
-      if (!this.currentSessionToken) {
-        console.error("❌ Brak aktywnej sesji");
-        
-        // Sprawdź, czy mamy wybrane jakieś okno czatu
-        const activeItem = document.querySelector('.friend-item.active');
-        if (activeItem) {
-          this.showNotification("Błąd sesji czatu. Spróbuj odświeżyć stronę.", "error");
-        } else {
-          this.showNotification("Wybierz znajomego z listy, aby rozpocząć rozmowę", "info");
-          
-          // Automatycznie wybierz pierwszego znajomego
-          if (this.friends && this.friends.length > 0) {
-            try {
-              await this.initSession(this.friends[0].user_id);
-              setTimeout(() => this.sendMessage(), 500);
-            } catch (e) {
-              console.error("❌ Błąd automatycznego wyboru znajomego:", e);
-            }
-          }
-        }
-        return;
-      }
-      
-      // Sprawdź gotowość sesji przed wysłaniem
-      const isSessionReady = await this.ensureSessionReady();
-      if (!isSessionReady) {
-        return;
-      }
-      
-      // Zapamiętaj treść na wypadek błędu
-      const messageContent = content;
-      
-      // Wyczyść pole wprowadzania od razu
-      this.messageInput.value = '';
-      
-      // ZAKTUALIZOWANE: Wyślij wiadomość przez menedżer sesji z UnifiedCrypto
-      const result = await this.sessionManager.sendMessage(this.currentSessionToken, messageContent);
-      
-      if (result.status === 'success') {
-        // Wiadomość została wysłana pomyślnie
-        console.log("✅ Wiadomość wysłana pomyślnie");
-        
-        // Dodaj wiadomość do UI od razu (optymistyczne UI)
-        const newMessage = {
-          id: result.messageData?.id || Date.now().toString(),
-          sender_id: parseInt(this.currentUser.id),
-          content: messageContent,
-          timestamp: result.messageData?.timestamp || new Date().toISOString(),
-          is_mine: true
-        };
-        
-        this.addMessageToUI(newMessage);
-      } else {
-        // Przywróć treść w przypadku błędu
-        this.messageInput.value = messageContent;
-        this.showNotification(result.message || 'Błąd wysyłania wiadomości', "error");
-      }
-    } catch (error) {
-      console.error('❌ Błąd wysyłania wiadomości:', error);
-      this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, "error");
-    } finally {
-      // Odblokuj pole wprowadzania i przycisk
-      this.messageInput.disabled = false;
-      this.sendButton.disabled = false;
-      this.messageInput.focus();
     }
   }
 
   /**
-   * ZAKTUALIZOWANE: Sprawdza, czy sesja jest gotowa do wysyłania wiadomości
-   */
-  async ensureSessionReady() {
-    if (!this.currentSessionToken) {
-      this.showNotification("Brak aktywnej sesji", "error");
-      return false;
-    }
-    
-    // NAPRAWIONE: Sprawdź, czy klucz sesji istnieje używając UnifiedCrypto
-    if (!window.unifiedCrypto.hasSessionKey(this.currentSessionToken)) {
-      try {
-        // Znajdź sesję w liście
-        const session = this.sessions.find(s => s.token === this.currentSessionToken);
-        
-        if (!session) {
-          this.showNotification("Sesja nie istnieje", "error");
-          return false;
-        }
-        
-        // DODANO: Automatyczne generowanie klucza jeśli nie istnieje
-        if (!session.has_key) {
-          console.log("🔑 Generowanie nowego klucza sesji...");
-          this.showNotification("Generowanie klucza szyfrowania...", "info", 2000);
-          
-          // Wygeneruj nowy klucz sesji AES
-          const sessionKey = await window.unifiedCrypto.generateSessionKey();
-          const sessionKeyBase64 = await window.unifiedCrypto.exportSessionKey(sessionKey);
-          
-          // Zapisz klucz lokalnie
-          window.unifiedCrypto.storeSessionKey(this.currentSessionToken, sessionKeyBase64);
-          
-          // Pobierz klucz publiczny drugiego użytkownika
-          const recipientPublicKeyResponse = await fetch(`/api/user/${session.other_user.user_id}/public_key`);
-          if (!recipientPublicKeyResponse.ok) {
-            throw new Error('Nie można pobrać klucza publicznego odbiorcy');
-          }
-          
-          const recipientKeyData = await recipientPublicKeyResponse.json();
-          const recipientPublicKey = await window.unifiedCrypto.importPublicKeyFromPEM(recipientKeyData.public_key);
-          
-          // Zaszyfruj klucz sesji kluczem publicznym odbiorcy
-          const encryptedSessionKey = await window.unifiedCrypto.encryptSessionKey(recipientPublicKey, sessionKey);
-          
-          // Wyślij zaszyfrowany klucz na serwer
-          const keyExchangeResponse = await fetch(`/api/session/${this.currentSessionToken}/exchange_key`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Requested-With': 'XMLHttpRequest'
-            },
-            credentials: 'same-origin',
-            body: JSON.stringify({
-              encrypted_key: encryptedSessionKey
-            })
-          });
-          
-          if (!keyExchangeResponse.ok) {
-            throw new Error('Nie można wymienić klucza sesji');
-          }
-          
-          const keyResult = await keyExchangeResponse.json();
-          if (keyResult.status !== 'success') {
-            throw new Error(keyResult.message || 'Błąd wymiany klucza');
-          }
-          
-          console.log("✅ Klucz sesji wygenerowany i wysłany");
-          this.showNotification("Klucz szyfrowania wygenerowany", "success", 2000);
-          
-          // Odśwież listę sesji
-          await this.loadSessions();
-          
-          return true;
-        }
-        
-        // Jeśli sesja ma klucz, ale my go nie mamy - pobierz go
-        const result = await this.sessionManager.retrieveSessionKey(this.currentSessionToken);
-        
-        if (!result.success) {
-          this.showNotification("Nie można pobrać klucza sesji: " + result.message, "error");
-          return false;
-        }
-        
-        // Sprawdź, czy klucz został pobrany
-        if (!window.unifiedCrypto.hasSessionKey(this.currentSessionToken)) {
-          this.showNotification("Nie udało się odszyfrować klucza sesji", "error");
-          return false;
-        }
-      } catch (error) {
-        console.error("❌ Błąd podczas generowania/pobierania klucza sesji:", error);
-        this.showNotification("Błąd podczas konfiguracji szyfrowania: " + error.message, "error");
-        return false;
-      }
-    }
-    
-    return true;
-  }
-  /**
-   * POPRAWIONA: Dodaje wiadomość do UI z debugowaniem
+   * POPRAWIONA: Dodaje wiadomość do UI z lepszym formatowaniem
    */
   addMessageToUI(message) {
     console.log('🎨 addMessageToUI wywołane z:', {
       message: message,
-      hasContainer: !!this.messagesContainer,
-      containerExists: !!document.getElementById('messages'),
-      currentUser: this.currentUser
+      hasContainer: !!this.messagesContainer
     });
     
     if (!this.messagesContainer) {
       console.error('❌ messagesContainer nie istnieje!');
-      // Spróbuj znaleźć ponownie
       this.messagesContainer = document.getElementById('messages');
       if (!this.messagesContainer) {
         console.error('❌ Nie można znaleźć elementu #messages w DOM');
@@ -527,51 +727,51 @@ class ChatInterface {
     }
     
     try {
+      // Usuń komunikat systemowy jeśli istnieje
+      const systemMessage = this.messagesContainer.querySelector('.system-message');
+      if (systemMessage) {
+        systemMessage.remove();
+      }
+      
       const messageElement = this.createMessageElement(message);
       console.log('✅ Element wiadomości utworzony:', messageElement);
       
       this.messagesContainer.appendChild(messageElement);
-      console.log('✅ Element dodany do kontenera');
-      
       this.scrollToBottom();
-      console.log('✅ Przewinięto do dołu');
       
-      // Debug: sprawdź ile wiadomości jest teraz w kontenerze
-      console.log('📊 Liczba wiadomości w kontenerze:', this.messagesContainer.children.length);
+      console.log('✅ Element dodany do kontenera');
       
     } catch (error) {
       console.error('❌ Błąd w addMessageToUI:', error);
-      console.error('❌ Stack trace:', error.stack);
     }
   }
   
   /**
-   * POPRAWIONA: Tworzy element wiadomości z debugowaniem
+   * POPRAWIONA: Tworzy element wiadomości z lepszym stylem
    */
   createMessageElement(message) {
-    console.log('🏗️ createMessageElement dla:', {
-      content: message.content,
-      sender_id: message.sender_id,
-      current_user_id: this.currentUser?.id,
-      timestamp: message.timestamp
-    });
-    
     const messageDiv = document.createElement('div');
     
     // Sprawdź czy to nasza wiadomość
     const isSent = message.sender_id === parseInt(this.currentUser.id) || message.is_mine;
-    console.log('📤 Czy wiadomość wysłana przez nas?', {
-      isSent,
-      message_sender_id: message.sender_id,
-      current_user_id: parseInt(this.currentUser.id),
-      is_mine: message.is_mine
-    });
     
     messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
     
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
-    contentDiv.textContent = message.content || '[Pusta wiadomość]';
+    
+    // NOWE: Lepsze formatowanie treści wiadomości
+    let content = message.content || '[Pusta wiadomość]';
+    
+    // Sprawdź czy są błędy deszyfrowania
+    if (message.decryption_error) {
+      content = '🔒 ' + content;
+      contentDiv.classList.add('decryption-error');
+    }
+    
+    // Formatuj tekst (podstawowe formatowanie)
+    content = this.formatMessageContent(content);
+    contentDiv.innerHTML = content;
     
     const infoDiv = document.createElement('div');
     infoDiv.className = 'message-info';
@@ -580,43 +780,122 @@ class ChatInterface {
     timeSpan.className = 'message-time';
     timeSpan.textContent = this.formatTime(message.timestamp);
     
-    // Debug: sprawdź czy elementy są tworzone
-    console.log('🔧 Elementy utworzone:', {
-      messageDiv: !!messageDiv,
-      contentDiv: !!contentDiv,
-      infoDiv: !!infoDiv,
-      timeSpan: !!timeSpan,
-      content: contentDiv.textContent,
-      className: messageDiv.className
-    });
+    // NOWE: Dodaj status dostarczenia dla wysłanych wiadomości
+    if (isSent && !message.decryption_error) {
+      const statusSpan = document.createElement('span');
+      statusSpan.className = 'message-status';
+      statusSpan.innerHTML = '✓'; // Podstawowy status
+      infoDiv.appendChild(statusSpan);
+    }
     
     infoDiv.appendChild(timeSpan);
     messageDiv.appendChild(contentDiv);
     messageDiv.appendChild(infoDiv);
     
-    // Dodaj style inline dla pewności
+    // POPRAWIONE: Lepsze style CSS
     messageDiv.style.cssText = `
-      margin-bottom: 10px;
-      padding: 10px;
-      border-radius: 8px;
+      margin-bottom: 12px;
+      padding: 12px 16px;
+      border-radius: 12px;
       max-width: 70%;
       word-wrap: break-word;
+      position: relative;
       ${isSent ? 
-        'background: #007bff; color: white; margin-left: auto; text-align: right;' : 
-        'background: #f1f1f1; color: black; margin-right: auto; text-align: left;'
+        'background: linear-gradient(135deg, #007bff, #0056b3); color: white; margin-left: auto; text-align: right;' : 
+        'background: #f8f9fa; color: #333; margin-right: auto; text-align: left; border: 1px solid #e9ecef;'
       }
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      animation: messageSlideIn 0.3s ease-out;
     `;
     
-    contentDiv.style.cssText = 'margin-bottom: 5px; font-size: 14px;';
-    infoDiv.style.cssText = 'font-size: 12px; opacity: 0.7;';
+    contentDiv.style.cssText = 'margin-bottom: 6px; font-size: 14px; line-height: 1.4;';
+    infoDiv.style.cssText = 'font-size: 11px; opacity: 0.7; display: flex; justify-content: space-between; align-items: center;';
     
-    console.log('✅ Element wiadomości gotowy:', messageDiv);
+    // Dodaj animację CSS jeśli nie istnieje
+    if (!document.getElementById('message-animations')) {
+      const style = document.createElement('style');
+      style.id = 'message-animations';
+      style.textContent = `
+        @keyframes messageSlideIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message.sent .message-status {
+          margin-left: 8px;
+          color: rgba(255,255,255,0.8);
+        }
+        
+        .message.received.decryption-error {
+          background: #fff3cd;
+          border-color: #ffeaa7;
+          color: #856404;
+        }
+        
+        .message.sent.decryption-error {
+          background: #f8d7da;
+          color: #721c24;
+        }
+        
+        .system-message {
+          text-align: center;
+          padding: 20px;
+          color: #666;
+          font-style: italic;
+        }
+        
+        .loading-indicator {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .spinner {
+          width: 32px;
+          height: 32px;
+          border: 3px solid #f3f3f3;
+          border-top: 3px solid #007bff;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `;
+      document.head.appendChild(style);
+    }
     
     return messageDiv;
   }
 
   /**
-   * Formatuje czas wiadomości
+   * NOWA: Formatuje treść wiadomości (podstawowe formatowanie)
+   */
+  formatMessageContent(content) {
+    // Escapuj HTML
+    const div = document.createElement('div');
+    div.textContent = content;
+    let formatted = div.innerHTML;
+    
+    // Podstawowe formatowanie
+    formatted = formatted.replace(/\n/g, '<br>'); // Nowe linie
+    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); // Pogrubienie
+    formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>'); // Kursywa
+    
+    // Linki (proste wykrywanie)
+    formatted = formatted.replace(
+      /(https?:\/\/[^\s]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+    
+    return formatted;
+  }
+
+  /**
+   * Formatuje czas wiadomości - BEZ ZMIAN
    */
   formatTime(timestamp) {
     const date = new Date(timestamp);
@@ -637,7 +916,7 @@ class ChatInterface {
   }
   
   /**
-   * Przewija do końca kontener wiadomości
+   * Przewija do końca kontener wiadomości - BEZ ZMIAN
    */
   scrollToBottom() {
     if (this.messagesContainer) {
@@ -646,35 +925,7 @@ class ChatInterface {
   }
 
   /**
-   * POPRAWIONA: Wyświetla nową wiadomość - obsługa przychodzących wiadomości
-   */
-  displayNewMessage(sessionToken, message) {
-    console.log('🆕 Otrzymano nową wiadomość:', {
-      sessionToken,
-      message: {
-        id: message.id,
-        content: message.content?.substring(0, 50) + "...",
-        sender_id: message.sender_id
-      },
-      currentSession: this.currentSessionToken
-    });
-    
-    // Jeśli to aktualna sesja, wyświetl od razu
-    if (sessionToken === this.currentSessionToken) {
-      console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
-      this.addMessageToUI(message);
-    } else {
-      // Jeśli to inna sesja, zaktualizuj wskaźnik nieprzeczytanych wiadomości
-      console.log('📊 Wiadomość w innej sesji - aktualizuję wskaźniki');
-      this.updateUnreadCount(sessionToken);
-    }
-    
-    // Odtwórz dźwięk powiadomienia (jeśli włączony)
-    this.playNotificationSound();
-  }
-
-  /**
-   * Aktualizuje liczbę nieprzeczytanych wiadomości dla sesji
+   * Aktualizuje liczbę nieprzeczytanych wiadomości - BEZ ZMIAN
    */
   updateUnreadCount(sessionToken) {
     const session = this.sessions.find(s => s.token === sessionToken);
@@ -685,10 +936,9 @@ class ChatInterface {
   }
 
   /**
-   * Odtwarza dźwięk powiadomienia
+   * Odtwarza dźwięk powiadomienia - BEZ ZMIAN
    */
   playNotificationSound() {
-    // Sprawdź czy użytkownik ma włączone powiadomienia dźwiękowe
     const soundEnabled = localStorage.getItem('notification_sound') !== 'false';
     if (soundEnabled) {
       try {
@@ -702,7 +952,7 @@ class ChatInterface {
   }
 
   /**
-   * Aktualizuje listę sesji
+   * Aktualizuje listę sesji - BEZ ZMIAN
    */
   updateSessionsList(sessions) {
     this.sessions = sessions || [];
@@ -710,7 +960,7 @@ class ChatInterface {
   }
 
   /**
-   * Renderuje listę znajomych
+   * POPRAWIONA: Renderuje listę znajomych z wskaźnikami sesji
    */
   renderFriendsList() {
     if (!this.friendsList) return;
@@ -724,7 +974,7 @@ class ChatInterface {
   }
 
   /**
-   * Tworzy element znajomego na liście
+   * POPRAWIONA: Tworzy element znajomego z wskaźnikami stanu sesji
    */
   createFriendElement(friend) {
     const li = document.createElement('li');
@@ -735,12 +985,25 @@ class ChatInterface {
     const session = this.sessions.find(s => s.other_user.user_id === friend.user_id);
     const unreadCount = session?.unread_count || 0;
     
+    // NOWE: Sprawdź stan sesji
+    let sessionStatus = '';
+    if (session) {
+      if (session.is_ready) {
+        sessionStatus = '<span class="session-ready">🔐</span>';
+      } else if (session.needs_key_exchange) {
+        sessionStatus = '<span class="session-pending">🔑</span>';
+      }
+    }
+    
     li.innerHTML = `
       <div class="friend-avatar">
         <i class="fas fa-user"></i>
       </div>
       <div class="friend-info">
-        <div class="friend-name">${friend.username}</div>
+        <div class="friend-name">
+          ${friend.username}
+          ${sessionStatus}
+        </div>
         <div class="friend-status ${friend.is_online ? 'online' : 'offline'}">
           ${friend.is_online ? 'Online' : 'Offline'}
         </div>
@@ -752,375 +1015,3 @@ class ChatInterface {
     
     return li;
   }
-
-  /**
-   * Wybiera znajomego i inicjuje sesję czatu
-   */
-  async selectFriend(friend) {
-    console.log('👤 Wybrano znajomego:', friend.username);
-    
-    // Usuń aktywny stan z innych elementów
-    document.querySelectorAll('.friend-item').forEach(item => {
-      item.classList.remove('active');
-    });
-    
-    // Dodaj aktywny stan do wybranego elementu
-    const friendElement = document.querySelector(`[data-user-id="${friend.user_id}"]`);
-    if (friendElement) {
-      friendElement.classList.add('active');
-    }
-    
-    // Zaktualizuj nagłówek czatu
-    if (this.chatHeader) {
-      this.chatHeader.innerHTML = `
-        <h3>${friend.username}</h3>
-        <span class="status ${friend.is_online ? 'online' : 'offline'}">
-          ${friend.is_online ? 'Online' : 'Offline'}
-        </span>
-      `;
-    }
-    
-    try {
-      await this.initSession(friend.user_id);
-    } catch (error) {
-      console.error('❌ Błąd wyboru znajomego:', error);
-      this.showNotification('Błąd inicjalizacji czatu', 'error');
-    }
-  }
-
-  /**
-   * Inicjuje sesję czatu z danym użytkownikiem
-   */
-  async initSession(userId) {
-    try {
-      console.log('🚀 Inicjalizacja sesji z użytkownikiem:', userId);
-      
-      const result = await this.sessionManager.initSession(userId);
-      
-      if (result.status === 'success') {
-        this.currentSessionToken = result.session_token;
-        console.log('✅ Sesja zainicjalizowana:', this.currentSessionToken);
-        
-        // Załaduj wiadomości dla tej sesji
-        await this.loadMessages(this.currentSessionToken);
-        
-        // Wyczyść licznik nieprzeczytanych dla tej sesji
-        const session = this.sessions.find(s => s.token === this.currentSessionToken);
-        if (session) {
-          session.unread_count = 0;
-          this.renderFriendsList();
-        }
-        
-      } else {
-        console.error('❌ Błąd inicjalizacji sesji:', result.message);
-        this.showNotification(result.message || 'Błąd inicjalizacji sesji', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Błąd initSession:', error);
-      this.showNotification('Błąd połączenia z serwerem', 'error');
-    }
-  }
-
-  /**
-   * Przełącza na wybraną sesję
-   */
-  async switchSession(sessionToken) {
-    console.log('🔄 Przełączanie na sesję:', sessionToken);
-    
-    this.currentSessionToken = sessionToken;
-    await this.loadMessages(sessionToken);
-    
-    // Znajdź użytkownika tej sesji i zaktualizuj UI
-    const session = this.sessions.find(s => s.token === sessionToken);
-    if (session) {
-      const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
-      if (friend) {
-        this.selectFriend(friend);
-      }
-    }
-  }
-
-  /**
-   * Aktualizuje status online użytkowników
-   */
-  updateOnlineStatus(onlineUsers) {
-    console.log('🟢 Aktualizacja statusu online:', onlineUsers);
-    
-    this.friends.forEach(friend => {
-      friend.is_online = onlineUsers.includes(friend.user_id);
-    });
-    
-    this.renderFriendsList();
-  }
-
-  /**
-   * Aktualizuje listę znajomych
-   */
-  updateFriendsList(friends) {
-    this.friends = friends || [];
-    this.renderFriendsList();
-    console.log(`👥 Zaktualizowano listę znajomych: ${this.friends.length} znajomych`);
-  }
-
-  /**
-   * Inicjalizuje powiadomienia o zaproszeniach do znajomych
-   */
-  initializeFriendRequestNotifications() {
-    this.loadPendingRequests();
-  }
-
-  /**
-   * Ładuje oczekujące zaproszenia do znajomych
-   */
-  async loadPendingRequests() {
-    try {
-      const response = await fetch('/api/friends/requests/pending', {
-        credentials: 'same-origin'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        this.pendingRequests = data.requests || [];
-        this.updateRequestBadge();
-      }
-    } catch (error) {
-      console.error('❌ Błąd ładowania zaproszeń:', error);
-    }
-  }
-
-  /**
-   * Aktualizuje wskaźnik liczby zaproszeń
-   */
-  updateRequestBadge() {
-    if (this.requestBadge) {
-      const count = this.pendingRequests.length;
-      if (count > 0) {
-        this.requestBadge.textContent = count;
-        this.requestBadge.style.display = 'inline';
-      } else {
-        this.requestBadge.style.display = 'none';
-      }
-    }
-  }
-
-  /**
-   * Wysyła zaproszenie do znajomego
-   */
-  async sendFriendRequest() {
-    const usernameInput = document.getElementById('friend-username-input');
-    if (!usernameInput) return;
-    
-    const username = usernameInput.value.trim();
-    if (!username) {
-      this.showNotification('Wprowadź nazwę użytkownika', 'warning');
-      return;
-    }
-    
-    try {
-      const response = await fetch('/api/friends/request', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ username })
-      });
-      
-      const result = await response.json();
-      
-      if (result.status === 'success') {
-        this.showNotification('Zaproszenie wysłane!', 'success');
-        usernameInput.value = '';
-        
-        // Zamknij modal
-        const modal = document.getElementById('add-friend-modal');
-        if (modal) modal.style.display = 'none';
-      } else {
-        this.showNotification(result.message || 'Błąd wysyłania zaproszenia', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Błąd wysyłania zaproszenia:', error);
-      this.showNotification('Błąd połączenia z serwerem', 'error');
-    }
-  }
-
-  /**
-   * Pokazuje modal z zaproszeniami do znajomych
-   */
-  showFriendRequestsModal() {
-    console.log('📨 Pokazuję modal z zaproszeniami');
-    
-    // Tworzy i wyświetla modal z listą zaproszeń
-    let modal = document.getElementById('friend-requests-modal');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'friend-requests-modal';
-      modal.className = 'modal';
-      modal.innerHTML = `
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>Zaproszenia do znajomych</h3>
-            <span class="modal-close">&times;</span>
-          </div>
-          <div class="modal-body">
-            <div id="friend-requests-list"></div>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      
-      // Obsługa zamykania modala
-      modal.querySelector('.modal-close').addEventListener('click', () => {
-        modal.style.display = 'none';
-      });
-      
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-          modal.style.display = 'none';
-        }
-      });
-    }
-    
-    // Wypełnij listę zaproszeń
-    const requestsList = modal.querySelector('#friend-requests-list');
-    if (requestsList) {
-      if (this.pendingRequests.length === 0) {
-        requestsList.innerHTML = '<p>Brak nowych zaproszeń</p>';
-      } else {
-        requestsList.innerHTML = this.pendingRequests.map(request => `
-          <div class="friend-request-item">
-            <div class="request-info">
-              <strong>${request.sender_username}</strong>
-              <small>${this.formatTime(request.created_at)}</small>
-            </div>
-            <div class="request-actions">
-              <button class="btn btn-accept" onclick="chatInterface.acceptFriendRequest(${request.id})">
-                Akceptuj
-              </button>
-              <button class="btn btn-decline" onclick="chatInterface.declineFriendRequest(${request.id})">
-                Odrzuć
-              </button>
-            </div>
-          </div>
-        `).join('');
-      }
-    }
-    
-    modal.style.display = 'block';
-  }
-
-  /**
-   * Akceptuje zaproszenie do znajomych
-   */
-  async acceptFriendRequest(requestId) {
-    try {
-      const response = await fetch(`/api/friends/request/${requestId}/accept`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin'
-      });
-      
-      const result = await response.json();
-      
-      if (result.status === 'success') {
-        this.showNotification('Zaproszenie zaakceptowane!', 'success');
-        this.loadPendingRequests();
-        this.loadFriends(); // Odśwież listę znajomych
-        
-        // Zamknij modal jeśli nie ma więcej zaproszeń
-        if (this.pendingRequests.length <= 1) {
-          const modal = document.getElementById('friend-requests-modal');
-          if (modal) modal.style.display = 'none';
-        }
-      } else {
-        this.showNotification(result.message || 'Błąd akceptacji zaproszenia', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Błąd akceptacji zaproszenia:', error);
-      this.showNotification('Błąd połączenia z serwerem', 'error');
-    }
-  }
-
-  /**
-   * Odrzuca zaproszenie do znajomych
-   */
-  async declineFriendRequest(requestId) {
-    try {
-      const response = await fetch(`/api/friends/request/${requestId}/decline`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin'
-      });
-      
-      const result = await response.json();
-      
-      if (result.status === 'success') {
-        this.showNotification('Zaproszenie odrzucone', 'info');
-        this.loadPendingRequests();
-        
-        // Zamknij modal jeśli nie ma więcej zaproszeń
-        if (this.pendingRequests.length <= 1) {
-          const modal = document.getElementById('friend-requests-modal');
-          if (modal) modal.style.display = 'none';
-        }
-      } else {
-        this.showNotification(result.message || 'Błąd odrzucenia zaproszenia', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Błąd odrzucenia zaproszenia:', error);
-      this.showNotification('Błąd połączenia z serwerem', 'error');
-    }
-  }
-
-  /**
-   * Pokazuje powiadomienie
-   */
-  showNotification(message, type = 'info', duration = 5000) {
-    console.log(`📢 Powiadomienie [${type}]:`, message);
-    
-    // Utwórz element powiadomienia
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
-    
-    // Dodaj style
-    notification.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 12px 20px;
-      border-radius: 6px;
-      color: white;
-      font-weight: 500;
-      z-index: 10000;
-      max-width: 300px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-      background: ${type === 'success' ? '#28a745' : 
-                   type === 'error' ? '#dc3545' : 
-                   type === 'warning' ? '#ffc107' : '#007bff'};
-    `;
-    
-    document.body.appendChild(notification);
-    
-    // Usuń po określonym czasie
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.parentNode.removeChild(notification);
-      }
-    }, duration);
-  }
-}
-
-// Eksportuj klasę lub ustaw jako globalną
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = ChatInterface;
-} else {
-  window.ChatInterface = ChatInterface;
-}
