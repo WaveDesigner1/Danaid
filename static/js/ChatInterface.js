@@ -472,7 +472,6 @@ class ChatInterface {
       await this.switchSession(sessionToken); // Wywołaj istniejącą metodę
     }, 100);
   }
-
 /**
    * POPRAWIONA: Ładowanie wiadomości - ZABEZPIECZONE PRZED PĘTLĄ
    */
