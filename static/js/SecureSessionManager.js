@@ -492,86 +492,125 @@ class SecureSessionManager {
    * Wysyłanie wiadomości z szyfrowaniem
    */
   async sendMessage(sessionToken, content) {
-    try {
-      console.log('🚀 Wysyłanie wiadomości...');
-      
-      if (!window.unifiedCrypto) {
-        throw new Error('UnifiedCrypto nie jest dostępny');
-      }
+  try {
+    console.log('🚀 Wysyłanie wiadomości...');
+    
+    if (!window.unifiedCrypto) {
+      throw new Error('UnifiedCrypto nie jest dostępny');
+    }
 
-      const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
-      if (!sessionKeyBase64) {
-        throw new Error('Brak klucza sesji');
-      }
+    // POPRAWIONE: Sprawdź i wygeneruj klucz jeśli brak
+    let sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+    if (!sessionKeyBase64) {
+      console.log('⚠️ Brak klucza sesji - próbuję wygenerować...');
       
+      // Znajdź sesję
       const session = this.activeSessions.find(s => s.token === sessionToken);
-      if (!session || !session.other_user?.user_id) {
+      if (!session) {
         throw new Error('Nie znaleziono sesji');
       }
       
-      // Szyfrowanie
-      const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
-      const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
-      
-      const payload = {
-        session_token: sessionToken,
-        recipient_id: parseInt(session.other_user.user_id),
-        content: encryptedData.data,
-        iv: encryptedData.iv
-      };
-      
-      const response = await fetch('/api/message/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify(payload)
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Błąd serwera: ${errorText}`);
+      // Uruchom wymianę kluczy jeśli jesteśmy inicjatorem
+      if (session.is_initiator) {
+        console.log('🔑 Generuję klucz jako inicjator...');
+        const keyResult = await this.startAutomaticKeyExchange(sessionToken, session);
+        if (!keyResult.success) {
+          throw new Error('Nie można wygenerować klucza: ' + keyResult.message);
+        }
+        
+        // Poczekaj chwilę na wygenerowanie klucza
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+        
+        if (!sessionKeyBase64) {
+          throw new Error('Klucz nadal niedostępny - spróbuj ponownie za chwilę');
+        }
+      } else {
+        // Jeśli nie jesteśmy inicjatorem, spróbuj pobrać klucz
+        console.log('🔑 Próbuję pobrać klucz jako odbiorca...');
+        const keyResult = await this.retrieveSessionKey(sessionToken);
+        if (!keyResult.success) {
+          throw new Error('Czekam na klucz od rozmówcy - spróbuj za chwilę');
+        }
+        
+        sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+        if (!sessionKeyBase64) {
+          throw new Error('Nie udało się pobrać klucza sesji');
+        }
       }
-      
-      const data = await response.json();
-      
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'API zwróciło błąd');
-      }
-      
-      // Dodaj do lokalnego stanu
-      const newMessage = {
-        id: data.message?.id || Date.now().toString(),
-        sender_id: parseInt(this.user.id),
-        content: content,
-        timestamp: data.message?.timestamp || new Date().toISOString(),
-        is_mine: true
-      };
-      
-      await this.storeMessage(sessionToken, newMessage);
-      
-      console.log('✅ Wiadomość wysłana!');
-      
-      return {
-        status: 'success',
-        message: 'Wiadomość wysłana',
-        messageData: newMessage
-      };
-      
-    } catch (error) {
-      console.error('❌ Błąd wysyłania wiadomości:', error);
-      return {
-        status: 'error',
-        message: error.message
-      };
     }
+    
+    // Sprawdź sesję ponownie
+    const session = this.activeSessions.find(s => s.token === sessionToken);
+    if (!session || !session.other_user?.user_id) {
+      throw new Error('Nie znaleziono sesji lub danych odbiorcy');
+    }
+    
+    console.log('✅ Klucz sesji dostępny, rozpoczynam szyfrowanie...');
+    
+    // Szyfrowanie
+    const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+    const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
+    
+    const payload = {
+      session_token: sessionToken,
+      recipient_id: parseInt(session.other_user.user_id),
+      content: encryptedData.data,
+      iv: encryptedData.iv
+    };
+    
+    console.log('📤 Wysyłanie zaszyfrowanej wiadomości...');
+    
+    const response = await fetch('/api/message/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Błąd HTTP:', response.status, errorText);
+      throw new Error(`Błąd serwera ${response.status}: ${errorText}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.status !== 'success') {
+      throw new Error(data.message || 'API zwróciło błąd');
+    }
+    
+    // Dodaj do lokalnego stanu
+    const newMessage = {
+      id: data.message?.id || Date.now().toString(),
+      sender_id: parseInt(this.user.id),
+      content: content,
+      timestamp: data.message?.timestamp || new Date().toISOString(),
+      is_mine: true
+    };
+    
+    await this.storeMessage(sessionToken, newMessage);
+    
+    console.log('✅ Wiadomość wysłana i zapisana lokalnie!');
+    
+    return {
+      status: 'success',
+      message: 'Wiadomość wysłana',
+      messageData: newMessage
+    };
+    
+  } catch (error) {
+    console.error('❌ Błąd wysyłania wiadomości:', error);
+    return {
+      status: 'error',
+      message: error.message
+    };
   }
-
-  /**
-   * Inicjalizuje bazę danych IndexedDB
-   */
+}
+  
   async initDatabase() {
     try {
       const request = indexedDB.open('SecureChatMessages', 1);
