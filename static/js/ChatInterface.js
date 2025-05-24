@@ -390,130 +390,62 @@ class ChatInterface {
 /**
    * POPRAWIONA: Wysyłanie wiadomości - uproszczone
    */
-  async sendMessage() {
-    const content = this.messageInput.value.trim();
-    if (!content) return;
-    
-    // Sprawdź czy UnifiedCrypto jest dostępny
-    if (!window.unifiedCrypto) {
-      this.showNotification("Moduł kryptograficzny nie jest dostępny", "error");
-      return;
-    }
-    
-    // Sprawdź czy mamy aktywną sesję
-    if (!this.currentSessionToken) {
-      this.showNotification("Wybierz znajomego z listy", "info");
-      return;
-    }
-    
-    // Zablokuj pole wprowadzania na czas wysyłania
-    this.messageInput.disabled = true;
-    this.sendButton.disabled = true;
-    
-    try {
-      // Zapamiętaj treść na wypadek błędu
-      const messageContent = content;
-      
-      // Wyczyść pole wprowadzania od razu
-      this.messageInput.value = '';
-      
-      // UPROSZCZONE: SessionManager sam obsłuży szyfrowanie i klucze
-      const result = await this.sessionManager.sendMessage(this.currentSessionToken, messageContent);
-      
-      if (result.status === 'success') {
-        console.log("✅ Wiadomość wysłana pomyślnie");
-        
-        // Dodaj wiadomość do UI od razu (optymistyczne UI)
-        const newMessage = {
-          id: result.messageData?.id || Date.now().toString(),
-          sender_id: parseInt(this.currentUser.id),
-          content: messageContent,
-          timestamp: result.messageData?.timestamp || new Date().toISOString(),
-          is_mine: true
-        };
-        
-        this.addMessageToUI(newMessage);
-        
-      } else {
-        // Przywróć treść w przypadku błędu
-        this.messageInput.value = messageContent;
-        this.showNotification(result.message || 'Błąd wysyłania wiadomości', "error");
-      }
-    } catch (error) {
-      console.error('❌ Błąd wysyłania wiadomości:', error);
-      this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, "error");
-      
-      // Przywróć treść w przypadku błędu
-      this.messageInput.value = content;
-      
-    } finally {
-      // Odblokuj pole wprowadzania
-      this.messageInput.disabled = false;
-      this.sendButton.disabled = false;
-      this.messageInput.focus();
-    }
-  }
-
-  /**
-   * POPRAWIONA: Ładuje wiadomości dla sesji
-   */
   async loadMessages(sessionToken) {
-    if (!this.sessionManager) {
-      console.error('❌ SessionManager nie jest dostępny');
+  try {
+    console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken?.substring(0, 10) + '...');
+    
+    // ZABEZPIECZENIE 1: Sprawdź czy już ładujemy dla tej sesji
+    if (messageLoadingInProgress.has(sessionToken)) {
+      console.log('⚠️ Ładowanie wiadomości już w toku dla:', sessionToken?.substring(0, 10) + '...');
       return;
     }
     
-    if (this.messagesContainer) {
-      this.messagesContainer.innerHTML = '';
+    // ZABEZPIECZENIE 2: Sprawdź czy nie ładowaliśmy niedawno (debouncing)
+    const now = Date.now();
+    const lastLoad = lastLoadTime[sessionToken] || 0;
+    if (now - lastLoad < 1000) { // 1 sekunda debounce
+      console.log('⏳ Zbyt częste ładowanie - ignoruję');
+      return;
     }
     
-    try {
-      console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken?.substring(0, 10) + '...');
-      
-      // Załaduj lokalne wiadomości
-      const result = this.sessionManager.getLocalMessages(sessionToken);
-      
-      if (result && result.status === 'success') {
-        const messages = result.messages || [];
-        console.log(`📝 Ładuję ${messages.length} wiadomości`);
-        
-        if (messages.length === 0) {
-          // Pokaż komunikat o braku wiadomości
-          if (this.messagesContainer) {
-            this.messagesContainer.innerHTML = `
-              <div class="system-message">
-                <p>🔐 Bezpieczna rozmowa została rozpoczęta</p>
-                <p>Wiadomości są szyfrowane końcowo-końcowo</p>
-              </div>
-            `;
-          }
-        } else {
-          messages.forEach(message => {
-            this.addMessageToUI(message);
-          });
-        }
-        
-        this.scrollToBottom();
-        
-        // Opcjonalnie: spróbuj pobrać nowsze wiadomości z serwera
-        try {
-          const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
-          if (serverResult.status === 'success' && serverResult.messages.length > messages.length) {
-            console.log(`📥 Pobrano ${serverResult.messages.length - messages.length} nowych wiadomości z serwera`);
-            // Przeładuj po pobraniu z serwera
-            setTimeout(() => this.loadMessages(sessionToken), 100);
-          }
-        } catch (serverError) {
-          console.warn('⚠️ Nie można pobrać z serwera:', serverError);
-        }
-      } else {
-        console.warn('⚠️ Brak wiadomości lub błąd:', result);
-      }
-    } catch (error) {
-      console.error('❌ Błąd ładowania wiadomości:', error);
-      this.showNotification('Błąd ładowania wiadomości', 'error');
+    // Dodaj do listy w toku
+    messageLoadingInProgress.add(sessionToken);
+    lastLoadTime[sessionToken] = now;
+    
+    if (!sessionToken) {
+      console.error('❌ Brak tokenu sesji');
+      return;
     }
+    
+    // 1. Najpierw załaduj lokalne wiadomości
+    const localResult = window.sessionManager.getLocalMessages(sessionToken);
+    const localMessages = localResult.messages || [];
+    
+    console.log(`📝 Ładuję ${localMessages.length} wiadomości`);
+    
+    // Wyświetl lokalne wiadomości natychmiast
+    if (localMessages.length > 0) {
+      this.displayMessages(localMessages);
+    }
+    
+    // 2. Następnie pobierz z serwera (z zabezpieczeniem)
+    const serverResult = await window.sessionManager.fetchMessagesFromServer(sessionToken);
+    
+    if (serverResult.status === 'success' && serverResult.messages.length > 0) {
+      console.log(`📥 Pobrano ${serverResult.messages.length} nowych wiadomości z serwera`);
+      
+      // Wyświetl wszystkie wiadomości (lokalne + nowe z serwera)
+      const allLocalMessages = window.sessionManager.getLocalMessages(sessionToken);
+      this.displayMessages(allLocalMessages.messages || []);
+    }
+    
+  } catch (error) {
+    console.error('❌ Błąd ładowania wiadomości:', error);
+  } finally {
+    // ZAWSZE usuń z listy w toku
+    messageLoadingInProgress.delete(sessionToken);
   }
+}
 
   /**
    * POPRAWIONA: Real-time wyświetlanie nowych wiadomości
