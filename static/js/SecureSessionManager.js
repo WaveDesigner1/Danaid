@@ -56,7 +56,7 @@ class SecureSessionManager {
    */
   setupSocketIOHandlers() {
     const setupHandlers = () => {
-      if (!window.wsHandler) {
+      if (!window.SocketIOHandler) {
         console.error("SocketIOHandler nie dostępny");
         return;
       }
