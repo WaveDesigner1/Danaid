@@ -3,8 +3,7 @@
  */
 
 // Zabezpieczenia - TYLKO JEDNA DEKLARACJA!
-let messageLoadingInProgress = new Set();
-let lastLoadTime = {};
+
 
 class ChatInterface {
   constructor(sessionManager) {
