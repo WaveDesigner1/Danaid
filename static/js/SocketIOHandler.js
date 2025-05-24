@@ -1,28 +1,120 @@
 /**
- * SocketIOHandler -
+ * SocketIOHandler - NAPRAWIONA obsługa połączeń Socket.IO dla Railway
+ * Naprawiono problem z HTTPS/WSS
  */
-
 class SocketIOHandler {
-  constructor(config = {}) {
-    this.userId = config.userId || null;
+  constructor() {
     this.socket = null;
-    this.isConnected = false;
     this.connectionAttempts = 0;
     this.maxConnectionAttempts = 5;
-    this.pendingMessages = [];
+    this.reconnectInterval = 5000;
     this.handlers = {};
+    this.userId = sessionStorage.getItem('user_id');
+    this.isConnected = false;
+    this.pendingMessages = [];
     this._running = false;
     
-    console.log('🔧 SocketIOHandler zainicjalizowany');
+    console.log('SocketIOHandler initialized with user ID:', this.userId);
+    
+    // Automatyczne łączenie po inicjalizacji
+    if (this.userId) {
+      this.connect();
+    }
   }
-
-  // Konfiguracja handlerów zdarzeń
+  
+  /**
+   * Łączy się z serwerem Socket.IO - NAPRAWIONE dla HTTPS
+   */
+  async connect() {
+    if (this.connectionAttempts >= this.maxConnectionAttempts) {
+      console.error('Przekroczono maksymalną liczbę prób połączenia Socket.IO');
+      return false;
+    }
+    
+    if (!this.userId) {
+      console.error('Brak ID użytkownika do połączenia Socket.IO');
+      return false;
+    }
+    
+    this.connectionAttempts++;
+    
+    try {
+      // Pobierz konfigurację Socket.IO z serwera
+      const config = await this.getSocketConfig();
+      
+      console.log(`Próba połączenia Socket.IO (#${this.connectionAttempts}):`, config.socketUrl);
+      
+      // Sprawdź czy Socket.IO jest dostępne
+      if (typeof io === 'undefined') {
+        console.error('Socket.IO client library nie jest załadowana');
+        return false;
+      }
+      
+      // NAPRAWIONE: Utwórz połączenie Socket.IO z prawidłowym protokołem
+      this.socket = io(config.socketUrl, {
+        path: config.path || '/socket.io/',
+        transports: ['websocket', 'polling'], // Fallback na polling
+        upgrade: true,
+        rememberUpgrade: true,
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 5,
+        timeout: 20000,
+        // NAPRAWIONE: Wymuś bezpieczne połączenie dla HTTPS
+        secure: window.location.protocol === 'https:',
+        forceNew: false
+      });
+      
+      // Skonfiguruj handlery zdarzeń
+      this.setupEventHandlers();
+      
+      return true;
+    } catch (error) {
+      console.error('Błąd tworzenia połączenia Socket.IO:', error);
+      this.scheduleReconnect();
+      return false;
+    }
+  }
+  
+  /**
+   * Pobiera konfigurację Socket.IO z serwera - NAPRAWIONE
+   */
+  async getSocketConfig() {
+    try {
+      const response = await fetch('/api/websocket/config');
+      if (response.ok) {
+        const config = await response.json();
+        
+        // NAPRAWIONE: Upewnij się, że używamy prawidłowego protokołu
+        if (config && config.socketUrl) {
+          // Jeśli strona jest na HTTPS, upewnij się że Socket.IO też używa HTTPS
+          if (window.location.protocol === 'https:' && config.socketUrl.startsWith('http:')) {
+            config.socketUrl = config.socketUrl.replace('http:', 'https:');
+          }
+          return config;
+        }
+      }
+    } catch (e) {
+      console.warn('Nie udało się pobrać konfiguracji Socket.IO, używam domyślnej');
+    }
+    
+    // NAPRAWIONA domyślna konfiguracja - używa tego samego protokołu co strona
+    return {
+      socketUrl: `${window.location.protocol}//${window.location.host}`,
+      path: '/socket.io/'
+    };
+  }
+  
+  /**
+   * Konfiguruje handlery zdarzeń Socket.IO
+   */
   setupEventHandlers() {
     if (!this.socket) return;
     
     // Połączenie nawiązane
     this.socket.on('connect', () => {
       console.log('✅ Socket.IO połączony pomyślnie');
+      console.log('Socket ID:', this.socket.id);
       this.isConnected = true;
       this._running = true;
       this.connectionAttempts = 0;
@@ -36,117 +128,78 @@ class SocketIOHandler {
       this.processPendingMessages();
     });
     
-    // Obsługa wiadomości
+    // Rozłączenie
+    this.socket.on('disconnect', (reason) => {
+      this.isConnected = false;
+      this._running = false;
+      console.log(`🔌 Socket.IO rozłączony: ${reason}`);
+      
+      if (reason !== 'io client disconnect') {
+        console.log('⏳ Automatyczne połączenie ponowne...');
+      }
+    });
+    
+    // Błędy połączenia
+    this.socket.on('connect_error', (error) => {
+      console.error('❌ Błąd połączenia Socket.IO:', error);
+      this.isConnected = false;
+      
+      // NAPRAWIONE: Lepsze zarządzanie błędami połączenia
+      if (error.message && error.message.includes('Mixed Content')) {
+        console.error('🚨 Problem z Mixed Content - sprawdź konfigurację HTTPS/WSS');
+      }
+    });
+    
+    // Potwierdzenie połączenia
+    this.socket.on('connection_ack', (data) => {
+      console.log('✅ Połączenie Socket.IO potwierdzone:', data.message);
+    });
+    
+    // Otrzymane wiadomości
     this.socket.on('message', (data) => {
-      console.log('📨 [SOCKET] Otrzymano wiadomość:', data.type);
+      console.log('📨 Otrzymano wiadomość Socket.IO:', data.type);
       this.handleMessage(data);
     });
     
-    // Nowe wiadomości
-    this.socket.on('new_message', (data) => {
-      console.log('🆕 [SOCKET] Nowa wiadomość');
-      this.handleMessage({
-        type: 'new_message',
-        session_token: data.session_token,
-        message: data.message
-      });
+    // Potwierdzenie dostarczenia wiadomości
+    this.socket.on('message_delivered', (data) => {
+      console.log('✅ Wiadomość dostarczona:', data);
+      if (this.handlers['message_delivered']) {
+        this.handlers['message_delivered'](data);
+      }
     });
     
-    // Błędy
+    // Błędy od serwera
     this.socket.on('error', (error) => {
-      console.error('❌ Błąd Socket.IO:', error);
+      console.error('❌ Błąd od serwera Socket.IO:', error);
     });
     
-    // Rozłączenie
-    this.socket.on('disconnect', () => {
-      console.log('🔌 Socket.IO rozłączony');
-      this.isConnected = false;
-      this._running = false;
+    // Ping/Pong
+    this.socket.on('pong', (data) => {
+      console.log('Otrzymano pong:', data.timestamp);
     });
-    
-    console.log('✅ Socket.IO handlers skonfigurowane');
   }
-
-  // Obsługa wiadomości z lepszym routingiem
+  
+  /**
+   * Obsługuje przychodzące wiadomości
+   */
   handleMessage(data) {
     try {
-      console.log('🔄 [HANDLER] Przetwarzanie wiadomości typu:', data.type);
-      
       // Wywołaj odpowiedni handler zdarzenia
       if (data.type && this.handlers[data.type]) {
         this.handlers[data.type](data);
-      } else {
-        console.warn('⚠️ [HANDLER] Brak handlera dla typu:', data.type);
-        console.warn('⚠️ [HANDLER] Dostępne handlery:', Object.keys(this.handlers));
-        
-        // Domyślna obsługa - przekaż do SecureSessionManager
-        if (window.secureSessionManager && typeof window.secureSessionManager.handleSocketMessage === 'function') {
-          window.secureSessionManager.handleSocketMessage(data);
-        }
       }
     } catch (error) {
-      console.error('❌ Błąd obsługi wiadomości Socket.IO:', error);
-      console.error('❌ Data:', data);
+      console.error('Błąd obsługi wiadomości Socket.IO:', error);
     }
   }
-
-  // Połączenie z serwerem
-  async connect(serverUrl = null) {
-    try {
-      if (this.socket && this.isConnected) {
-        console.log('Socket.IO już połączony');
-        return true;
-      }
-
-      const url = serverUrl || 'http://danaid.up.railway.app';
-      console.log('🔄 Łączenie z Socket.IO:', url);
-
-      if (typeof io === 'undefined') {
-        throw new Error('Socket.IO library nie jest załadowana');
-      }
-
-      this.socket = io(url, {
-        transports: ['websocket', 'polling'],
-        timeout: 10000,
-        forceNew: true
-      });
-
-      this.setupEventHandlers();
-      
-      // Czekaj na połączenie
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Timeout połączenia Socket.IO'));
-        }, 10000);
-
-        this.socket.on('connect', () => {
-          clearTimeout(timeout);
-          resolve(true);
-        });
-
-        this.socket.on('connect_error', (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
-      });
-
-    } catch (error) {
-      console.error('❌ Błąd połączenia Socket.IO:', error);
-      this.connectionAttempts++;
-      
-      if (this.connectionAttempts < this.maxConnectionAttempts) {
-        console.log(`🔄 Próba ponownego połączenia (${this.connectionAttempts}/${this.maxConnectionAttempts})...`);
-        setTimeout(() => this.connect(serverUrl), 2000);
-      }
-      
-      return false;
-    }
-  }
-
-  // Wysyłanie z lepszym debugowaniem
+  
+  /**
+   * Wysyła wiadomość przez Socket.IO
+   */
   send(eventName, data) {
     if (!this.isConnected || !this.socket) {
-      console.log('📤 [SEND] Socket nie połączony, dodaję do kolejki:', eventName);
+      // Zapisz wiadomość do wysłania później
       this.pendingMessages.push({ eventName, data });
       
       if (!this.isConnected && this.connectionAttempts < this.maxConnectionAttempts) {
@@ -158,12 +211,6 @@ class SocketIOHandler {
     }
     
     try {
-      console.log('📤 [SEND] Wysyłanie:', {
-        event: eventName,
-        dataKeys: Object.keys(data || {}),
-        timestamp: new Date().toISOString()
-      });
-      
       this.socket.emit(eventName, data);
       return true;
     } catch (error) {
@@ -172,99 +219,160 @@ class SocketIOHandler {
       return false;
     }
   }
-
-  // Przetwarzanie zaległych wiadomości
-  processPendingMessages() {
-    if (this.pendingMessages.length === 0) return;
-    
-    console.log(`📤 Wysyłanie ${this.pendingMessages.length} zaległych wiadomości...`);
-    
-    const messages = [...this.pendingMessages];
-    this.pendingMessages = [];
-    
-    messages.forEach(({ eventName, data }) => {
-      this.send(eventName, data);
+  
+  /**
+   * Wysyła wiadomość czatu
+   */
+  sendMessage(recipientId, sessionToken, content, iv, header, messageId) {
+    return this.send('send_message', {
+      recipient_id: recipientId,
+      session_token: sessionToken,
+      content: content,
+      iv: iv,
+      header: header,
+      message_id: messageId
     });
   }
-
-  // Metoda do synchronizacji po reconnect
-  requestSync() {
-    if (this.isConnected && this.socket) {
-      console.log('🔄 Żądanie synchronizacji danych...');
-      this.socket.emit('sync_request', {
-        user_id: this.userId,
-        timestamp: new Date().toISOString()
-      });
-      return true;
+  
+  /**
+   * Wysyła potwierdzenie przeczytania
+   */
+  sendReadReceipt(senderId, messageId, sessionToken) {
+    return this.send('send_read_receipt', {
+      sender_id: senderId,
+      message_id: messageId,
+      session_token: sessionToken
+    });
+  }
+  
+  /**
+   * Wysyła ping
+   */
+  sendPing() {
+    return this.send('ping', {});
+  }
+  
+  /**
+   * Przetwarza oczekujące wiadomości
+   */
+  processPendingMessages() {
+    if (this.pendingMessages.length === 0 || !this.isConnected) return;
+    
+    console.log(`📤 Przetwarzanie ${this.pendingMessages.length} oczekujących wiadomości`);
+    const pending = [...this.pendingMessages];
+    this.pendingMessages = [];
+    
+    for (const message of pending) {
+      if (!this.send(message.eventName, message.data)) {
+        console.log('❌ Nie udało się wysłać oczekujących wiadomości');
+        break;
+      }
     }
-    return false;
   }
-
-  // Metoda do wysyłania heartbeat
-  sendHeartbeat() {
-    if (this.isConnected) {
-      return this.send('heartbeat', {
-        user_id: this.userId,
-        timestamp: new Date().toISOString()
-      });
+  
+  /**
+   * Planuje ponowne połączenie
+   */
+  scheduleReconnect() {
+    if (this.connectionAttempts < this.maxConnectionAttempts) {
+      setTimeout(() => {
+        console.log(`🔄 Ponowna próba połączenia (${this.connectionAttempts + 1}/${this.maxConnectionAttempts})...`);
+        this.connect();
+      }, this.reconnectInterval);
+    } else {
+      console.error('❌ Wyczerpano wszystkie próby połączenia Socket.IO');
+      // Informuj użytkownika o problemie
+      if (window.chatInterface) {
+        window.chatInterface.showNotification(
+          'Problem z połączeniem Socket.IO. Odśwież stronę lub spróbuj później.', 
+          'warning', 
+          10000
+        );
+      }
     }
-    return false;
   }
-
-  // Dodanie handlera dla określonego typu wiadomości
-  addHandler(type, handler) {
-    this.handlers[type] = handler;
-    console.log(`✅ Dodano handler dla typu: ${type}`);
+  
+  /**
+   * Rejestruje obsługę typu wiadomości
+   */
+  on(type, callback) {
+    this.handlers[type] = callback;
+    console.log(`📝 Zarejestrowano handler dla: ${type}`);
   }
-
-  // Usunięcie handlera
-  removeHandler(type) {
+  
+  /**
+   * Usuwa handler dla typu wiadomości
+   */
+  off(type) {
     delete this.handlers[type];
-    console.log(`🗑️ Usunięto handler dla typu: ${type}`);
+    console.log(`🗑️ Usunięto handler dla: ${type}`);
   }
-
-  // Zamknięcie połączenia
+  
+  /**
+   * Sprawdza czy użytkownik jest online (kompatybilność)
+   */
+  is_user_online(user_id) {
+    return this.isConnected;
+  }
+  
+  /**
+   * Wysyła wiadomość do konkretnego użytkownika (kompatybilność)
+   */
+  send_to_user(user_id, message) {
+    return this.send('direct_message', {
+      recipient_id: user_id,
+      message: message,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  /**
+   * Zamyka połączenie
+   */
   close() {
     if (this.socket) {
       console.log('🔌 Zamykanie połączenia Socket.IO...');
       this.socket.disconnect();
-      this.socket = null;
-      this.isConnected = false;
-      this._running = false;
     }
+    this.isConnected = false;
+    this._running = false;
   }
-
-  // Restart z synchronizacją
+  
+  /**
+   * Rozłącza połączenie Socket.IO (alias dla metody close)
+   */
+  disconnect() {
+    this.close();
+  }
+  
+  /**
+   * Restartuje połączenie Socket.IO
+   */
   restart() {
     console.log('🔄 Restartowanie połączenia Socket.IO...');
     this.close();
     this.connectionAttempts = 0;
     setTimeout(() => {
-      this.connect().then(() => {
-        // Po reconnect poproś o synchronizację
-        setTimeout(() => {
-          this.requestSync();
-        }, 1000);
-      });
+      this.connect();
     }, 1000);
   }
-
-  // Sprawdzenie statusu
+  
+  /**
+   * Sprawdza status połączenia
+   */
   getStatus() {
     return {
-      connected: this.isConnected,
-      running: this._running,
-      attempts: this.connectionAttempts,
+      isConnected: this.isConnected,
+      connectionAttempts: this.connectionAttempts,
       pendingMessages: this.pendingMessages.length,
-      handlers: Object.keys(this.handlers)
+      userId: this.userId,
+      socketId: this.socket ? this.socket.id : null
     };
   }
 }
 
-// Export dla użycia w innych modułach
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = SocketIOHandler;
-}
+// Inicjalizacja globalnego handlera Socket.IO
+window.wsHandler = new SocketIOHandler();
 
-// Globalna dostępność
-window.SocketIOHandler = SocketIOHandler;
+// Debugowanie w konsoli
+console.log('🔧 SocketIOHandler załadowany:', window.wsHandler.getStatus());
