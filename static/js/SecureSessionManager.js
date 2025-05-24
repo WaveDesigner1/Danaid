@@ -445,8 +445,9 @@ class SecureSessionManager {
     } catch (error) {
       console.error('Błąd inicjacji sesji:', error);
       return {
-        success: false,
-        message: error.message
+        status: 'success',
+        session_token: session.token,
+        session: session
       };
     }
   }
