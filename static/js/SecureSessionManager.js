@@ -1,1066 +1,717 @@
 /**
- * ChatInterface - POPRAWIONA wersja z automatyczną wymianą kluczy i real-time messaging
- * Używa UnifiedCrypto i SocketIOHandler z automatyczną obsługą stanów sesji
+ * SecureSessionManager - POPRAWIONA wersja z automatyczną wymianą kluczy
+ * Używa UnifiedCrypto i SocketIOHandler z automatyczną obsługą real-time
  */
-class ChatInterface {
-  constructor(sessionManager) {
-    // Inicjalizacja menedżera sesji
-    this.sessionManager = sessionManager || window.sessionManager;
-    this.initializeDOMElements();
-    
-    // Stan aplikacji
-    this.currentSessionToken = null;
-    this.currentUser = null;
+class SecureSessionManager {
+  constructor() {
+    this.activeSessions = [];
     this.friends = [];
-    this.sessions = [];
-    this.pendingRequests = [];
-    this.sessionStates = {}; // NOWE: Śledzenie stanów sesji
+    this.onlineUsers = [];
+    this.messages = {};
+    this.currentSessionId = null;
+    this.keyExchangeInProgress = new Set(); // NOWE: Śledzenie wymian kluczy w toku
+    this.user = {
+      id: sessionStorage.getItem('user_id'),
+      username: sessionStorage.getItem('username'),
+      isAdmin: sessionStorage.getItem('is_admin') === 'true',
+      isLoggedIn: sessionStorage.getItem('isLoggedIn') === 'true'
+    };
+
+    // Inicjalizacja bazy danych
+    this.initDatabase();
+    this.setupSocketIOHandlers();
+
+    // Callbacks
+    this.onMessageReceived = null;
+    this.onSessionsUpdated = null;
+    this.onFriendsUpdated = null;
+    this.onOnlineStatusChanged = null;
+    this.onFriendRequestReceived = null;
+    this.onKeyExchangeCompleted = null; // NOWE: Callback po zakończeniu wymiany kluczy
     
-    // Sprawdź czy UnifiedCrypto jest dostępny
-    if (!window.unifiedCrypto) {
-      console.error("❌ UnifiedCrypto nie jest dostępny!");
-      this.showNotification("Błąd ładowania modułu kryptograficznego", "error");
-      return;
-    }
-    
-    // Załaduj konfigurację Socket.IO, a następnie zainicjuj interfejs
-    this.loadSocketIOConfig().then(() => {
-      // Inicjalizacja 
-      this.initializeEvents();
-      this.loadUserData();
-      this.initializeFriendRequestNotifications();
-      this.loadFriends();
-      this.loadSessions();
-      
-      // NOWE: Ustaw callback dla zakończenia wymiany kluczy
-      if (this.sessionManager) {
-        this.sessionManager.onKeyExchangeCompleted = (sessionToken) => {
-          this.handleKeyExchangeCompleted(sessionToken);
-        };
-      }
-    });
-    
-    // Regularne aktualizacje
-    setInterval(() => this.loadPendingRequests(), 30000);
-    setInterval(() => this.refreshActiveSessions(), 60000); // NOWE: Odświeżanie sesji
-    
-    console.log("✅ ChatInterface zainicjalizowany z automatyczną wymianą kluczy");
+    console.log("SecureSessionManager zainicjalizowany z automatyczną wymianą kluczy", this.user);
   }
 
   /**
-   * NOWA: Obsługuje zakończenie wymiany kluczy
+   * POPRAWIONA: Konfiguruje handlery dla SocketIOHandler z obsługą wymiany kluczy
    */
-  handleKeyExchangeCompleted(sessionToken) {
-    console.log('🎉 Wymiana kluczy zakończona dla sesji:', sessionToken?.substring(0, 10) + '...');
-    
-    // Zaktualizuj stan sesji
-    if (this.sessionStates[sessionToken]) {
-      this.sessionStates[sessionToken].keyExchangeCompleted = true;
-      this.sessionStates[sessionToken].isReady = true;
-    }
-    
-    // Jeśli to aktywna sesja, pokaż powiadomienie
-    if (sessionToken === this.currentSessionToken) {
-      this.showNotification("🔐 Szyfrowanie końcowo-końcowe aktywne", "success", 3000);
-      
-      // Włącz pole wprowadzania wiadomości
-      if (this.messageInput) {
-        this.messageInput.disabled = false;
-        this.messageInput.placeholder = "Napisz wiadomość...";
+  setupSocketIOHandlers() {
+    const setupHandlers = () => {
+      if (!window.wsHandler) {
+        console.error("SocketIOHandler nie jest dostępny globalnie");
+        return;
       }
       
-      if (this.sendButton) {
-        this.sendButton.disabled = false;
-      }
-    }
-    
-    // Odśwież listę sesji
-    this.loadSessions();
-  }
-
-  /**
-   * NOWA: Odświeża aktywne sesje
-   */
-  async refreshActiveSessions() {
-    if (this.sessionManager) {
-      await this.sessionManager.getActiveSessions();
-    }
-  }
-
-  /**
-   * Ładuje konfigurację Socket.IO - BEZ ZMIAN
-   */
-  async loadSocketIOConfig() {
-    try {
-      const response = await fetch('/api/websocket/config');
-      if (response.ok) {
-        const config = await response.json();
-        if (config && config.socketUrl) {
-          window._socketConfig = window._socketConfig || {};
-          window._socketConfig.socketUrl = config.socketUrl;
-          window._socketConfig.path = config.path;
-          console.log('✅ Pobrano konfigurację Socket.IO:', config.socketUrl);
-        }
-      }
-    } catch (e) {
-      console.warn('⚠️ Nie udało się pobrać konfiguracji Socket.IO:', e);
-    }
-  }
-  
-  /**
-   * Inicjalizacja elementów DOM - BEZ ZMIAN
-   */
-  initializeDOMElements() {
-    this.friendsList = document.getElementById('friend-list');
-    this.messagesContainer = document.getElementById('messages');
-    this.messageInput = document.getElementById('message-input');
-    this.sendButton = document.getElementById('send-button');
-    this.addFriendBtn = document.getElementById('add-friend-btn');
-    this.chatHeader = document.getElementById('chat-header');
-    this.requestBadge = document.getElementById('friend-request-count');
-    
-    // Utwórz link do panelu admin jeśli potrzeba
-    this.adminLink = document.createElement('a');
-    this.adminLink.id = 'admin-panel-link';
-    this.adminLink.innerHTML = '<i class="fas fa-cog"></i> Admin Panel';
-    this.adminLink.style.marginLeft = '15px';
-    this.adminLink.classList.add('admin-btn');
-    this.adminLink.href = '/admin_dashboard';
-    
-    console.log('🔧 Elementy DOM zainicjalizowane:', {
-      friendsList: !!this.friendsList,
-      messagesContainer: !!this.messagesContainer,
-      messageInput: !!this.messageInput,
-      sendButton: !!this.sendButton
-    });
-  }
-
-  /**
-   * POPRAWIONA: Inicjalizacja nasłuchiwania zdarzeń z obsługą stanów sesji
-   */
-  initializeEvents() {
-    // Sprawdź, czy wszystkie elementy DOM istnieją
-    if (!this.friendsList || !this.messagesContainer || !this.messageInput || 
-        !this.sendButton || !this.addFriendBtn || !this.chatHeader) {
-      console.error('❌ Brak wymaganych elementów DOM');
-      return;
-    }
-
-    // Przycisk wysyłania wiadomości
-    this.sendButton.addEventListener('click', () => this.sendMessage());
-    
-    // Obsługa Enter do wysyłania wiadomości + Shift+Enter dla nowej linii
-    this.messageInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        this.sendMessage();
-      }
-    });
-    
-    // NOWE: Obsługa pisania (typing indicators w przyszłości)
-    this.messageInput.addEventListener('input', () => {
-      // Można dodać typing indicators
-    });
-    
-    // Obsługa modalu dodawania znajomych
-    this.addFriendBtn.addEventListener('click', () => {
-      const modal = document.getElementById('add-friend-modal');
-      if (modal) modal.style.display = 'block';
-    });
-    
-    // Zamykanie modalu dodawania znajomego
-    const closeBtn = document.querySelector('.search-close');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        const modal = document.getElementById('add-friend-modal');
-        if (modal) modal.style.display = 'none';
-      });
-    }
-    
-    // Przycisk wysyłania zaproszenia
-    const sendFriendRequestBtn = document.getElementById('send-friend-request-btn');
-    if (sendFriendRequestBtn) {
-      sendFriendRequestBtn.addEventListener('click', () => this.sendFriendRequest());
-    }
-    
-    // Obsługa kliknięcia w powiadomienie o zaproszeniach
-    const notificationIcon = document.getElementById('friend-request-notification');
-    if (notificationIcon) {
-      notificationIcon.addEventListener('click', () => this.showFriendRequestsModal());
-    }
-
-    // Obsługa przycisku wylogowania
-    const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', (e) => {
-        e.preventDefault();
+      // Obsługa nowych wiadomości
+      window.wsHandler.on('new_message', (data) => {
+        console.log("🆕 [SOCKET] Otrzymano nową wiadomość:", data);
         
-        console.log('🚪 Rozpoczynam wylogowanie...');
-        
-        if (this.sessionManager && typeof this.sessionManager.logout === 'function') {
-          this.sessionManager.logout();
-        } else {
-          // Fallback - bezpośrednie przekierowanie
-          console.log('🚪 Wylogowanie fallback...');
-          localStorage.clear();
-          sessionStorage.clear();
-          window.location.href = '/logout';
+        try {
+          if (data.message && data.message.sender_id && 
+              parseInt(data.message.sender_id) === parseInt(this.user.id)) {
+            console.log("↩️ To nasza własna wiadomość, pomijam");
+            return;
+          }
+          
+          // Automatycznie odszyfruj i zapisz wiadomość
+          this.handleIncomingMessage(data.session_token, data.message);
+          
+        } catch (error) {
+          console.error("❌ Błąd przetwarzania wiadomości Socket.IO:", error);
         }
       });
       
-      console.log('✅ Przycisk wylogowania skonfigurowany');
+      // NOWE: Obsługa otrzymania klucza sesji
+      window.wsHandler.on('session_key_received', (data) => {
+        console.log("🔑 [SOCKET] Otrzymano klucz sesji:", data);
+        
+        try {
+          this.handleReceivedSessionKey(data.session_token, data.encrypted_key);
+        } catch (error) {
+          console.error("❌ Błąd obsługi otrzymanego klucza:", error);
+        }
+      });
+      
+      // NOWE: Obsługa zakończenia wymiany kluczy
+      window.wsHandler.on('key_exchange_completed', (data) => {
+        console.log("✅ [SOCKET] Wymiana kluczy zakończona:", data);
+        
+        try {
+          this.keyExchangeInProgress.delete(data.session_token);
+          
+          // Odśwież listę sesji
+          this.getActiveSessions();
+          
+          // Wywołaj callback jeśli istnieje
+          if (this.onKeyExchangeCompleted) {
+            this.onKeyExchangeCompleted(data.session_token);
+          }
+          
+          console.log("🎉 Sesja gotowa do messaging:", data.session_token);
+          
+        } catch (error) {
+          console.error("❌ Błąd obsługi zakończenia wymiany kluczy:", error);
+        }
+      });
+      
+      // Obsługa aktualizacji sesji
+      window.wsHandler.on('session_update', (data) => {
+        console.log("Aktualizacja sesji:", data);
+        this.getActiveSessions();
+      });
+      
+      // Obsługa zaproszeń do znajomych
+      window.wsHandler.on('friend_request', (data) => {
+        console.log("Otrzymano zaproszenie do znajomych:", data);
+        
+        if (this.onFriendRequestReceived) {
+          this.onFriendRequestReceived(data);
+        }
+      });
+      
+      // Obsługa zmian statusu online
+      window.wsHandler.on('user_status_change', (data) => {
+        const userId = data.user_id;
+        const isOnline = data.is_online;
+        this.updateOnlineStatus(userId, isOnline);
+      });
+      
+      // Obsługa listy użytkowników online
+      window.wsHandler.on('online_users', (data) => {
+        this.onlineUsers = data.users || [];
+        
+        if (this.onOnlineStatusChanged) {
+          this.onOnlineStatusChanged(this.onlineUsers);
+        }
+      });
+      
+      // Obsługa błędów Socket.IO
+      window.wsHandler.on('error', (error) => {
+        console.error("❌ [SOCKET] Błąd Socket.IO:", error);
+      });
+
+      // Obsługa rozłączenia
+      window.wsHandler.on('disconnect', (reason) => {
+        console.warn("🔌 [SOCKET] Rozłączono:", reason);
+      });
+
+      // Test połączenia
+      window.wsHandler.on('connect', () => {
+        console.log("✅ [SOCKET] Połączono - odświeżam dane...");
+        
+        // Po połączeniu odśwież dane
+        setTimeout(() => {
+          this.getActiveSessions();
+          this.fetchFriends();
+        }, 1000);
+      });
+      
+      console.log("✅ Socket.IO handlers z wymianą kluczy skonfigurowane");
+    };
+
+    // Spróbuj teraz, jeśli nie to czekaj
+    if (window.wsHandler) {
+      setupHandlers();
     } else {
-      console.warn('⚠️ Przycisk #logout-btn nie znaleziony');
-    }
-
-    // POPRAWIONE: Nasłuchiwanie na zdarzenia z menedżera sesji
-    if (this.sessionManager) {
-      this.sessionManager.onMessageReceived = (sessionToken, message) => 
-        this.displayNewMessage(sessionToken, message);
-      this.sessionManager.onSessionsUpdated = (sessions) => 
-        this.updateSessionsList(sessions);
-      this.sessionManager.onFriendsUpdated = (friends) => 
-        this.updateFriendsList(friends);
-      this.sessionManager.onOnlineStatusChanged = (onlineUsers) => 
-        this.updateOnlineStatus(onlineUsers);
-      this.sessionManager.onFriendRequestReceived = () => {
-        this.loadPendingRequests();
-      };
-    }
-    
-    console.log('✅ Wydarzenia zainicjalizowane z obsługą stanów sesji');
-  }
-
-/**
-   * POPRAWIONA: Wybiera znajomego i automatycznie inicjuje sesję z wymianą kluczy
-   */
-  async selectFriend(friend) {
-    console.log('👤 Wybrano znajomego:', friend.username);
-    
-    try {
-      // Pokaż wskaźnik ładowania
-      this.showSessionStatus("Łączenie z " + friend.username + "...", "loading");
-      
-      // Usuń aktywny stan z innych elementów
-      document.querySelectorAll('.friend-item').forEach(item => {
-        item.classList.remove('active');
-      });
-      
-      // Dodaj aktywny stan do wybranego elementu
-      const friendElement = document.querySelector(`[data-user-id="${friend.user_id}"]`);
-      if (friendElement) {
-        friendElement.classList.add('active');
-      }
-      
-      // Zaktualizuj nagłówek czatu
-      if (this.chatHeader) {
-        this.chatHeader.innerHTML = `
-          <div class="chat-header-info">
-            <h3>${friend.username}</h3>
-            <span class="status ${friend.is_online ? 'online' : 'offline'}">
-              ${friend.is_online ? 'Online' : 'Offline'}
-            </span>
-          </div>
-          <div class="session-status" id="session-status">
-            <span class="status-text">Inicjalizacja...</span>
-          </div>
-        `;
-      }
-      
-      // NOWE: Wyłącz pole wprowadzania do czasu zakończenia wymiany kluczy
-      if (this.messageInput) {
-        this.messageInput.disabled = true;
-        this.messageInput.placeholder = "Przygotowywanie szyfrowania...";
-      }
-      
-      if (this.sendButton) {
-        this.sendButton.disabled = true;
-      }
-      
-      // Inicjuj sesję z automatyczną wymianą kluczy
-      const result = await this.sessionManager.initSession(friend.user_id);
-      
-      if (result.status === 'success') {
-        this.currentSessionToken = result.session_token;
-        console.log('✅ Sesja zainicjalizowana:', this.currentSessionToken?.substring(0, 10) + '...');
-        
-        // Zapisz stan sesji
-        this.sessionStates[this.currentSessionToken] = {
-          friendId: friend.user_id,
-          friendUsername: friend.username,
-          isReady: result.session?.is_ready || false,
-          needsKeyExchange: result.session?.needs_key_exchange || false,
-          keyExchangeCompleted: result.session?.is_ready || false
-        };
-        
-        // Załaduj wiadomości dla tej sesji
-        await this.loadMessages(this.currentSessionToken);
-        
-        // Sprawdź stan wymiany kluczy
-        await this.checkSessionReadiness();
-        
-        // Wyczyść licznik nieprzeczytanych dla tej sesji
-        const session = this.sessions.find(s => s.token === this.currentSessionToken);
-        if (session) {
-          session.unread_count = 0;
-          this.renderFriendsList();
-        }
-        
-      } else {
-        console.error('❌ Błąd inicjalizacji sesji:', result.message);
-        this.showNotification(result.message || 'Błąd inicjalizacji sesji', 'error');
-        this.showSessionStatus("Błąd połączenia", "error");
-        
-        // Przywróć pole wprowadzania
-        if (this.messageInput) {
-          this.messageInput.disabled = false;
-          this.messageInput.placeholder = "Napisz wiadomość...";
-        }
-        
-        if (this.sendButton) {
-          this.sendButton.disabled = false;
-        }
-      }
-    } catch (error) {
-      console.error('❌ Błąd wyboru znajomego:', error);
-      this.showNotification('Błąd inicjalizacji czatu', 'error');
-      this.showSessionStatus("Błąd", "error");
+      setTimeout(setupHandlers, 1000);
     }
   }
 
   /**
-   * NOWA: Sprawdza gotowość sesji i aktualizuje UI
+   * NOWA: Obsługuje przychodzące wiadomości z automatycznym deszyfrowaniem
    */
-  async checkSessionReadiness() {
-    if (!this.currentSessionToken) return;
-    
+  async handleIncomingMessage(sessionToken, message) {
     try {
-      const response = await fetch(`/api/session/${this.currentSessionToken}/validate`, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      console.log('📨 Obsługa przychodzącej wiadomości:', {
+        sessionToken: sessionToken?.substring(0, 10) + '...',
+        messageId: message.id,
+        hasContent: !!message.content
+      });
+      
+      // Sprawdź czy mamy klucz sesji
+      if (!window.unifiedCrypto.hasSessionKey(sessionToken)) {
+        console.warn('⚠️ Brak klucza sesji, próbuję pobrać...');
+        
+        const keyResult = await this.retrieveSessionKey(sessionToken);
+        if (!keyResult.success) {
+          console.error('❌ Nie można pobrać klucza sesji:', keyResult.message);
+          // Zapisz wiadomość jako niezdeszyfrowaną
+          message.content = '[Nie można odszyfrować - brak klucza]';
+          message.decryption_error = true;
+        }
+      }
+      
+      // Spróbuj odszyfrować wiadomość
+      if (message.content && message.iv && !message.decryption_error) {
+        try {
+          const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+          if (sessionKeyBase64) {
+            const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+            const decryptedContent = await window.unifiedCrypto.decryptMessage(sessionKey, {
+              data: message.content,
+              iv: message.iv
+            });
+            
+            message.content = decryptedContent;
+            console.log('✅ Wiadomość odszyfrowana:', decryptedContent.substring(0, 50) + '...');
+          }
+        } catch (decryptError) {
+          console.error('❌ Błąd deszyfrowania:', decryptError);
+          message.content = '[Błąd deszyfrowania]';
+          message.decryption_error = true;
+        }
+      }
+      
+      // Zapisz wiadomość
+      await this.storeMessage(sessionToken, message);
+      
+      // Wywołaj callback dla UI
+      if (this.onMessageReceived) {
+        this.onMessageReceived(sessionToken, message);
+      }
+      
+    } catch (error) {
+      console.error('❌ Błąd obsługi przychodzącej wiadomości:', error);
+    }
+  }
+
+  /**
+   * NOWA: Obsługuje otrzymany klucz sesji
+   */
+  async handleReceivedSessionKey(sessionToken, encryptedKey) {
+    try {
+      console.log('🔑 Obsługa otrzymanego klucza sesji:', sessionToken?.substring(0, 10) + '...');
+      
+      if (!window.unifiedCrypto || !window.unifiedCrypto.hasPrivateKey()) {
+        throw new Error('Brak klucza prywatnego do odszyfrowania');
+      }
+      
+      // Odszyfruj klucz sesji
+      const sessionKeyBase64 = await window.unifiedCrypto.decryptSessionKey(encryptedKey);
+      
+      // Zapisz klucz sesji
+      window.unifiedCrypto.storeSessionKey(sessionToken, sessionKeyBase64);
+      
+      console.log('✅ Klucz sesji odszyfrowany i zapisany');
+      
+      // Potwierdź odebranie klucza
+      const response = await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
         credentials: 'same-origin'
       });
       
       if (response.ok) {
-        const data = await response.json();
-        
-        if (data.status === 'success' && data.session) {
-          const session = data.session;
+        const result = await response.json();
+        if (result.status === 'success') {
+          console.log('✅ Klucz sesji potwierdzony na serwerze');
           
-          // Aktualizuj stan sesji
-          if (this.sessionStates[this.currentSessionToken]) {
-            this.sessionStates[this.currentSessionToken].isReady = session.is_ready || false;
-            this.sessionStates[this.currentSessionToken].needsKeyExchange = session.needs_key_exchange || false;
-            this.sessionStates[this.currentSessionToken].keyExchangeCompleted = !session.needs_key_exchange;
-          }
+          // Usuń z listy w toku
+          this.keyExchangeInProgress.delete(sessionToken);
           
-          // Pokaż odpowiedni status
-          if (session.is_ready) {
-            this.showSessionStatus("🔐 Bezpieczne połączenie", "ready");
-            
-            // Włącz pole wprowadzania
-            if (this.messageInput) {
-              this.messageInput.disabled = false;
-              this.messageInput.placeholder = "Napisz wiadomość...";
-              this.messageInput.focus();
-            }
-            
-            if (this.sendButton) {
-              this.sendButton.disabled = false;
-            }
-          } else if (session.needs_key_exchange) {
-            if (session.is_initiator) {
-              this.showSessionStatus("🔑 Generowanie kluczy...", "loading");
-            } else {
-              this.showSessionStatus("🔑 Oczekiwanie na klucze...", "waiting");
-            }
-          }
+          // Odśwież listę sesji
+          this.getActiveSessions();
         }
       }
+      
     } catch (error) {
-      console.error('❌ Błąd sprawdzania gotowości sesji:', error);
+      console.error('❌ Błąd obsługi otrzymanego klucza sesji:', error);
+      this.keyExchangeInProgress.delete(sessionToken);
     }
-  }
-
-  /**
-   * NOWA: Pokazuje status sesji w nagłówku
-   */
-  showSessionStatus(message, type = "info") {
-    const statusElement = document.getElementById('session-status');
-    if (statusElement) {
-      const statusText = statusElement.querySelector('.status-text');
-      if (statusText) {
-        statusText.textContent = message;
+  }ługa nowych sesji utworzonych przez innych
+      window.wsHandler.on('new_session_created', (data) => {
+        console.log("🆕 [SOCKET] Ktoś utworzył nową sesję z nami:", data);
         
-        // Usuń poprzednie klasy statusu
-        statusElement.classList.remove('loading', 'waiting', 'ready', 'error');
+        // Odśwież listę aktywnych sesji
+        this.getActiveSessions();
         
-        // Dodaj nową klasę
-        if (type) {
-          statusElement.classList.add(type);
+        // Jeśli to powiadomienie o nowej sesji, przygotuj się na wymianę kluczy
+        if (data.session_token) {
+          console.log("🔑 Przygotowuję się na wymianę kluczy dla sesji:", data.session_token);
         }
-      }
-    }
-  }
-
+      });
   /**
-   * POPRAWIONA: Inicjuje sesję czatu (używana wewnętrznie)
+   * NOWA: Automatycznie rozpoczyna wymianę kluczy dla sesji
    */
-  async initSession(userId) {
+  async startAutomaticKeyExchange(sessionToken, sessionData) {
     try {
-      console.log('🚀 Inicjalizacja sesji z użytkownikiem:', userId);
+      console.log('🚀 Rozpoczynam automatyczną wymianę kluczy dla:', sessionToken?.substring(0, 10) + '...');
       
-      const result = await this.sessionManager.initSession(userId);
-      
-      if (result.status === 'success') {
-        this.currentSessionToken = result.session_token;
-        console.log('✅ Sesja zainicjalizowana:', this.currentSessionToken);
-        
-        // Załaduj wiadomości dla tej sesji
-        await this.loadMessages(this.currentSessionToken);
-        
-        // Sprawdź gotowość sesji
-        await this.checkSessionReadiness();
-        
-        // Wyczyść licznik nieprzeczytanych dla tej sesji
-        const session = this.sessions.find(s => s.token === this.currentSessionToken);
-        if (session) {
-          session.unread_count = 0;
-          this.renderFriendsList();
-        }
-        
-      } else {
-        console.error('❌ Błąd inicjalizacji sesji:', result.message);
-        this.showNotification(result.message || 'Błąd inicjalizacji sesji', 'error');
+      // Sprawdź czy wymiana nie jest już w toku
+      if (this.keyExchangeInProgress.has(sessionToken)) {
+        console.log('⏳ Wymiana kluczy już w toku dla tej sesji');
+        return { success: false, message: 'Wymiana kluczy w toku' };
       }
+      
+      // Dodaj do listy w toku
+      this.keyExchangeInProgress.add(sessionToken);
+      
+      // Sprawdź czy jesteśmy inicjatorem
+      if (!sessionData.is_initiator) {
+        console.log('⏳ Czekam na klucz od inicjatora...');
+        return { success: true, message: 'Czekam na klucz' };
+      }
+      
+      console.log('🔑 Jestem inicjatorem - generuję klucz sesji...');
+      
+      // Wygeneruj nowy klucz sesji AES
+      const sessionKey = await window.unifiedCrypto.generateSessionKey();
+      const sessionKeyBase64 = await window.unifiedCrypto.exportSessionKey(sessionKey);
+      
+      // Zapisz klucz lokalnie
+      window.unifiedCrypto.storeSessionKey(sessionToken, sessionKeyBase64);
+      
+      // Pobierz klucz publiczny odbiorcy
+      const recipientPublicKeyResponse = await fetch(`/api/user/${sessionData.other_user.user_id}/public_key`);
+      if (!recipientPublicKeyResponse.ok) {
+        throw new Error('Nie można pobrać klucza publicznego odbiorcy');
+      }
+      
+      const recipientKeyData = await recipientPublicKeyResponse.json();
+      const recipientPublicKey = await window.unifiedCrypto.importPublicKeyFromPEM(recipientKeyData.public_key);
+      
+      // Zaszyfruj klucz sesji kluczem publicznym odbiorcy
+      const encryptedSessionKey = await window.unifiedCrypto.encryptSessionKey(recipientPublicKey, sessionKey);
+      
+      // Wyślij zaszyfrowany klucz na serwer
+      const keyExchangeResponse = await fetch(`/api/session/${sessionToken}/exchange_key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          encrypted_key: encryptedSessionKey
+        })
+      });
+      
+      if (!keyExchangeResponse.ok) {
+        throw new Error('Nie można wymienić klucza sesji');
+      }
+      
+      const keyResult = await keyExchangeResponse.json();
+      if (keyResult.status !== 'success') {
+        throw new Error(keyResult.message || 'Błąd wymiany klucza');
+      }
+      
+      console.log('✅ Klucz sesji wygenerowany i wysłany, czekam na potwierdzenie...');
+      
+      return { success: true, message: 'Klucz wysłany, czekam na potwierdzenie' };
+      
     } catch (error) {
-      console.error('❌ Błąd initSession:', error);
-      this.showNotification('Błąd połączenia z serwerem', 'error');
+      console.error('❌ Błąd automatycznej wymiany kluczy:', error);
+      this.keyExchangeInProgress.delete(sessionToken);
+      return { success: false, message: error.message };
+    }
+  }
+
+  // Inicjalizuje bazę danych IndexedDB - BEZ ZMIAN
+  async initDatabase() {
+    try {
+      const request = indexedDB.open('SecureChatMessages', 1);
+      
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('messages')) {
+          db.createObjectStore('messages', { keyPath: 'id', autoIncrement: true });
+        }
+        if (!db.objectStoreNames.contains('sessions')) {
+          db.createObjectStore('sessions', { keyPath: 'token' });
+        }
+      };
+      
+      request.onsuccess = (event) => {
+        this.db = event.target.result;
+        console.log("Baza danych IndexedDB zainicjalizowana");
+        this.loadMessagesFromStorage();
+      };
+      
+      request.onerror = (event) => {
+        console.error('Błąd inicjalizacji IndexedDB:', event.target.error);
+      };
+    } catch (error) {
+      console.error('Nie można utworzyć bazy danych:', error);
+    }
+  }
+
+  // Pobieranie wiadomości z lokalnego magazynu - BEZ ZMIAN
+  async loadMessagesFromStorage() {
+    if (!this.db) {
+      console.error("Baza danych nie jest dostępna");
+      return;
+    }
+    
+    try {
+      const tx = this.db.transaction(['messages'], 'readonly');
+      const store = tx.objectStore('messages');
+      const messages = await new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      
+      // Grupuj wiadomości według sesji
+      messages.forEach(message => {
+        const sessionToken = message.sessionToken;
+        if (!this.messages[sessionToken]) {
+          this.messages[sessionToken] = [];
+        }
+        this.messages[sessionToken].push(message);
+      });
+      
+      console.log(`Załadowano wiadomości dla ${Object.keys(this.messages).length} sesji`);
+    } catch (error) {
+      console.error('Błąd podczas ładowania wiadomości:', error);
+    }
+  }
+
+  // Zapisywanie wiadomości do lokalnego magazynu - BEZ ZMIAN
+  async storeMessage(sessionToken, message) {
+    if (!this.db) {
+      console.error("Baza danych nie jest dostępna");
+      return false;
+    }
+    
+    try {
+      // Dodaj wiadomość do lokalnego stanu
+      if (!this.messages[sessionToken]) {
+        this.messages[sessionToken] = [];
+      }
+      
+      // Sprawdź czy wiadomość już nie istnieje (unikaj duplikatów)
+      const exists = this.messages[sessionToken].find(m => 
+        m.id === message.id || 
+        (m.timestamp === message.timestamp && m.content === message.content && m.sender_id === message.sender_id)
+      );
+      
+      if (exists) {
+        console.log("📝 Wiadomość już istnieje, pomijam duplikat");
+        return true;
+      }
+      
+      this.messages[sessionToken].push(message);
+      
+      // Zapisz do IndexedDB
+      const tx = this.db.transaction(['messages'], 'readwrite');
+      const store = tx.objectStore('messages');
+      
+      await new Promise((resolve, reject) => {
+        const request = store.add({
+          ...message,
+          sessionToken: sessionToken
+        });
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+      
+      console.log("💾 Wiadomość zapisana:", message.content?.substring(0, 50) + "...");
+      return true;
+    } catch (error) {
+      console.error('Błąd zapisywania wiadomości:', error);
+      return false;
     }
   }
 
   /**
-   * POPRAWIONA: Wysyłanie wiadomości z kontrolą gotowości sesji
+   * Pobieranie lokalnych wiadomości z obsługą deszyfrowania - BEZ ZMIAN
    */
-  async sendMessage() {
-    const content = this.messageInput.value.trim();
-    if (!content) return;
+  getLocalMessages(sessionToken) {
+    console.log('📥 getLocalMessages wywołane dla:', sessionToken);
+    console.log('💾 Dostępne wiadomości:', Object.keys(this.messages));
     
-    // Sprawdź czy UnifiedCrypto jest dostępny
-    if (!window.unifiedCrypto) {
-      this.showNotification("Moduł kryptograficzny nie jest dostępny", "error");
-      return;
+    if (!sessionToken) {
+      console.error('❌ Brak sessionToken');
+      return {
+        status: 'error',
+        message: 'Brak tokenu sesji',
+        messages: []
+      };
     }
     
-    // Sprawdź czy mamy aktywną sesję
-    if (!this.currentSessionToken) {
-      this.showNotification("Brak aktywnej sesji czatu", "error");
-      return;
+    // Sprawdź czy mamy wiadomości dla tej sesji
+    if (!this.messages[sessionToken]) {
+      console.log('📭 Brak wiadomości dla sesji:', sessionToken);
+      return {
+        status: 'success',
+        messages: []
+      };
     }
     
-    // NOWE: Sprawdź czy sesja jest gotowa
-    const sessionState = this.sessionStates[this.currentSessionToken];
-    if (sessionState && !sessionState.keyExchangeCompleted) {
-      this.showNotification("Poczekaj na zakończenie wymiany kluczy", "warning");
-      return;
-    }
+    const messages = this.messages[sessionToken];
+    console.log(`📨 Znaleziono ${messages.length} wiadomości dla sesji ${sessionToken}`);
     
-    // Zablokuj pole wprowadzania na czas wysyłania
-    this.messageInput.disabled = true;
-    this.sendButton.disabled = true;
+    // Posortuj wiadomości według czasu
+    const sortedMessages = messages.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeA - timeB;
+    });
     
-    try {
-      // Zapamiętaj treść na wypadek błędu
-      const messageContent = content;
-      
-      // Wyczyść pole wprowadzania od razu
-      this.messageInput.value = '';
-      
-      // Wyślij wiadomość przez menedżer sesji
-      const result = await this.sessionManager.sendMessage(this.currentSessionToken, messageContent);
-      
-      if (result.status === 'success') {
-        console.log("✅ Wiadomość wysłana pomyślnie");
-        
-        // Dodaj wiadomość do UI od razu (optymistyczne UI)
-        const newMessage = {
-          id: result.messageData?.id || Date.now().toString(),
-          sender_id: parseInt(this.user.id),
-          content: messageContent,
-          timestamp: result.messageData?.timestamp || new Date().toISOString(),
-          is_mine: true
-        };
-        
-        this.addMessageToUI(newMessage);
-        
-      } else {
-        // Przywróć treść w przypadku błędu
-        this.messageInput.value = messageContent;
-        this.showNotification(result.message || 'Błąd wysyłania wiadomości', "error");
-      }
-      
-    } catch (error) {
-      console.error('❌ Błąd wysyłania wiadomości:', error);
-      this.showNotification('Nie udało się wysłać wiadomości: ' + error.message, "error");
-      
-      // Przywróć treść w przypadku błędu
-      this.messageInput.value = content;
-      
-    } finally {
-      // Odblokuj pole wprowadzania
-      this.messageInput.disabled = false;
-      this.sendButton.disabled = false;
-      this.messageInput.focus();
-    }
+    return {
+      status: 'success',
+      messages: sortedMessages
+    };
   }
 
 /**
-   * POPRAWIONA: Wyświetla nową wiadomość z automatycznym przełączaniem sesji
+   * POPRAWIONA: Inicjalizacja sesji czatu z automatyczną wymianą kluczy
    */
-  displayNewMessage(sessionToken, message) {
-    console.log('🆕 Otrzymano nową wiadomość:', {
-      sessionToken: sessionToken?.substring(0, 10) + '...',
-      message: {
-        id: message.id,
-        content: message.content?.substring(0, 50) + "...",
-        sender_id: message.sender_id
-      },
-      currentSession: this.currentSessionToken?.substring(0, 10) + '...',
-      isCurrentSession: sessionToken === this.currentSessionToken
-    });
-    
-    // Jeśli to aktualna sesja, wyświetl od razu
-    if (sessionToken === this.currentSessionToken) {
-      console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
-      this.addMessageToUI(message);
-      this.playNotificationSound();
-    } else {
-      // NOWE: Jeśli to inna sesja, ale nie mamy aktywnej - automatycznie przełącz
-      if (!this.currentSessionToken) {
-        console.log('🔄 Brak aktywnej sesji - automatyczne przełączenie');
+  async initSession(recipientId) {
+    try {
+      if (!this.user.id) {
+        throw new Error("Użytkownik nie jest zalogowany");
+      }
+      
+      console.log('🚀 Inicjalizacja sesji z:', recipientId);
+      
+      const response = await fetch('/api/session/init', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ recipient_id: recipientId })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd inicjacji sesji: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'Błąd inicjacji sesji');
+      }
+      
+      const session = data.session;
+      console.log("✅ Sesja zainicjowana:", {
+        token: session.token?.substring(0, 10) + '...',
+        needs_key_exchange: session.needs_key_exchange,
+        auto_start: session.auto_start_key_exchange
+      });
+      
+      // NOWE: Automatycznie rozpocznij wymianę kluczy jeśli potrzeba
+      if (session.needs_key_exchange && session.auto_start_key_exchange) {
+        console.log('🔑 Automatyczne rozpoczęcie wymiany kluczy...');
         
-        // Znajdź sesję i przełącz na nią
-        const session = this.sessions.find(s => s.token === sessionToken);
-        if (session && session.other_user) {
-          const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
-          if (friend) {
-            this.selectFriend(friend);
+        // Małe opóźnienie żeby dać czas na setup
+        setTimeout(async () => {
+          const keyResult = await this.startAutomaticKeyExchange(session.token, session);
+          
+          if (keyResult.success) {
+            console.log('✅ Wymiana kluczy rozpoczęta:', keyResult.message);
+          } else {
+            console.error('❌ Błąd wymiany kluczy:', keyResult.message);
+          }
+        }, 500);
+      }
+      
+      // Aktualizuj listy
+      await this.getActiveSessions();
+      
+      return {
+        status: 'success',
+        session_token: session.token,
+        session: session
+      };
+      
+    } catch (error) {
+      console.error('❌ Błąd inicjacji sesji:', error);
+      return {
+        status: 'error',
+        message: error.message
+      };
+    }
+  }
+
+  /**
+   * POPRAWIONA: Pobieranie aktywnych sesji z obsługą stanu wymiany kluczy
+   */
+  async getActiveSessions() {
+    try {
+      if (!this.user.id) {
+        throw new Error("Użytkownik nie jest zalogowany");
+      }
+      
+      const response = await fetch('/api/sessions/active', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd pobierania sesji: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'Błąd pobierania sesji');
+      }
+      
+      this.activeSessions = data.sessions;
+      
+      console.log('📋 Zaktualizowane sesje:', {
+        total: this.activeSessions.length,
+        ready: this.activeSessions.filter(s => s.is_ready).length,
+        pending_keys: this.activeSessions.filter(s => s.needs_key_exchange).length
+      });
+      
+      // NOWE: Automatycznie sprawdź które sesje potrzebują wymiany kluczy
+      for (const session of this.activeSessions) {
+        if (session.needs_key_exchange && !this.keyExchangeInProgress.has(session.token)) {
+          
+          // Jeśli jesteśmy inicjatorem i nie ma klucza, rozpocznij wymianę
+          if (session.is_initiator && !session.has_key) {
+            console.log('🔑 Automatyczne uruchomienie wymiany kluczy dla sesji:', session.token?.substring(0, 10) + '...');
             
-            // Po przełączeniu, wyświetl wiadomość
-            setTimeout(() => {
-              this.addMessageToUI(message);
-              this.playNotificationSound();
-            }, 1000);
+            setTimeout(async () => {
+              await this.startAutomaticKeyExchange(session.token, session);
+            }, 100);
+          }
+          // Jeśli nie jesteśmy inicjatorem, ale sesja ma klucz i nie został potwierdzony
+          else if (!session.is_initiator && session.has_key && !session.key_acknowledged) {
+            console.log('🔑 Próbuję pobrać i potwierdzić klucz sesji:', session.token?.substring(0, 10) + '...');
+            
+            setTimeout(async () => {
+              const keyResult = await this.retrieveSessionKey(session.token);
+              if (keyResult.success) {
+                console.log('✅ Klucz sesji pobrany i potwierdzony automatycznie');
+              }
+            }, 100);
           }
         }
-      } else {
-        // Jeśli to inna sesja, zaktualizuj wskaźnik nieprzeczytanych wiadomości
-        console.log('📊 Wiadomość w innej sesji - aktualizuję wskaźniki');
-        this.updateUnreadCount(sessionToken);
-        this.playNotificationSound();
-        
-        // NOWE: Pokaż powiadomienie o nowej wiadomości z innej sesji
-        const session = this.sessions.find(s => s.token === sessionToken);
-        if (session && session.other_user) {
-          this.showNotification(
-            `Nowa wiadomość od ${session.other_user.username}`, 
-            "info", 
-            5000
-          );
-        }
-      }
-    }
-  }
-
-  /**
-   * Ładuje dane użytkownika - BEZ ZMIAN
-   */
-  loadUserData() {
-    this.currentUser = {
-      id: sessionStorage.getItem('user_id'),
-      username: sessionStorage.getItem('username'),
-      isAdmin: sessionStorage.getItem('is_admin') === 'true'
-    };
-    
-    if (!this.currentUser.id) {
-      console.error('❌ Brak ID użytkownika');
-      this.showNotification('Błąd ładowania danych użytkownika', 'error');
-      return;
-    }
-    
-    // Ustaw nazwę użytkownika w UI
-    const usernameElement = document.getElementById('username');
-    if (usernameElement) {
-      usernameElement.textContent = this.currentUser.username;
-      
-      // Dodaj przycisk panelu administratora, jeśli użytkownik jest adminem
-      if (this.currentUser.isAdmin) {
-        const userControls = document.querySelector('.user-controls');
-        if (userControls && !document.getElementById('admin-panel-link')) {
-          userControls.insertBefore(this.adminLink, userControls.firstChild);
-        }
-      }
-    }
-    
-    console.log(`✅ Dane użytkownika załadowane: ${this.currentUser.username}`);
-  }
-
-  /**
-   * Ładuje listę znajomych - BEZ ZMIAN
-   */
-  async loadFriends() {
-    try {
-      if (!this.sessionManager) return;
-      
-      const result = await this.sessionManager.fetchFriends();
-      if (result.status === 'success') {
-        this.friends = result.friends;
-        this.renderFriendsList();
-        console.log(`✅ Załadowano ${this.friends.length} znajomych`);
-      } else {
-        this.showNotification('Błąd ładowania znajomych', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Błąd ładowania znajomych:', error);
-      this.showNotification('Błąd ładowania znajomych', 'error');
-    }
-  }
-
-  /**
-   * POPRAWIONA: Ładuje aktywne sesje z obsługą stanów
-   */
-  async loadSessions() {
-    try {
-      if (!this.sessionManager) return;
-      
-      const result = await this.sessionManager.getActiveSessions();
-      if (result.status === 'success') {
-        this.updateSessionsList(result.sessions);
-        
-        // NOWE: Aktualizuj stany sesji
-        result.sessions.forEach(session => {
-          this.sessionStates[session.token] = {
-            friendId: session.other_user?.user_id,
-            friendUsername: session.other_user?.username,
-            isReady: session.is_ready || false,
-            needsKeyExchange: session.needs_key_exchange || false,
-            keyExchangeCompleted: session.is_ready || false
-          };
-        });
-        
-        // Jeśli nie mamy aktywnej sesji, ale są dostępne sesje, wybierz pierwszą gotową
-        if (!this.currentSessionToken && result.sessions.length > 0) {
-          const readySession = result.sessions.find(s => s.is_ready);
-          if (readySession) {
-            const friend = this.friends.find(f => f.user_id === readySession.other_user.user_id);
-            if (friend) {
-              console.log('🔄 Automatyczne przełączenie na gotową sesję:', readySession.token?.substring(0, 10) + '...');
-              this.selectFriend(friend);
-            }
-          }
-        }
-        
-        console.log(`✅ Załadowano ${result.sessions.length} aktywnych sesji`);
-      } else {
-        this.showNotification('Błąd ładowania sesji czatu', 'error');
-      }
-    } catch (error) {
-      console.error('❌ Błąd ładowania sesji:', error);
-      this.showNotification('Błąd ładowania sesji czatu', 'error');
-    }
-  }
-
-  /**
-   * POPRAWIONA: Ładuje wiadomości z kontrolą gotowości sesji
-   */
-  async loadMessages(sessionToken) {
-    if (!this.sessionManager) {
-      console.error('❌ SessionManager nie jest dostępny');
-      return;
-    }
-    
-    if (this.messagesContainer) {
-      this.messagesContainer.innerHTML = '';
-    }
-    
-    try {
-      console.log('📥 Ładowanie wiadomości dla sesji:', sessionToken?.substring(0, 10) + '...');
-      
-      // Sprawdź stan sesji
-      const sessionState = this.sessionStates[sessionToken];
-      if (sessionState && !sessionState.keyExchangeCompleted) {
-        console.log('⏳ Sesja nie jest jeszcze gotowa, czekam...');
-        
-        // Pokaż komunikat o oczekiwaniu
-        if (this.messagesContainer) {
-          this.messagesContainer.innerHTML = `
-            <div class="system-message">
-              <div class="loading-indicator">
-                <div class="spinner"></div>
-                <p>Przygotowywanie bezpiecznego połączenia...</p>
-              </div>
-            </div>
-          `;
-        }
-        
-        return;
       }
       
-      // Załaduj lokalne wiadomości
-      const result = this.sessionManager.getLocalMessages(sessionToken);
-      
-      console.log('📨 Wynik ładowania wiadomości:', result);
-      
-      if (result && result.status === 'success') {
-        const messages = result.messages || [];
-        console.log(`📝 Ładuję ${messages.length} wiadomości`);
-        
-        if (messages.length === 0) {
-          // Pokaż komunikat o braku wiadomości
-          if (this.messagesContainer) {
-            this.messagesContainer.innerHTML = `
-              <div class="system-message">
-                <p>🔐 Bezpieczna rozmowa została rozpoczęta</p>
-                <p>Wiadomości są szyfrowane końcowo-końcowo</p>
-              </div>
-            `;
-          }
-        } else {
-          messages.forEach(message => {
-            this.addMessageToUI(message);
-          });
-        }
-        
-        this.scrollToBottom();
-        
-        // Spróbuj pobrać nowsze wiadomości z serwera
-        try {
-          const serverResult = await this.sessionManager.fetchMessagesFromServer(sessionToken);
-          if (serverResult.status === 'success' && serverResult.messages.length > messages.length) {
-            console.log(`📥 Pobrano ${serverResult.messages.length - messages.length} nowych wiadomości z serwera`);
-            // Przeładuj po pobraniu z serwera
-            setTimeout(() => this.loadMessages(sessionToken), 100);
-          }
-        } catch (serverError) {
-          console.warn('⚠️ Nie można pobrać z serwera:', serverError);
-        }
-      } else {
-        console.warn('⚠️ Brak wiadomości lub błąd:', result);
-      }
-    } catch (error) {
-      console.error('❌ Błąd ładowania wiadomości:', error);
-      this.showNotification('Błąd ładowania wiadomości', 'error');
-    }
-  }
-
-  /**
-   * POPRAWIONA: Dodaje wiadomość do UI z lepszym formatowaniem
-   */
-  addMessageToUI(message) {
-    console.log('🎨 addMessageToUI wywołane z:', {
-      message: message,
-      hasContainer: !!this.messagesContainer
-    });
-    
-    if (!this.messagesContainer) {
-      console.error('❌ messagesContainer nie istnieje!');
-      this.messagesContainer = document.getElementById('messages');
-      if (!this.messagesContainer) {
-        console.error('❌ Nie można znaleźć elementu #messages w DOM');
-        return;
-      }
-    }
-    
-    if (!message) {
-      console.error('❌ Brak wiadomości do wyświetlenia');
-      return;
-    }
-    
-    try {
-      // Usuń komunikat systemowy jeśli istnieje
-      const systemMessage = this.messagesContainer.querySelector('.system-message');
-      if (systemMessage) {
-        systemMessage.remove();
+      if (this.onSessionsUpdated) {
+        this.onSessionsUpdated(this.activeSessions);
       }
       
-      const messageElement = this.createMessageElement(message);
-      console.log('✅ Element wiadomości utworzony:', messageElement);
-      
-      this.messagesContainer.appendChild(messageElement);
-      this.scrollToBottom();
-      
-      console.log('✅ Element dodany do kontenera');
+      return {
+        status: 'success',
+        sessions: this.activeSessions
+      };
       
     } catch (error) {
-      console.error('❌ Błąd w addMessageToUI:', error);
+      console.error('❌ Błąd pobierania aktywnych sesji:', error);
+      return {
+        status: 'error',
+        message: error.message
+      };
     }
   }
-  
+
   /**
-   * POPRAWIONA: Tworzy element wiadomości z lepszym stylem
+   * POPRAWIONA: Pobieranie klucza sesji z automatycznym potwierdzeniem
    */
-  createMessageElement(message) {
-    const messageDiv = document.createElement('div');
-    
-    // Sprawdź czy to nasza wiadomość
-    const isSent = message.sender_id === parseInt(this.currentUser.id) || message.is_mine;
-    
-    messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
-    
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-content';
-    
-    // NOWE: Lepsze formatowanie treści wiadomości
-    let content = message.content || '[Pusta wiadomość]';
-    
-    // Sprawdź czy są błędy deszyfrowania
-    if (message.decryption_error) {
-      content = '🔒 ' + content;
-      contentDiv.classList.add('decryption-error');
-    }
-    
-    // Formatuj tekst (podstawowe formatowanie)
-    content = this.formatMessageContent(content);
-    contentDiv.innerHTML = content;
-    
-    const infoDiv = document.createElement('div');
-    infoDiv.className = 'message-info';
-    
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'message-time';
-    timeSpan.textContent = this.formatTime(message.timestamp);
-    
-    // NOWE: Dodaj status dostarczenia dla wysłanych wiadomości
-    if (isSent && !message.decryption_error) {
-      const statusSpan = document.createElement('span');
-      statusSpan.className = 'message-status';
-      statusSpan.innerHTML = '✓'; // Podstawowy status
-      infoDiv.appendChild(statusSpan);
-    }
-    
-    infoDiv.appendChild(timeSpan);
-    messageDiv.appendChild(contentDiv);
-    messageDiv.appendChild(infoDiv);
-    
-    // POPRAWIONE: Lepsze style CSS
-    messageDiv.style.cssText = `
-      margin-bottom: 12px;
-      padding: 12px 16px;
-      border-radius: 12px;
-      max-width: 70%;
-      word-wrap: break-word;
-      position: relative;
-      ${isSent ? 
-        'background: linear-gradient(135deg, #007bff, #0056b3); color: white; margin-left: auto; text-align: right;' : 
-        'background: #f8f9fa; color: #333; margin-right: auto; text-align: left; border: 1px solid #e9ecef;'
+  async retrieveSessionKey(sessionToken) {
+    try {
+      console.log('🔑 Pobieranie klucza sesji dla:', sessionToken?.substring(0, 10) + '...');
+      
+      // Sprawdź czy UnifiedCrypto jest dostępny
+      if (!window.unifiedCrypto) {
+        throw new Error('UnifiedCrypto nie jest dostępny');
       }
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-      animation: messageSlideIn 0.3s ease-out;
-    `;
-    
-    contentDiv.style.cssText = 'margin-bottom: 6px; font-size: 14px; line-height: 1.4;';
-    infoDiv.style.cssText = 'font-size: 11px; opacity: 0.7; display: flex; justify-content: space-between; align-items: center;';
-    
-    // Dodaj animację CSS jeśli nie istnieje
-    if (!document.getElementById('message-animations')) {
-      const style = document.createElement('style');
-      style.id = 'message-animations';
-      style.textContent = `
-        @keyframes messageSlideIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .message.sent .message-status {
-          margin-left: 8px;
-          color: rgba(255,255,255,0.8);
-        }
-        
-        .message.received.decryption-error {
-          background: #fff3cd;
-          border-color: #ffeaa7;
-          color: #856404;
-        }
-        
-        .message.sent.decryption-error {
-          background: #f8d7da;
-          color: #721c24;
-        }
-        
-        .system-message {
-          text-align: center;
-          padding: 20px;
-          color: #666;
-          font-style: italic;
-        }
-        
-        .loading-indicator {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 10px;
-        }
-        
-        .spinner {
-          width: 32px;
-          height: 32px;
-          border: 3px solid #f3f3f3;
-          border-top: 3px solid #007bff;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    
-    return messageDiv;
-  }
 
-  /**
-   * NOWA: Formatuje treść wiadomości (podstawowe formatowanie)
-   */
-  formatMessageContent(content) {
-    // Escapuj HTML
-    const div = document.createElement('div');
-    div.textContent = content;
-    let formatted = div.innerHTML;
-    
-    // Podstawowe formatowanie
-    formatted = formatted.replace(/\n/g, '<br>'); // Nowe linie
-    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); // Pogrubienie
-    formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>'); // Kursywa
-    
-    // Linki (proste wykrywanie)
-    formatted = formatted.replace(
-      /(https?:\/\/[^\s]+)/g,
-      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
-    
-    return formatted;
-  }
-
-  /**
-   * Formatuje czas wiadomości - BEZ ZMIAN
-   */
-  formatTime(timestamp) {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
-    if (date >= today) {
-      return timeStr;
-    } else if (date >= yesterday) {
-      return `Wczoraj, ${timeStr}`;
-    } else {
-      return `${date.toLocaleDateString()} ${timeStr}`;
-    }
-  }
-  
-  /**
-   * Przewija do końca kontener wiadomości - BEZ ZMIAN
-   */
-  scrollToBottom() {
-    if (this.messagesContainer) {
-      this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-    }
-  }
-
-  /**
-   * Aktualizuje liczbę nieprzeczytanych wiadomości - BEZ ZMIAN
-   */
-  updateUnreadCount(sessionToken) {
-    const session = this.sessions.find(s => s.token === sessionToken);
-    if (session) {
-      session.unread_count = (session.unread_count || 0) + 1;
-      this.renderFriendsList();
-    }
-  }
-
-  /**
-   * Odtwarza dźwięk powiadomienia - BEZ ZMIAN
-   */
-  playNotificationSound() {
-    const soundEnabled = localStorage.getItem('notification_sound') !== 'false';
-    if (soundEnabled) {
-      try {
-        const audio = new Audio('/static/sounds/notification.mp3');
-        audio.volume = 0.3;
-        audio.play().catch(e => console.log('Nie można odtworzyć dźwięku:', e));
-      } catch (e) {
-        console.log('Błąd odtwarzania dźwięku:', e);
+      // Sprawdź czy mamy klucz prywatny
+      if (!window.unifiedCrypto.hasPrivateKey()) {
+        throw new Error('Brak klucza prywatnego');
       }
-    }
-  }
 
-  /**
-   * Aktualizuje listę sesji - BEZ ZMIAN
-   */
-  updateSessionsList(sessions) {
-    this.sessions = sessions || [];
-    console.log(`📋 Zaktualizowano listę sesji: ${this.sessions.length} sesji`);
-  }
-
-  /**
-   * POPRAWIONA: Renderuje listę znajomych z wskaźnikami sesji
-   */
-  renderFriendsList() {
-    if (!this.friendsList) return;
-    
-    this.friendsList.innerHTML = '';
-    
-    this.friends.forEach(friend => {
-      const friendElement = this.createFriendElement(friend);
-      this.friendsList.appendChild(friendElement);
-    });
-  }
-
-  /**
-   * POPRAWIONA: Tworzy element znajomego z wskaźnikami stanu sesji
-   */
-  createFriendElement(friend) {
-    const li = document.createElement('li');
-    li.className = 'friend-item';
-    li.dataset.userId = friend.user_id;
-    
-    // Znajdź sesję dla tego znajomego
-    const session = this.sessions.find(s => s.other_user.user_id === friend.user_id);
-    const unreadCount = session?.unread_count || 0;
-    
-    // NOWE: Sprawdź stan sesji
-    let sessionStatus = '';
-    if (session) {
-      if (session.is_ready) {
-        sessionStatus = '<span class="session-ready">🔐</span>';
-      } else if (session.needs_key_exchange) {
-        sessionStatus = '<span class="session-pending">🔑</span>';
+      const response = await fetch(`/api/session/${sessionToken}/key`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd pobierania klucza sesji: ${response.status}`);
       }
+      
+      const data = await response.json();
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'Błąd pobierania klucza sesji');
+      }
+      
+      // Odszyfruj klucz sesji używając UnifiedCrypto
+      const sessionKeyBase64 = await window.unifiedCrypto.decryptSessionKey(data.encrypted_key);
+      
+      // Zapisz klucz sesji
+      window.unifiedCrypto.storeSessionKey(sessionToken, sessionKeyBase64);
+      
+      console.log('✅ Klucz sesji odszyfrowany i zapisany');
+      
+      // AUTOMATYCZNE: Potwierdź odebranie klucza
+      const ackResponse = await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+      });
+      
+      if (ackResponse.ok) {
+        const ackResult = await ackResponse.json();
+        if (ackResult.status === 'success') {
+          console.log('✅ Klucz sesji automatycznie potwierdzony');
+        }
+      }
+      
+      return {
+        success: true,
+        message: 'Klucz sesji odebrany i potwierdzony automatycznie'
+      };
+      
+    } catch (error) {
+      console.error('❌ Błąd pobierania klucza sesji:', error);
+      return {
+        success: false,
+        message: error.message
+      };
     }
-    
-    li.innerHTML = `
-      <div class="friend-avatar">
-        <i class="fas fa-user"></i>
-      </div>
-      <div class="friend-info">
-        <div class="friend-name">
-          ${friend.username}
-          ${sessionStatus}
-        </div>
-        <div class="friend-status ${friend.is_online ? 'online' : 'offline'}">
-          ${friend.is_online ? 'Online' : 'Offline'}
-        </div>
-      </div>
-      ${unreadCount > 0 ? `<div class="unread-count">${unreadCount}</div>` : ''}
-    `;
-    
-    li.addEventListener('click', () => this.selectFriend(friend));
-    
-    return li;
   }
