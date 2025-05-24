@@ -951,5 +951,21 @@ class SecureSessionManager {
       window.location.href = '/logout';
     }
   }
-// Inicjalizacja globalnego SessionManager
-window.sessionManager = new SecureSessionManager();
+// Inicjalizacja globalnego SessionManager - POPRAWIONA z obsługą błędów
+try {
+  window.sessionManager = new SecureSessionManager();
+  console.log("✅ SecureSessionManager zainicjalizowany pomyślnie");
+} catch (error) {
+  console.error("❌ Błąd inicjalizacji SecureSessionManager:", error);
+  console.error("❌ Stack trace:", error.stack);
+  
+  // Fallback - spróbuj ponownie po chwili
+  setTimeout(() => {
+    try {
+      window.sessionManager = new SecureSessionManager();
+      console.log("✅ SecureSessionManager zainicjalizowany (retry)");
+    } catch (retryError) {
+      console.error("❌ Ponowny błąd SecureSessionManager:", retryError);
+    }
+  }, 1000);
+}
