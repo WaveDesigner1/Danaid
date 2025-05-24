@@ -154,7 +154,7 @@ def logout():
     session.clear()
     
     # Przygotuj odpowiedź z wyczyszczonymi ciasteczkami
-    response = redirect(url_for('auth.index'))
+    response = redirect('/')
     
     # Wyczyść wszystkie ciasteczka związane z sesją
     response.delete_cookie('session')
