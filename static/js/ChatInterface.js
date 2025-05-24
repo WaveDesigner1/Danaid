@@ -3,7 +3,7 @@
  * Używa UnifiedCrypto i SocketIOHandler z real-time messaging
  */
 
-// ZABEZPIECZENIA PRZECIWKO PĘTLI
+// ZABEZPIECZENIA PRZECIWKO PĘTLI - TYLKO RAZ!
 let messageLoadingInProgress = new Set();
 let lastLoadTime = {};
 let switchSessionTimeout = null;
@@ -170,10 +170,10 @@ class ChatInterface {
         if (result.sessions.length > 0 && !this.currentSessionToken) {
           const readySession = result.sessions.find(s => !s.needs_key_exchange);
           if (readySession) {
-            this.switchToSession(readySession.token); // ZMIENIONE NA switchToSession
+            this.switchToSession(readySession.token);
           } else if (result.sessions.length > 0) {
             // Jeśli żadna nie jest gotowa, wybierz pierwszą
-            this.switchToSession(result.sessions[0].token); // ZMIENIONE NA switchToSession
+            this.switchToSession(result.sessions[0].token);
           }
         }
         
@@ -472,7 +472,8 @@ class ChatInterface {
       await this.switchSession(sessionToken); // Wywołaj istniejącą metodę
     }, 100);
   }
-/**
+
+  /**
    * POPRAWIONA: Ładowanie wiadomości - ZABEZPIECZONE PRZED PĘTLĄ
    */
   async loadMessages(sessionToken) {
@@ -532,7 +533,7 @@ class ChatInterface {
     }
   }
 
-  /**
+/**
    * NOWA: Wyświetla listę wiadomości
    */
   displayMessages(messages) {
@@ -564,19 +565,10 @@ class ChatInterface {
   }
 
   /**
-   * POPRAWIONA: Real-time wyświetlanie nowych wiadomości
+   * Real-time wyświetlanie nowych wiadomości
    */
   displayNewMessage(sessionToken, message) {
-    console.log('🆕 REAL-TIME: Otrzymano nową wiadomość:', {
-      sessionToken: sessionToken?.substring(0, 10) + '...',
-      message: {
-        id: message.id,
-        content: message.content?.substring(0, 50) + "...",
-        sender_id: message.sender_id
-      },
-      currentSession: this.currentSessionToken?.substring(0, 10) + '...',
-      isCurrentSession: sessionToken === this.currentSessionToken
-    });
+    console.log('🆕 REAL-TIME: Otrzymano nową wiadomość');
     
     // Jeśli to aktualna sesja, wyświetl od razu
     if (sessionToken === this.currentSessionToken) {
@@ -584,39 +576,19 @@ class ChatInterface {
       this.addMessageToUI(message);
       this.playNotificationSound();
     } else {
-      // NOWE: Jeśli to inna sesja, ale nie mamy aktywnej - automatycznie przełącz
-      if (!this.currentSessionToken) {
-        console.log('🔄 REAL-TIME: Brak aktywnej sesji - automatyczne przełączenie');
-        
-        // Znajdź sesję i przełącz na nią
-        const session = this.sessions.find(s => s.token === sessionToken);
-        if (session && session.other_user) {
-          const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
-          if (friend) {
-            this.switchToSession(sessionToken);
-            
-            // Po przełączeniu, wyświetl wiadomość
-            setTimeout(() => {
-              this.addMessageToUI(message);
-              this.playNotificationSound();
-            }, 500);
-          }
-        }
-      } else {
-        // Jeśli to inna sesja, zaktualizuj wskaźnik nieprzeczytanych wiadomości
-        console.log('📊 REAL-TIME: Wiadomość w innej sesji - aktualizuję wskaźniki');
-        this.updateUnreadCount(sessionToken);
-        this.playNotificationSound();
-        
-        // Pokaż powiadomienie o nowej wiadomości z innej sesji
-        const session = this.sessions.find(s => s.token === sessionToken);
-        if (session && session.other_user) {
-          this.showNotification(
-            `Nowa wiadomość od ${session.other_user.username}`, 
-            "info", 
-            5000
-          );
-        }
+      // Jeśli to inna sesja, zaktualizuj wskaźnik nieprzeczytanych wiadomości
+      console.log('📊 REAL-TIME: Wiadomość w innej sesji - aktualizuję wskaźniki');
+      this.updateUnreadCount(sessionToken);
+      this.playNotificationSound();
+      
+      // Pokaż powiadomienie o nowej wiadomości z innej sesji
+      const session = this.sessions.find(s => s.token === sessionToken);
+      if (session && session.other_user) {
+        this.showNotification(
+          `Nowa wiadomość od ${session.other_user.username}`, 
+          "info", 
+          5000
+        );
       }
     }
   }
@@ -627,11 +599,7 @@ class ChatInterface {
   addMessageToUI(message) {
     if (!this.messagesContainer) {
       console.error('❌ messagesContainer nie istnieje!');
-      this.messagesContainer = document.getElementById('messages');
-      if (!this.messagesContainer) {
-        console.error('❌ Nie można znaleźć elementu #messages w DOM');
-        return;
-      }
+      return;
     }
     
     if (!message) {
@@ -721,18 +689,12 @@ class ChatInterface {
     }
   }
   
-  /**
-   * Przewija do końca kontener wiadomości
-   */
   scrollToBottom() {
     if (this.messagesContainer) {
       this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
     }
   }
 
-  /**
-   * Aktualizuje liczbę nieprzeczytanych wiadomości
-   */
   updateUnreadCount(sessionToken) {
     const session = this.sessions.find(s => s.token === sessionToken);
     if (session) {
@@ -741,9 +703,6 @@ class ChatInterface {
     }
   }
 
-  /**
-   * Odtwarza dźwięk powiadomienia
-   */
   playNotificationSound() {
     const soundEnabled = localStorage.getItem('notification_sound') !== 'false';
     if (soundEnabled) {
@@ -757,17 +716,11 @@ class ChatInterface {
     }
   }
 
-  /**
-   * Aktualizuje listę sesji
-   */
   updateSessionsList(sessions) {
     this.sessions = sessions || [];
     console.log(`📋 Zaktualizowano listę sesji: ${this.sessions.length} sesji`);
   }
 
-  /**
-   * Renderuje listę znajomych
-   */
   renderFriendsList() {
     if (!this.friendsList) return;
     
@@ -779,9 +732,6 @@ class ChatInterface {
     });
   }
 
-  /**
-   * Tworzy element znajomego na liście
-   */
   createFriendElement(friend) {
     const li = document.createElement('li');
     li.className = 'friend-item';
@@ -809,9 +759,6 @@ class ChatInterface {
     return li;
   }
 
-  /**
-   * Aktualizuje status online użytkowników
-   */
   updateOnlineStatus(onlineUsers) {
     console.log('🟢 Aktualizacja statusu online:', onlineUsers);
     
@@ -822,25 +769,16 @@ class ChatInterface {
     this.renderFriendsList();
   }
 
-  /**
-   * Aktualizuje listę znajomych
-   */
   updateFriendsList(friends) {
     this.friends = friends || [];
     this.renderFriendsList();
     console.log(`👥 Zaktualizowano listę znajomych: ${this.friends.length} znajomych`);
   }
 
-  /**
-   * Inicjalizuje powiadomienia o zaproszeniach do znajomych
-   */
   initializeFriendRequestNotifications() {
     this.loadPendingRequests();
   }
 
-  /**
-   * Ładuje oczekujące zaproszenia do znajomych
-   */
   async loadPendingRequests() {
     try {
       const response = await fetch('/api/friend_requests/pending', {
@@ -857,9 +795,6 @@ class ChatInterface {
     }
   }
 
-  /**
-   * Aktualizuje wskaźnik liczby zaproszeń
-   */
   updateRequestBadge() {
     if (this.requestBadge) {
       const count = this.pendingRequests.length;
@@ -872,9 +807,6 @@ class ChatInterface {
     }
   }
 
-  /**
-   * Wysyła zaproszenie do znajomego
-   */
   async sendFriendRequest() {
     const usernameInput = document.getElementById('friend-username-input');
     if (!usernameInput) return;
@@ -914,9 +846,6 @@ class ChatInterface {
     }
   }
 
-  /**
-   * Pokazuje modal z zaproszeniami do znajomych
-   */
   showFriendRequestsModal() {
     console.log('📨 Pokazuję modal z zaproszeniami');
     
@@ -976,9 +905,6 @@ class ChatInterface {
     modal.style.display = 'block';
   }
 
-  /**
-   * Akceptuje zaproszenie do znajomych
-   */
   async acceptFriendRequest(requestId) {
     try {
       const response = await fetch(`/api/friend_requests/${requestId}/accept`, {
@@ -1010,9 +936,6 @@ class ChatInterface {
     }
   }
 
-  /**
-   * Odrzuca zaproszenie do znajomych
-   */
   async declineFriendRequest(requestId) {
     try {
       const response = await fetch(`/api/friend_requests/${requestId}/decline`, {
@@ -1043,9 +966,6 @@ class ChatInterface {
     }
   }
 
-  /**
-   * Pokazuje powiadomienie
-   */
   showNotification(message, type = 'info', duration = 5000) {
     console.log(`📢 Powiadomienie [${type}]:`, message);
     
