@@ -13,14 +13,11 @@ from sqlalchemy import inspect, text
 import traceback
 import sys
 
-# Bezpośrednie importy
+# 🔄 ZOPTYMALIZOWANE IMPORTY (po scaleniu modułów)
 from models import db, User, ChatSession, Message
 from admin import init_admin
 from auth import auth_bp
 from chat import chat_bp
-from chat_api import chat_api
-from database_migrations import apply_migrations as apply_e2ee_migrations
-from socketio_handler import init_socketio_handler
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
