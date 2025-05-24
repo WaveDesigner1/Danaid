@@ -1,9 +1,7 @@
 /**
- * SecureSessionManager - UPROSZCZONA wersja BEZ Socket.IO
+ * SecureSessionManager - POPRAWIONA wersja dla Socket.IO
+ * Używa UnifiedCrypto i SocketIOHandler zamiast WebSocketHandler
  */
-let messageLoadingInProgress = new Set();
-let fetchingInProgress = new Set();
-
 class SecureSessionManager {
   constructor() {
     this.activeSessions = [];
@@ -11,7 +9,6 @@ class SecureSessionManager {
     this.onlineUsers = [];
     this.messages = {};
     this.currentSessionId = null;
-    this.keyExchangeInProgress = new Set();
     this.user = {
       id: sessionStorage.getItem('user_id'),
       username: sessionStorage.getItem('username'),
@@ -21,9 +18,7 @@ class SecureSessionManager {
 
     // Inicjalizacja bazy danych
     this.initDatabase();
-    
-    // UPROSZCZONE: Bez Socket.IO na razie
-    console.log("⚠️ Socket.IO wyłączony - tylko podstawowe funkcje");
+    this.setupSocketIOHandlers();
 
     // Callbacks
     this.onMessageReceived = null;
@@ -32,498 +27,123 @@ class SecureSessionManager {
     this.onOnlineStatusChanged = null;
     this.onFriendRequestReceived = null;
     
-    console.log("SecureSessionManager zainicjalizowany (UPROSZCZONY)", this.user);
+    console.log("SecureSessionManager zainicjalizowany z Socket.IO", this.user);
   }
 
   /**
-   * UPROSZCZONE: Socket.IO wyłączony
+   * POPRAWIONA: Konfiguruje handlery dla SocketIOHandler
    */
   setupSocketIOHandlers() {
-    console.log("⚠️ Socket.IO handlers wyłączone - tylko podstawowe funkcje");
-    // Metoda pusta - bez błędów
-  }
-
-  /**
-   * Znajdź istniejącą sesję z użytkownikiem
-   */
-  findExistingSession(userId) {
-    const existingSession = this.activeSessions.find(session => 
-      session.other_user && session.other_user.user_id === parseInt(userId)
-    );
-    
-    if (existingSession) {
-      console.log('✅ Znaleziono istniejącą sesję:', existingSession.token?.substring(0, 10) + '...');
-      return existingSession;
-    }
-    
-    console.log('❌ Brak istniejącej sesji z użytkownikiem:', userId);
-    return null;
-  }
-
-  /**
-   * UPROSZCZONA: Automatyczna wymiana kluczy
-   */
-  async startAutomaticKeyExchange(sessionToken, sessionData) {
-    try {
-      console.log('🚀 Auto-start wymiany kluczy:', sessionToken?.substring(0, 10) + '...');
-      
-      // Sprawdź czy wymiana nie jest już w toku
-      if (this.keyExchangeInProgress.has(sessionToken)) {
-        console.log('⏳ Wymiana kluczy już w toku');
-        return { success: false, message: 'Wymiana w toku' };
+    // Poczekaj na załadowanie SocketIOHandler
+    const setupHandlers = () => {
+      if (!window.wsHandler) {
+        console.error("SocketIOHandler nie jest dostępny globalnie");
+        return;
       }
       
-      // Dodaj do listy w toku
-      this.keyExchangeInProgress.add(sessionToken);
-      
-      // Sprawdź czy jesteśmy inicjatorem
-      if (!sessionData.is_initiator) {
-        console.log('⏳ Czekam na klucz od inicjatora...');
-        return { success: true, message: 'Czekam na klucz' };
-      }
-      
-      console.log('🔑 Jestem inicjatorem - generuję klucz...');
-      
-      // Wygeneruj klucz sesji AES
-      const sessionKey = await window.unifiedCrypto.generateSessionKey();
-      const sessionKeyBase64 = await window.unifiedCrypto.exportSessionKey(sessionKey);
-      
-      // Zapisz klucz lokalnie
-      window.unifiedCrypto.storeSessionKey(sessionToken, sessionKeyBase64);
-      
-      // Pobierz klucz publiczny odbiorcy
-      const recipientResponse = await fetch(`/api/user/${sessionData.other_user.user_id}/public_key`);
-      if (!recipientResponse.ok) {
-        throw new Error('Nie można pobrać klucza publicznego');
-      }
-      
-      const keyData = await recipientResponse.json();
-      const recipientPublicKey = await window.unifiedCrypto.importPublicKeyFromPEM(keyData.public_key);
-      
-      // Zaszyfruj klucz sesji
-      const encryptedKey = await window.unifiedCrypto.encryptSessionKey(recipientPublicKey, sessionKey);
-      
-      // Wyślij na serwer
-      const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ encrypted_key: encryptedKey })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Błąd wymiany klucza');
-      }
-      
-      const result = await response.json();
-      if (result.status !== 'success') {
-        throw new Error(result.message || 'Błąd API');
-      }
-      
-      console.log('✅ Klucz sesji wysłany automatycznie');
-      
-      return { success: true, message: 'Klucz wysłany' };
-      
-    } catch (error) {
-      console.error('❌ Błąd auto-wymiany kluczy:', error);
-      this.keyExchangeInProgress.delete(sessionToken);
-      return { success: false, message: error.message };
-    }
-  }
-
-/**
-   * UPROSZCZONA: Obsługa otrzymanego klucza
-   */
-  async handleReceivedSessionKey(sessionToken, encryptedKey) {
-    try {
-      console.log('🔑 Auto-obsługa otrzymanego klucza:', sessionToken?.substring(0, 10) + '...');
-      
-      if (!window.unifiedCrypto.hasPrivateKey()) {
-        throw new Error('Brak klucza prywatnego');
-      }
-      
-      // Odszyfruj klucz sesji
-      const sessionKeyBase64 = await window.unifiedCrypto.decryptSessionKey(encryptedKey);
-      window.unifiedCrypto.storeSessionKey(sessionToken, sessionKeyBase64);
-      
-      console.log('✅ Klucz automatycznie odszyfrowany');
-      
-      // Automatyczne potwierdzenie
-      const ackResponse = await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin'
-      });
-      
-      if (ackResponse.ok) {
-        console.log('✅ Klucz automatycznie potwierdzony');
-      }
-      
-      // Usuń z listy w toku
-      this.keyExchangeInProgress.delete(sessionToken);
-      
-      // Odśwież sesje
-      this.getActiveSessions();
-      
-    } catch (error) {
-      console.error('❌ Błąd auto-obsługi klucza:', error);
-      this.keyExchangeInProgress.delete(sessionToken);
-    }
-  }
-
-  /**
-   * UPROSZCZONA: Obsługa przychodzących wiadomości
-   */
-  async handleIncomingMessage(sessionToken, message) {
-    try {
-      console.log('📨 Auto-obsługa wiadomości:', sessionToken?.substring(0, 10) + '...');
-      
-      // Sprawdź czy mamy klucz sesji
-      if (!window.unifiedCrypto.hasSessionKey(sessionToken)) {
-        console.warn('⚠️ Brak klucza - próbuję pobrać...');
+      // POPRAWIONA: Obsługa nowych wiadomości z debugowaniem
+      window.wsHandler.on('new_message', (data) => {
+        console.log("🆕 [SOCKET] Otrzymano nową wiadomość:", data);
+        console.log("🆕 [SOCKET] Struktura danych:", {
+          hasSessionToken: !!data.session_token,
+          hasMessage: !!data.message,
+          messageContent: data.message?.content,
+          messageId: data.message?.id,
+          senderId: data.message?.sender_id
+        });
         
-        const keyResult = await this.retrieveSessionKey(sessionToken);
-        if (!keyResult.success) {
-          console.error('❌ Nie można pobrać klucza');
-          message.content = '[Nie można odszyfrować - brak klucza]';
-          message.decryption_error = true;
-        }
-      }
-      
-      // Automatyczne deszyfrowanie
-      if (message.content && message.iv && !message.decryption_error) {
         try {
-          const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
-          if (sessionKeyBase64) {
-            const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
-            const decryptedContent = await window.unifiedCrypto.decryptMessage(sessionKey, {
-              data: message.content,
-              iv: message.iv
-            });
-            
-            message.content = decryptedContent;
-            console.log('✅ Auto-deszyfrowanie OK');
+          // Sprawdź czy to nie nasza własna wiadomość (echo)
+          if (data.message && data.message.sender_id && 
+              parseInt(data.message.sender_id) === parseInt(this.user.id)) {
+            console.log("↩️ To nasza własna wiadomość, pomijam");
+            return;
           }
-        } catch (decryptError) {
-          console.error('❌ Błąd deszyfrowania:', decryptError);
-          message.content = '[Błąd deszyfrowania]';
-          message.decryption_error = true;
+          
+          // Wywołaj callback
+          if (this.onMessageReceived) {
+            this.onMessageReceived(data.session_token, data.message);
+          } else {
+            console.warn("⚠️ Brak callbacku onMessageReceived");
+          }
+          
+          // Dodaj do lokalnego magazynu
+          this.storeMessage(data.session_token, data.message);
+          
+        } catch (error) {
+          console.error("❌ Błąd przetwarzania wiadomości Socket.IO:", error);
         }
-      }
-      
-      // Automatyczne zapisanie
-      await this.storeMessage(sessionToken, message);
-      
-      // Wyświetlenie w UI
-      if (this.onMessageReceived) {
-        this.onMessageReceived(sessionToken, message);
-      }
-      
-    } catch (error) {
-      console.error('❌ Błąd obsługi wiadomości:', error);
-    }
-  }
-
-  /**
-   * UPROSZCZONA: Inicjalizacja sesji
-   */
-  async initSession(recipientId) {
-    try {
-      if (!this.user.id) {
-        throw new Error("Użytkownik nie jest zalogowany");
-      }
-      
-      console.log('🔍 Sprawdzanie sesji z użytkownikiem:', recipientId);
-      
-      // Sprawdź czy sesja już istnieje
-      const existingSession = this.findExistingSession(recipientId);
-      if (existingSession) {
-        console.log('♻️ Używam istniejącej sesji:', existingSession.token);
-        
-        // Sprawdź czy potrzebuje wymiany kluczy
-        if (existingSession.needs_key_exchange && !this.keyExchangeInProgress.has(existingSession.token)) {
-          console.log('🔑 Automatyczne uruchomienie wymiany kluczy...');
-          this.startAutomaticKeyExchange(existingSession.token, existingSession);
-        }
-        
-        return {
-          status: 'success',
-          session_token: existingSession.token,
-          session: existingSession,
-          isExisting: true
-        };
-      }
-      
-      // Jeśli nie ma sesji - utwórz nową
-      console.log('🆕 Tworzenie nowej sesji...');
-      const response = await fetch('/api/session/init', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ recipient_id: recipientId })
       });
       
-      if (!response.ok) {
-        throw new Error(`Błąd inicjacji sesji: ${response.status}`);
-      }
+      // Obsługa aktualizacji sesji
+      window.wsHandler.on('session_update', (data) => {
+        console.log("Aktualizacja sesji:", data);
+        this.getActiveSessions();
+      });
       
-      const data = await response.json();
+      // Obsługa zaproszeń do znajomych
+      window.wsHandler.on('friend_request', (data) => {
+        console.log("Otrzymano zaproszenie do znajomych:", data);
+        
+        if (this.onFriendRequestReceived) {
+          this.onFriendRequestReceived(data);
+        }
+      });
       
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'Błąd inicjacji sesji');
-      }
+      // Obsługa zmian statusu online
+      window.wsHandler.on('user_status_change', (data) => {
+        const userId = data.user_id;
+        const isOnline = data.is_online;
+        this.updateOnlineStatus(userId, isOnline);
+      });
       
-      const session = data.session;
-      console.log("✅ Nowa sesja utworzona:", session.token?.substring(0, 10) + '...');
+      // Obsługa listy użytkowników online
+      window.wsHandler.on('online_users', (data) => {
+        this.onlineUsers = data.users || [];
+        
+        if (this.onOnlineStatusChanged) {
+          this.onOnlineStatusChanged(this.onlineUsers);
+        }
+      });
       
-      // Automatycznie rozpocznij wymianę kluczy dla nowej sesji
-      if (session.needs_key_exchange) {
-        console.log('🔑 Auto-start wymiany kluczy dla nowej sesji...');
+      // DODANE: Obsługa błędów Socket.IO
+      window.wsHandler.on('error', (error) => {
+        console.error("❌ [SOCKET] Błąd Socket.IO:", error);
+      });
+
+      // DODANE: Obsługa rozłączenia
+      window.wsHandler.on('disconnect', (reason) => {
+        console.warn("🔌 [SOCKET] Rozłączono:", reason);
+      });
+
+      // DODANE: Test połączenia
+      window.wsHandler.on('connect', () => {
+        console.log("✅ [SOCKET] Połączono - testowanie...");
+        
+        // Wyślij ping test
         setTimeout(() => {
-          this.startAutomaticKeyExchange(session.token, session);
-        }, 500);
-      }
+          if (window.wsHandler.send) {
+            window.wsHandler.send('ping', { test: true });
+            console.log("🏓 Wysłano ping test");
+          }
+        }, 1000);
+      });
       
-      // Aktualizuj listy
-      await this.getActiveSessions();
-      
-      return {
-        status: 'success',
-        session_token: session.token,
-        session: session,
-        isExisting: false
-      };
-      
-    } catch (error) {
-      console.error('❌ Błąd inicjacji sesji:', error);
-      return {
-        status: 'error',
-        message: error.message
-      };
+      console.log("✅ Socket.IO handlers skonfigurowane");
+    };
+
+    // Spróbuj teraz, jeśli nie to czekaj
+    if (window.wsHandler) {
+      setupHandlers();
+    } else {
+      // Poczekaj na załadowanie
+      setTimeout(setupHandlers, 1000);
     }
   }
 
   /**
-   * Pobieranie aktywnych sesji
+   * Aktualizuje status online użytkownika
    */
-  async getActiveSessions() {
-    try {
-      if (!this.user.id) {
-        throw new Error("Użytkownik nie jest zalogowany");
-      }
-      
-      const response = await fetch('/api/sessions/active', {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'same-origin'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Błąd pobierania sesji: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'Błąd pobierania sesji');
-      }
-      
-      this.activeSessions = data.sessions;
-      
-      if (this.onSessionsUpdated) {
-        this.onSessionsUpdated(this.activeSessions);
-      }
-      
-      // Auto-wymiana kluczy dla sesji które jej potrzebują
-      for (const session of this.activeSessions) {
-        if (session.needs_key_exchange && session.is_initiator && 
-            !this.keyExchangeInProgress.has(session.token)) {
-          console.log('🔑 Auto-wymiana kluczy dla sesji:', session.token?.substring(0, 10) + '...');
-          setTimeout(() => {
-            this.startAutomaticKeyExchange(session.token, session);
-          }, 1000);
-        }
-      }
-      
-      return {
-        status: 'success',
-        sessions: this.activeSessions
-      };
-    } catch (error) {
-      console.error('Błąd pobierania aktywnych sesji:', error);
-      return {
-        status: 'error',
-        message: error.message
-      };
-    }
-  }
-
-  /**
-   * Pobieranie klucza sesji
-   */
-  async retrieveSessionKey(sessionToken) {
-    try {
-      if (!window.unifiedCrypto) {
-        throw new Error('UnifiedCrypto nie jest dostępny');
-      }
-
-      if (!window.unifiedCrypto.hasPrivateKey()) {
-        throw new Error('Brak klucza prywatnego');
-      }
-
-      const response = await fetch(`/api/session/${sessionToken}/key`, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'same-origin'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Błąd pobierania klucza sesji: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'Błąd pobierania klucza sesji');
-      }
-      
-      const sessionKeyBase64 = await window.unifiedCrypto.decryptSessionKey(data.encrypted_key);
-      window.unifiedCrypto.storeSessionKey(sessionToken, sessionKeyBase64);
-      
-      // Potwierdź odebranie klucza
-      await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin'
-      });
-      
-      return {
-        success: true,
-        message: 'Klucz sesji odebrany i potwierdzony'
-      };
-    } catch (error) {
-      console.error('Błąd pobierania klucza sesji:', error);
-      return {
-        success: false,
-        message: error.message
-      };
-    }
-  }
-
-/**
-   * UPROSZCZONA: Wysyłanie wiadomości z szyfrowaniem
-   */
-  async sendMessage(sessionToken, content) {
-    try {
-      console.log('🚀 Wysyłanie wiadomości...');
-      
-      if (!window.unifiedCrypto) {
-        throw new Error('UnifiedCrypto nie jest dostępny');
-      }
-
-      // Sprawdź i wygeneruj klucz jeśli brak
-      let sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
-      if (!sessionKeyBase64) {
-        console.log('⚠️ Brak klucza sesji - próbuję wygenerować...');
-        
-        // Znajdź sesję
-        const session = this.activeSessions.find(s => s.token === sessionToken);
-        if (!session) {
-          throw new Error('Nie znaleziono sesji');
-        }
-        
-        // Uruchom wymianę kluczy jeśli jesteśmy inicjatorem
-        if (session.is_initiator) {
-          console.log('🔑 Generuję klucz jako inicjator...');
-          const keyResult = await this.startAutomaticKeyExchange(sessionToken, session);
-          if (!keyResult.success) {
-            throw new Error('Nie można wygenerować klucza: ' + keyResult.message);
-          }
-          
-          // Poczekaj chwilę na wygenerowanie klucza
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
-          
-          if (!sessionKeyBase64) {
-            throw new Error('Klucz nadal niedostępny - spróbuj ponownie za chwilę');
-          }
-        } else {
-          throw new Error('Czekam na klucz od rozmówcy - spróbuj za chwilę');
-        }
-      }
-      
-      // Sprawdź sesję ponownie
-      const session = this.activeSessions.find(s => s.token === sessionToken);
-      if (!session || !session.other_user?.user_id) {
-        throw new Error('Nie znaleziono sesji lub danych odbiorcy');
-      }
-      
-      console.log('✅ Klucz sesji dostępny, rozpoczynam szyfrowanie...');
-      
-      // Szyfrowanie
-      const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
-      const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
-      
-      const payload = {
-        session_token: sessionToken,
-        recipient_id: parseInt(session.other_user.user_id),
-        content: encryptedData.data,
-        iv: encryptedData.iv
-      };
-      
-      console.log('📤 Wysyłanie zaszyfrowanej wiadomości...');
-      
-      const response = await fetch('/api/message/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify(payload)
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Błąd HTTP:', response.status, errorText);
-        throw new Error(`Błąd serwera ${response.status}: ${errorText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'Błąd pobierania znajomych');
-      }
-      
-      this.friends = data.friends;
-      
-      if (this.onFriendsUpdated) {
-        this.onFriendsUpdated(this.friends);
-      }
-      
-      return {
-        status: 'success',
-        friends: this.friends
-      };
-    } catch (error) {
-      console.error('Błąd pobierania znajomych:', error);
-      return {
-        status: 'error',
-        message: error.message
-      };
-    }
-  }
-
   updateOnlineStatus(userId, isOnline) {
     if (isOnline) {
       if (!this.onlineUsers.includes(userId)) {
@@ -546,213 +166,7 @@ class SecureSessionManager {
     }
   }
 
-  async sendFriendRequest(username) {
-    try {
-      if (!username || !username.trim()) {
-        throw new Error('Podaj nazwę użytkownika');
-      }
-      
-      if (!this.user.id) {
-        throw new Error('Użytkownik nie jest zalogowany');
-      }
-      
-      const response = await fetch('/api/friend_requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ username: username.trim() })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Błąd HTTP: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status === 'success') {
-        await this.fetchFriends();
-        
-        return {
-          success: true,
-          message: data.message || 'Zaproszenie wysłane pomyślnie'
-        };
-      } else {
-        throw new Error(data.message || 'Błąd wysyłania zaproszenia');
-      }
-    } catch (error) {
-      console.error('Błąd wysyłania zaproszenia:', error);
-      
-      return {
-        success: false,
-        message: error.message
-      };
-    }
-  }
-  
-  async getPendingFriendRequests() {
-    try {
-      const response = await fetch('/api/friend_requests/pending', {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'same-origin'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Błąd HTTP: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status === 'success') {
-        return {
-          success: true,
-          requests: data.requests || []
-        };
-      } else {
-        throw new Error(data.message || 'Błąd pobierania zaproszeń');
-      }
-    } catch (error) {
-      console.error('Błąd pobierania zaproszeń:', error);
-      
-      return {
-        success: false,
-        message: error.message,
-        requests: []
-      };
-    }
-  }
-  
-  async acceptFriendRequest(requestId) {
-    try {
-      const response = await fetch(`/api/friend_requests/${requestId}/accept`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Błąd HTTP: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status === 'success') {
-        await this.fetchFriends();
-        
-        return {
-          success: true,
-          message: data.message || 'Zaproszenie zaakceptowane'
-        };
-      } else {
-        throw new Error(data.message || 'Błąd akceptacji zaproszenia');
-      }
-    } catch (error) {
-      console.error('Błąd akceptacji zaproszenia:', error);
-      
-      return {
-        success: false,
-        message: error.message
-      };
-    }
-  }
-
-  async logout() {
-    try {
-      console.log('🚪 Rozpoczynam wylogowanie...');
-      
-      // 1. Wyczyść klucze kryptograficzne
-      if (window.unifiedCrypto) {
-        window.unifiedCrypto.clearAllKeys();
-        console.log('🔑 Klucze kryptograficzne wyczyszczone');
-      }
-      
-      // 2. Wyczyść dane lokalne
-      localStorage.clear();
-      sessionStorage.clear();
-      console.log('💾 Pamięć lokalna wyczyszczona');
-      
-      // 3. Wyczyść lokalne dane aplikacji
-      this.activeSessions = [];
-      this.friends = [];
-      this.messages = {};
-      this.keyExchangeInProgress.clear();
-      
-      // 4. Zamknij bazę danych
-      if (this.db) {
-        this.db.close();
-        console.log('🗄️ Baza danych zamknięta');
-      }
-      
-      // 5. Małe opóźnienie żeby wszystko się wykonało
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      console.log('✅ Wylogowanie zakończone, przekierowuję...');
-      
-    } catch (error) {
-      console.error('❌ Błąd podczas wylogowania:', error);
-    } finally {
-      // 6. ZAWSZE przekieruj na endpoint logout
-      console.log('🔄 Przekierowanie na /logout...');
-      window.location.href = '/logout';
-    }
-  }
-}
-
-// Inicjalizacja globalnego SessionManager
-try {
-  window.sessionManager = new SecureSessionManager();
-  console.log("✅ SecureSessionManager UPROSZCZONY zainicjalizowany pomyślnie");
-} catch (error) {
-  console.error("❌ Błąd inicjalizacji SecureSessionManager:", error);
-  
-  // Fallback - spróbuj ponownie po chwili
-  setTimeout(() => {
-    try {
-      window.sessionManager = new SecureSessionManager();
-      console.log("✅ SecureSessionManager zainicjalizowany (retry)");
-    } catch (retryError) {
-      console.error("❌ Ponowny błąd SecureSessionManager:", retryError);
-    }
-  }, 1000);
-}
-      
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'API zwróciło błąd');
-      }
-      
-      // Dodaj do lokalnego stanu
-      const newMessage = {
-        id: data.message?.id || Date.now().toString(),
-        sender_id: parseInt(this.user.id),
-        content: content,
-        timestamp: data.message?.timestamp || new Date().toISOString(),
-        is_mine: true
-      };
-      
-      await this.storeMessage(sessionToken, newMessage);
-      
-      console.log('✅ Wiadomość wysłana i zapisana lokalnie!');
-      
-      return {
-        status: 'success',
-        message: 'Wiadomość wysłana',
-        messageData: newMessage
-      };
-      
-    } catch (error) {
-      console.error('❌ Błąd wysyłania wiadomości:', error);
-      return {
-        status: 'error',
-        message: error.message
-      };
-    }
-  }
-  
+// Inicjalizuje bazę danych IndexedDB
   async initDatabase() {
     try {
       const request = indexedDB.open('SecureChatMessages', 1);
@@ -781,6 +195,7 @@ try {
     }
   }
 
+  // Pobieranie wiadomości z lokalnego magazynu
   async loadMessagesFromStorage() {
     if (!this.db) {
       console.error("Baza danych nie jest dostępna");
@@ -811,6 +226,7 @@ try {
     }
   }
 
+  // Zapisywanie wiadomości do lokalnego magazynu
   async storeMessage(sessionToken, message) {
     if (!this.db) {
       console.error("Baza danych nie jest dostępna");
@@ -857,10 +273,15 @@ try {
     }
   }
 
+  /**
+   * DODANA: Pobieranie lokalnych wiadomości z obsługą deszyfrowania
+   */
   getLocalMessages(sessionToken) {
-    console.log('📥 getLocalMessages dla:', sessionToken);
+    console.log('📥 getLocalMessages wywołane dla:', sessionToken);
+    console.log('💾 Dostępne wiadomości:', Object.keys(this.messages));
     
     if (!sessionToken) {
+      console.error('❌ Brak sessionToken');
       return {
         status: 'error',
         message: 'Brak tokenu sesji',
@@ -868,7 +289,9 @@ try {
       };
     }
     
+    // Sprawdź czy mamy wiadomości dla tej sesji
     if (!this.messages[sessionToken]) {
+      console.log('📭 Brak wiadomości dla sesji:', sessionToken);
       return {
         status: 'success',
         messages: []
@@ -876,6 +299,9 @@ try {
     }
     
     const messages = this.messages[sessionToken];
+    console.log(`📨 Znaleziono ${messages.length} wiadomości dla sesji ${sessionToken}`);
+    
+    // Posortuj wiadomości według czasu
     const sortedMessages = messages.sort((a, b) => {
       const timeA = new Date(a.timestamp).getTime();
       const timeB = new Date(b.timestamp).getTime();
@@ -888,22 +314,12 @@ try {
     };
   }
 
+  /**
+   * DODANA: Pobieranie i odszyfrowanie wiadomości z serwera
+   */
   async fetchMessagesFromServer(sessionToken) {
     try {
-      // ZABEZPIECZENIE: Sprawdź czy już pobieramy dla tej sesji
-      if (fetchingInProgress.has(sessionToken)) {
-        console.log('⚠️ Pobieranie wiadomości już w toku dla:', sessionToken?.substring(0, 10) + '...');
-        return {
-          status: 'error',
-          message: 'Pobieranie już w toku',
-          messages: []
-        };
-      }
-
-      // Dodaj do listy w toku
-      fetchingInProgress.add(sessionToken);
-      
-      console.log('🌐 Pobieranie wiadomości z serwera dla:', sessionToken?.substring(0, 10) + '...');
+      console.log('🌐 Pobieranie wiadomości z serwera dla:', sessionToken);
       
       const response = await fetch(`/api/messages/${sessionToken}`, {
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -926,6 +342,7 @@ try {
       for (const message of data.messages || []) {
         try {
           if (message.content && message.iv && window.unifiedCrypto) {
+            // Sprawdź czy mamy klucz sesji
             const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
             if (sessionKeyBase64) {
               const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
@@ -941,6 +358,7 @@ try {
           decryptedMessages.push(message);
         } catch (decryptError) {
           console.error('❌ Błąd deszyfrowania wiadomości:', decryptError);
+          // Dodaj wiadomość z błędem deszyfrowania
           decryptedMessages.push({
             ...message,
             content: '[Nie można odszyfrować wiadomości]',
@@ -949,16 +367,30 @@ try {
         }
       }
       
-      // Zapisz wiadomości lokalnie (zapobiegaj duplikatom)
+      // Zapisz do lokalnej pamięci
+      if (!this.messages[sessionToken]) {
+        this.messages[sessionToken] = [];
+      }
+      
+      // Połącz z lokalnymi wiadomościami (unikaj duplikatów)
       for (const message of decryptedMessages) {
-        await this.storeMessage(sessionToken, message);
+        const exists = this.messages[sessionToken].find(m => 
+          m.id === message.id || 
+          (m.timestamp === message.timestamp && m.content === message.content)
+        );
+        
+        if (!exists) {
+          this.messages[sessionToken].push(message);
+          // Zapisz też do IndexedDB
+          await this.storeMessage(sessionToken, message);
+        }
       }
       
       console.log(`✅ Pobrano i odszyfrowano ${decryptedMessages.length} wiadomości`);
       
       return {
         status: 'success',
-        messages: decryptedMessages
+        messages: this.messages[sessionToken]
       };
       
     } catch (error) {
@@ -968,12 +400,307 @@ try {
         message: error.message,
         messages: []
       };
-    } finally {
-      // WAŻNE: Zawsze usuń z listy w toku
-      fetchingInProgress.delete(sessionToken);
     }
   }
 
+/**
+   * Inicjalizacja sesji czatu - ZAKTUALIZOWANA dla Socket.IO
+   */
+  async initSession(recipientId) {
+  try {
+    if (!this.user.id) {
+      throw new Error("Użytkownik nie jest zalogowany");
+    }
+    
+    const response = await fetch('/api/session/init', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ recipient_id: recipientId })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Błąd inicjacji sesji: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.status !== 'success') {
+      throw new Error(data.message || 'Błąd inicjacji sesji');
+    }
+    
+    const session = data.session;
+    console.log("Sesja zainicjowana pomyślnie:", session);
+    
+    // Aktualizuj listy
+    await this.getActiveSessions();
+    
+    // NAPRAWIONE: Zwracaj zgodny format
+    return {
+      status: 'success',
+      session_token: session.token,
+      session: session
+    };
+  } catch (error) {
+    console.error('Błąd inicjacji sesji:', error);
+    // NAPRAWIONE: Zwracaj błąd zamiast success
+    return {
+      status: 'error',
+      message: error.message
+    };
+  }
+}
+  /**
+   * Pobieranie aktywnych sesji
+   */
+  async getActiveSessions() {
+    try {
+      if (!this.user.id) {
+        throw new Error("Użytkownik nie jest zalogowany");
+      }
+      
+      const response = await fetch('/api/sessions/active', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd pobierania sesji: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'Błąd pobierania sesji');
+      }
+      
+      this.activeSessions = data.sessions;
+      
+      if (this.onSessionsUpdated) {
+        this.onSessionsUpdated(this.activeSessions);
+      }
+      
+      return {
+        status: 'success',
+        sessions: this.activeSessions
+      };
+    } catch (error) {
+      console.error('Błąd pobierania aktywnych sesji:', error);
+      return {
+        status: 'error',
+        message: error.message
+      };
+    }
+  }
+
+  /**
+   * Pobieranie klucza sesji - ZAKTUALIZOWANA implementacja z UnifiedCrypto
+   */
+  async retrieveSessionKey(sessionToken) {
+    try {
+      // Sprawdź czy UnifiedCrypto jest dostępny
+      if (!window.unifiedCrypto) {
+        throw new Error('UnifiedCrypto nie jest dostępny');
+      }
+
+      // Sprawdź czy mamy klucz prywatny
+      if (!window.unifiedCrypto.hasPrivateKey()) {
+        throw new Error('Brak klucza prywatnego');
+      }
+
+      const response = await fetch(`/api/session/${sessionToken}/key`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd pobierania klucza sesji: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'Błąd pobierania klucza sesji');
+      }
+      
+      // ZAKTUALIZOWANE: Używamy UnifiedCrypto zamiast starych modułów
+      const sessionKeyBase64 = await window.unifiedCrypto.decryptSessionKey(data.encrypted_key);
+      
+      // Zapisz klucz sesji
+      window.unifiedCrypto.storeSessionKey(sessionToken, sessionKeyBase64);
+      
+      // Potwierdź odebranie klucza
+      await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+      });
+      
+      return {
+        success: true,
+        message: 'Klucz sesji odebrany i potwierdzony'
+      };
+    } catch (error) {
+      console.error('Błąd pobierania klucza sesji:', error);
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
+  async sendMessage(sessionToken, content) {
+    try {
+      console.log('🚀 [SENDMESSAGE] Rozpoczynam wysyłanie wiadomości...');
+      
+      // Sprawdź UnifiedCrypto
+      if (!window.unifiedCrypto) {
+        throw new Error('UnifiedCrypto nie jest dostępny');
+      }
+
+      // Sprawdź klucz sesji
+      const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+      if (!sessionKeyBase64) {
+        throw new Error('Brak klucza sesji');
+      }
+      
+      // Znajdź sesję
+      const session = this.activeSessions.find(s => s.token === sessionToken);
+      if (!session || !session.other_user?.user_id) {
+        throw new Error('Nie znaleziono sesji lub danych odbiorcy');
+      }
+      
+      console.log('✅ Sesja OK:', {
+        token: session.token,
+        recipient_id: session.other_user.user_id,
+        recipient_name: session.other_user.username
+      });
+      
+      // Szyfrowanie
+      const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+      const encryptedData = await window.unifiedCrypto.encryptMessage(sessionKey, content);
+      
+      // Konwersja do Base64
+      let encryptedContent, ivBase64;
+      
+      if (typeof encryptedData.data === 'string') {
+        encryptedContent = encryptedData.data;
+      } else {
+        const bytes = encryptedData.data instanceof ArrayBuffer 
+          ? new Uint8Array(encryptedData.data)
+          : encryptedData.data;
+        encryptedContent = btoa(String.fromCharCode.apply(null, bytes));
+      }
+      
+      if (typeof encryptedData.iv === 'string') {
+        ivBase64 = encryptedData.iv;
+      } else {
+        const ivBytes = encryptedData.iv instanceof ArrayBuffer 
+          ? new Uint8Array(encryptedData.iv)
+          : encryptedData.iv;
+        ivBase64 = btoa(String.fromCharCode.apply(null, ivBytes));
+      }
+      
+      console.log('📊 Dane do wysłania:', {
+        session_token: sessionToken,
+        recipient_id: session.other_user.user_id,
+        content_length: encryptedContent.length,
+        iv_length: ivBase64.length
+      });
+      
+      // Payload dla Railway
+      const payload = {
+        session_token: sessionToken,
+        recipient_id: parseInt(session.other_user.user_id),
+        content: encryptedContent,
+        iv: ivBase64
+      };
+      
+      // Headers
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Cache-Control': 'no-cache'
+      };
+      
+      console.log('📤 Wysyłanie wiadomości...');
+      
+      const response = await fetch('/api/message/send', {
+        method: 'POST',
+        headers: headers,
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      });
+      
+      console.log('📡 Odpowiedź serwera:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}`;
+        
+        try {
+          const responseText = await response.text();
+          console.error('❌ Błąd response:', responseText);
+          
+          try {
+            const errorDetails = JSON.parse(responseText);
+            errorMessage = errorDetails.message || errorDetails.error || errorMessage;
+          } catch (e) {
+            errorMessage = responseText.length > 100 
+              ? responseText.substring(0, 100) + '...' 
+              : responseText;
+          }
+        } catch (e) {
+          console.error('❌ Nie można odczytać odpowiedzi błędu');
+        }
+        
+        throw new Error(`Błąd serwera: ${errorMessage}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Sukces:', data);
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'API zwróciło błąd');
+      }
+      
+      // Dodaj do lokalnego stanu
+      const newMessage = {
+        id: data.message?.id || Date.now().toString(),
+        sender_id: parseInt(this.user.id),
+        content: content,
+        timestamp: data.message?.timestamp || new Date().toISOString(),
+        is_mine: true
+      };
+      
+      await this.storeMessage(sessionToken, newMessage);
+      
+      console.log('✅ Wiadomość wysłana i zapisana lokalnie!');
+      
+      return {
+        status: 'success',
+        message: 'Wiadomość wysłana',
+        messageData: newMessage
+      };
+      
+    } catch (error) {
+      console.error('❌ Błąd wysyłania wiadomości:', error);
+      return {
+        status: 'error',
+        message: error.message
+      };
+    }
+  }
+
+/**
+   * Pobieranie listy znajomych
+   */
   async fetchFriends() {
     try {
       const response = await fetch('/api/friends', {
@@ -986,5 +713,266 @@ try {
       }
       
       const data = await response.json();
+      
+      if (data.status !== 'success') {
+        throw new Error(data.message || 'Błąd pobierania znajomych');
+      }
+      
+      this.friends = data.friends;
+      
+      if (this.onFriendsUpdated) {
+        this.onFriendsUpdated(this.friends);
+      }
+      
+      return {
+        status: 'success',
+        friends: this.friends
+      };
+    } catch (error) {
+      console.error('Błąd pobierania znajomych:', error);
+      return {
+        status: 'error',
+        message: error.message
+      };
+    }
+  }
 
-    
+  /**
+   * Wysyła zaproszenie do znajomych
+   */
+  async sendFriendRequest(username) {
+    try {
+      if (!username || !username.trim()) {
+        throw new Error('Podaj nazwę użytkownika');
+      }
+      
+      if (!this.user.id) {
+        throw new Error('Użytkownik nie jest zalogowany');
+      }
+      
+      const response = await fetch('/api/friend_requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ username: username.trim() })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd HTTP: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        // Odśwież listę znajomych
+        await this.fetchFriends();
+        
+        return {
+          success: true,
+          message: data.message || 'Zaproszenie wysłane pomyślnie'
+        };
+      } else {
+        throw new Error(data.message || 'Błąd wysyłania zaproszenia');
+      }
+    } catch (error) {
+      console.error('Błąd wysyłania zaproszenia:', error);
+      
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+  
+  /**
+   * Pobiera oczekujące zaproszenia do znajomych
+   */
+  async getPendingFriendRequests() {
+    try {
+      const response = await fetch('/api/friend_requests/pending', {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd HTTP: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        return {
+          success: true,
+          requests: data.requests || []
+        };
+      } else {
+        throw new Error(data.message || 'Błąd pobierania zaproszeń');
+      }
+    } catch (error) {
+      console.error('Błąd pobierania zaproszeń:', error);
+      
+      return {
+        success: false,
+        message: error.message,
+        requests: []
+      };
+    }
+  }
+  
+  /**
+   * Akceptuje zaproszenie do znajomych
+   */
+  async acceptFriendRequest(requestId) {
+    try {
+      const response = await fetch(`/api/friend_requests/${requestId}/accept`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Błąd HTTP: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.status === 'success') {
+        // Odśwież listę znajomych
+        await this.fetchFriends();
+        
+        return {
+          success: true,
+          message: data.message || 'Zaproszenie zaakceptowane'
+        };
+      } else {
+        throw new Error(data.message || 'Błąd akceptacji zaproszenia');
+      }
+    } catch (error) {
+      console.error('Błąd akceptacji zaproszenia:', error);
+      
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
+  /**
+   * DODANA: Odszyfrowanie i zapis przychodzących wiadomości
+   */
+  async decryptAndStoreMessage(sessionToken, message) {
+    try {
+      console.log('🔐 Próba odszyfrowania wiadomości:', {
+        sessionToken,
+        hasContent: !!message.content,
+        hasIv: !!message.iv
+      });
+      
+      // Jeśli wiadomość jest zaszyfrowana i mamy klucz
+      if (message.content && message.iv && window.unifiedCrypto) {
+        const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+        
+        if (sessionKeyBase64) {
+          const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+          message.content = await window.unifiedCrypto.decryptMessage(sessionKey, {
+            data: message.content,
+            iv: message.iv
+          });
+          console.log('✅ Wiadomość odszyfrowana:', message.content?.substring(0, 50) + "...");
+        } else {
+          console.warn('⚠️ Brak klucza sesji dla:', sessionToken);
+        }
+      }
+      
+      // Zapisz do lokalnej pamięci i IndexedDB
+      await this.storeMessage(sessionToken, message);
+      
+      console.log('✅ Wiadomość odszyfrowana i zapisana');
+      
+    } catch (error) {
+      console.error('❌ Błąd deszyfrowania wiadomości:', error);
+      
+      // Zapisz z informacją o błędzie
+      message.content = '[Nie można odszyfrować]';
+      message.decryption_error = true;
+      await this.storeMessage(sessionToken, message);
+    }
+  }
+
+  /**
+   * Obsługuje wylogowanie użytkownika - ZAKTUALIZOWANA
+   */
+  /**
+   * Obsługuje wylogowanie użytkownika - ZAKTUALIZOWANA
+   */
+  async logout() {
+    try {
+      console.log('🚪 Rozpoczynam wylogowanie...');
+      
+      // 1. Wyczyść klucze kryptograficzne
+      if (window.unifiedCrypto) {
+        window.unifiedCrypto.clearAllKeys();
+        console.log('🔑 Klucze kryptograficzne wyczyszczone');
+      }
+      
+      // 2. Rozłącz Socket.IO
+      if (window.wsHandler) {
+        window.wsHandler.disconnect();
+        console.log('🔌 Socket.IO rozłączony');
+      }
+      
+      // 3. Wyczyść dane lokalne
+      localStorage.clear();
+      sessionStorage.clear();
+      console.log('💾 Pamięć lokalna wyczyszczona');
+      
+      // 4. Wyczyść lokalne dane aplikacji
+      this.activeSessions = [];
+      this.friends = [];
+      this.messages = {};
+      
+      // 5. Zamknij bazę danych
+      if (this.db) {
+        this.db.close();
+        console.log('🗄️ Baza danych zamknięta');
+      }
+      
+      // 6. Małe opóźnienie żeby wszystko się wykonało
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log('✅ Wylogowanie zakończone, przekierowuję...');
+      
+    } catch (error) {
+      console.error('❌ Błąd podczas wylogowania:', error);
+    } finally {
+      // 7. ZAWSZE przekieruj na endpoint logout (który przekieruje na /)
+      console.log('🔄 Przekierowanie na /logout...');
+      window.location.href = '/logout';
+    }
+  }
+} // ← DODAJ TO ZAMKNIĘCIE KLASY!
+
+// Inicjalizacja globalnego SessionManager - POPRAWIONA z obsługą błędów
+try {
+  window.sessionManager = new SecureSessionManager();
+  console.log("✅ SecureSessionManager zainicjalizowany pomyślnie");
+} catch (error) {
+  console.error("❌ Błąd inicjalizacji SecureSessionManager:", error);
+  console.error("❌ Stack trace:", error.stack);
+  
+  // Fallback - spróbuj ponownie po chwili
+  setTimeout(() => {
+    try {
+      window.sessionManager = new SecureSessionManager();
+      console.log("✅ SecureSessionManager zainicjalizowany (retry)");
+    } catch (retryError) {
+      console.error("❌ Ponowny błąd SecureSessionManager:", retryError);
+    }
+  }, 1000);
+}
