@@ -1,4 +1,4 @@
-/**
+**
  * ChatInterface - ZAKTUALIZOWANA wersja interfejsu użytkownika czatu
  * Używa UnifiedCrypto i SocketIOHandler zamiast WebSocketHandler
  */
@@ -86,7 +86,7 @@ class ChatInterface {
     });
   }
 
-/**
+   /**
    * Inicjalizacja nasłuchiwania zdarzeń
    */
   initializeEvents() {
@@ -133,6 +133,30 @@ class ChatInterface {
     const notificationIcon = document.getElementById('friend-request-notification');
     if (notificationIcon) {
       notificationIcon.addEventListener('click', () => this.showFriendRequestsModal());
+    }
+
+    // DODANE: Obsługa przycisku wylogowania
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        
+        console.log('🚪 Rozpoczynam wylogowanie...');
+        
+        if (this.sessionManager && typeof this.sessionManager.logout === 'function') {
+          this.sessionManager.logout();
+        } else {
+          // Fallback - bezpośrednie przekierowanie
+          console.log('🚪 Wylogowanie fallback...');
+          localStorage.clear();
+          sessionStorage.clear();
+          window.location.href = '/logout';
+        }
+      });
+      
+      console.log('✅ Przycisk wylogowania skonfigurowany');
+    } else {
+      console.warn('⚠️ Przycisk #logout-btn nie znaleziony');
     }
 
     // Nasłuchiwanie na zdarzenia z menedżera sesji - ZAKTUALIZOWANE dla Socket.IO
@@ -185,8 +209,7 @@ class ChatInterface {
     
     console.log(`✅ Dane użytkownika załadowane: ${this.currentUser.username}`);
   }
-
-/**
+  /**
    * Ładuje listę znajomych z serwera
    */
   async loadFriends() {
@@ -293,8 +316,7 @@ class ChatInterface {
       this.showNotification('Błąd ładowania wiadomości', 'error');
     }
   }
-
-/**
+  /**
    * ZAKTUALIZOWANE: Funkcja obsługująca wysyłanie wiadomości z UnifiedCrypto
    */
   async sendMessage() {
@@ -478,8 +500,7 @@ class ChatInterface {
     
     return true;
   }
-
-/**
+  /**
    * POPRAWIONA: Dodaje wiadomość do UI z debugowaniem
    */
   addMessageToUI(message) {
@@ -643,53 +664,49 @@ class ChatInterface {
       console.log('📺 Wyświetlam wiadomość w aktualnej sesji');
       this.addMessageToUI(message);
     } else {
-      // Jeśli to inna sesja, pokaż powiadomienie
-      const session = this.sessions?.find(s => s.token === sessionToken);
-      if (session) {
-        console.log('🔔 Powiadomienie o wiadomości z innej sesji');
-        this.showNotification(`Nowa wiadomość od ${session.other_user.username}`, 'info');
-        
-        // Dodaj wskaźnik nieprzeczytanych wiadomości
-        this.updateUnreadIndicator(sessionToken);
+      // Jeśli to inna sesja, zaktualizuj wskaźnik nieprzeczytanych wiadomości
+      console.log('📊 Wiadomość w innej sesji - aktualizuję wskaźniki');
+      this.updateUnreadCount(sessionToken);
+    }
+    
+    // Odtwórz dźwięk powiadomienia (jeśli włączony)
+    this.playNotificationSound();
+  }
+
+  /**
+   * Aktualizuje liczbę nieprzeczytanych wiadomości dla sesji
+   */
+  updateUnreadCount(sessionToken) {
+    const session = this.sessions.find(s => s.token === sessionToken);
+    if (session) {
+      session.unread_count = (session.unread_count || 0) + 1;
+      this.renderFriendsList();
+    }
+  }
+
+  /**
+   * Odtwarza dźwięk powiadomienia
+   */
+  playNotificationSound() {
+    // Sprawdź czy użytkownik ma włączone powiadomienia dźwiękowe
+    const soundEnabled = localStorage.getItem('notification_sound') !== 'false';
+    if (soundEnabled) {
+      try {
+        const audio = new Audio('/static/sounds/notification.mp3');
+        audio.volume = 0.3;
+        audio.play().catch(e => console.log('Nie można odtworzyć dźwięku:', e));
+      } catch (e) {
+        console.log('Błąd odtwarzania dźwięku:', e);
       }
     }
   }
 
-/**
+  /**
    * Aktualizuje listę sesji
    */
   updateSessionsList(sessions) {
-    this.sessions = sessions;
-    this.renderFriendsList();
-  }
-  
-  /**
-   * Aktualizuje listę znajomych
-   */
-  updateFriendsList(friends) {
-    this.friends = friends;
-    this.renderFriendsList();
-  }
-  
-  /**
-   * Aktualizuje status online użytkowników
-   */
-  updateOnlineStatus(onlineUsers) {
-    const friendItems = document.querySelectorAll('.friend-item');
-    friendItems.forEach(item => {
-      const userId = item.dataset.userId;
-      const statusIndicator = item.querySelector('.status-indicator');
-      
-      if (!statusIndicator) return;
-      
-      if (onlineUsers.includes(userId)) {
-        statusIndicator.classList.add('online');
-        statusIndicator.classList.remove('offline');
-      } else {
-        statusIndicator.classList.add('offline');
-        statusIndicator.classList.remove('online');
-      }
-    });
+    this.sessions = sessions || [];
+    console.log(`📋 Zaktualizowano listę sesji: ${this.sessions.length} sesji`);
   }
 
   /**
@@ -700,218 +717,261 @@ class ChatInterface {
     
     this.friendsList.innerHTML = '';
     
-    if (this.sessions && this.sessions.length > 0) {
-      this.sessions.forEach(session => {
-        const otherUser = session.other_user;
-        const listItem = this.createFriendListItem(otherUser, session.token);
-        this.friendsList.appendChild(listItem);
-      });
-    }
-    
-    if (this.friends && this.friends.length > 0) {
-      const friendsWithoutSession = this.friends.filter(friend => 
-        !this.sessions || !this.sessions.some(session => 
-          session.other_user.user_id === friend.user_id
-        )
-      );
-      
-      if (friendsWithoutSession.length > 0) {
-        friendsWithoutSession.forEach(friend => {
-          const listItem = this.createFriendListItem(friend);
-          this.friendsList.appendChild(listItem);
-        });
-      }
-    }
-    
-    if (this.friendsList.childElementCount === 0) {
-      const emptyMessage = document.createElement('div');
-      emptyMessage.className = 'empty-list-message';
-      emptyMessage.textContent = 'Brak znajomych. Dodaj kogoś, aby rozpocząć rozmowę.';
-      this.friendsList.appendChild(emptyMessage);
-    }
+    this.friends.forEach(friend => {
+      const friendElement = this.createFriendElement(friend);
+      this.friendsList.appendChild(friendElement);
+    });
   }
 
   /**
-   * Tworzy element listy znajomych
+   * Tworzy element znajomego na liście
    */
-  createFriendListItem(user, sessionToken = null) {
+  createFriendElement(friend) {
     const li = document.createElement('li');
     li.className = 'friend-item';
-    li.dataset.userId = user.user_id;
+    li.dataset.userId = friend.user_id;
     
-    if (sessionToken) {
-      li.dataset.sessionToken = sessionToken;
-      if (sessionToken === this.currentSessionToken) {
-        li.classList.add('active');
-      }
-    }
+    // Znajdź sesję dla tego znajomego
+    const session = this.sessions.find(s => s.other_user.user_id === friend.user_id);
+    const unreadCount = session?.unread_count || 0;
     
-    const avatarDiv = document.createElement('div');
-    avatarDiv.className = 'friend-avatar';
-    avatarDiv.textContent = user.username.charAt(0).toUpperCase();
+    li.innerHTML = `
+      <div class="friend-avatar">
+        <i class="fas fa-user"></i>
+      </div>
+      <div class="friend-info">
+        <div class="friend-name">${friend.username}</div>
+        <div class="friend-status ${friend.is_online ? 'online' : 'offline'}">
+          ${friend.is_online ? 'Online' : 'Offline'}
+        </div>
+      </div>
+      ${unreadCount > 0 ? `<div class="unread-count">${unreadCount}</div>` : ''}
+    `;
     
-    const statusIndicator = document.createElement('div');
-    statusIndicator.className = 'status-indicator';
-    statusIndicator.classList.add(user.is_online ? 'online' : 'offline');
-    avatarDiv.appendChild(statusIndicator);
+    li.addEventListener('click', () => this.selectFriend(friend));
     
-    const infoDiv = document.createElement('div');
-    infoDiv.className = 'friend-info';
-    
-    const nameDiv = document.createElement('div');
-    nameDiv.className = 'friend-name';
-    nameDiv.textContent = user.username;
-    infoDiv.appendChild(nameDiv);
-    
-    li.addEventListener('click', async () => {
-      if (sessionToken) {
-        this.switchSession(sessionToken);
-      } else {
-        await this.initSession(user.user_id);
-      }
-    });
-    
-    li.appendChild(avatarDiv);
-    li.appendChild(infoDiv);
     return li;
   }
 
   /**
-   * Inicjuje sesję czatu
+   * Wybiera znajomego i inicjuje sesję czatu
+   */
+  async selectFriend(friend) {
+    console.log('👤 Wybrano znajomego:', friend.username);
+    
+    // Usuń aktywny stan z innych elementów
+    document.querySelectorAll('.friend-item').forEach(item => {
+      item.classList.remove('active');
+    });
+    
+    // Dodaj aktywny stan do wybranego elementu
+    const friendElement = document.querySelector(`[data-user-id="${friend.user_id}"]`);
+    if (friendElement) {
+      friendElement.classList.add('active');
+    }
+    
+    // Zaktualizuj nagłówek czatu
+    if (this.chatHeader) {
+      this.chatHeader.innerHTML = `
+        <h3>${friend.username}</h3>
+        <span class="status ${friend.is_online ? 'online' : 'offline'}">
+          ${friend.is_online ? 'Online' : 'Offline'}
+        </span>
+      `;
+    }
+    
+    try {
+      await this.initSession(friend.user_id);
+    } catch (error) {
+      console.error('❌ Błąd wyboru znajomego:', error);
+      this.showNotification('Błąd inicjalizacji czatu', 'error');
+    }
+  }
+
+  /**
+   * Inicjuje sesję czatu z danym użytkownikiem
    */
   async initSession(userId) {
     try {
-      if (!this.sessionManager) {
-        throw new Error("Brak menedżera sesji");
-      }
-      
-      this.showNotification("Inicjalizacja sesji czatu...", "info", 2000);
+      console.log('🚀 Inicjalizacja sesji z użytkownikiem:', userId);
       
       const result = await this.sessionManager.initSession(userId);
       
-      if (result.success) {
-        await this.loadSessions();
-        this.switchSession(result.session.token);
+      if (result.status === 'success') {
+        this.currentSessionToken = result.session_token;
+        console.log('✅ Sesja zainicjalizowana:', this.currentSessionToken);
+        
+        // Załaduj wiadomości dla tej sesji
+        await this.loadMessages(this.currentSessionToken);
+        
+        // Wyczyść licznik nieprzeczytanych dla tej sesji
+        const session = this.sessions.find(s => s.token === this.currentSessionToken);
+        if (session) {
+          session.unread_count = 0;
+          this.renderFriendsList();
+        }
+        
       } else {
-        this.showNotification(result.message || 'Błąd inicjacji sesji', 'error');
+        console.error('❌ Błąd inicjalizacji sesji:', result.message);
+        this.showNotification(result.message || 'Błąd inicjalizacji sesji', 'error');
       }
     } catch (error) {
-      console.error('❌ Błąd inicjacji sesji:', error);
-      this.showNotification('Nie udało się rozpocząć rozmowy: ' + error.message, 'error');
+      console.error('❌ Błąd initSession:', error);
+      this.showNotification('Błąd połączenia z serwerem', 'error');
     }
   }
 
   /**
-   * POPRAWIONA: Przełącza aktywną sesję z wyczyszczeniem wskaźnika
+   * Przełącza na wybraną sesję
    */
-  switchSession(sessionToken) {
-    if (!sessionToken || sessionToken === this.currentSessionToken) return;
+  async switchSession(sessionToken) {
+    console.log('🔄 Przełączanie na sesję:', sessionToken);
     
     this.currentSessionToken = sessionToken;
+    await this.loadMessages(sessionToken);
     
-    const friendItems = document.querySelectorAll('.friend-item');
-    friendItems.forEach(item => {
-      if (item.dataset.sessionToken === sessionToken) {
-        item.classList.add('active');
-        
-        // Usuń wskaźnik nieprzeczytanych wiadomości
-        const badge = item.querySelector('.unread-badge');
-        if (badge) {
-          badge.remove();
-        }
-      } else {
-        item.classList.remove('active');
+    // Znajdź użytkownika tej sesji i zaktualizuj UI
+    const session = this.sessions.find(s => s.token === sessionToken);
+    if (session) {
+      const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
+      if (friend) {
+        this.selectFriend(friend);
       }
+    }
+  }
+
+  /**
+   * Aktualizuje status online użytkowników
+   */
+  updateOnlineStatus(onlineUsers) {
+    console.log('🟢 Aktualizacja statusu online:', onlineUsers);
+    
+    this.friends.forEach(friend => {
+      friend.is_online = onlineUsers.includes(friend.user_id);
     });
     
-    const session = this.sessions.find(s => s.token === sessionToken);
-    if (!session) {
-      console.error(`❌ Nie znaleziono sesji o tokenie ${sessionToken}`);
-      this.showNotification("Błąd: nie znaleziono sesji", "error");
+    this.renderFriendsList();
+  }
+
+  /**
+   * Inicjalizuje powiadomienia o zaproszeniach do znajomych
+   */
+  initializeFriendRequestNotifications() {
+    this.loadPendingRequests();
+  }
+
+  /**
+   * Ładuje oczekujące zaproszenia do znajomych
+   */
+  async loadPendingRequests() {
+    try {
+      const response = await fetch('/api/friends/requests/pending', {
+        credentials: 'same-origin'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        this.pendingRequests = data.requests || [];
+        this.updateRequestBadge();
+      }
+    } catch (error) {
+      console.error('❌ Błąd ładowania zaproszeń:', error);
+    }
+  }
+
+  /**
+   * Aktualizuje wskaźnik liczby zaproszeń
+   */
+  updateRequestBadge() {
+    if (this.requestBadge) {
+      const count = this.pendingRequests.length;
+      if (count > 0) {
+        this.requestBadge.textContent = count;
+        this.requestBadge.style.display = 'inline';
+      } else {
+        this.requestBadge.style.display = 'none';
+      }
+    }
+  }
+
+  /**
+   * Wysyła zaproszenie do znajomego
+   */
+  async sendFriendRequest() {
+    const usernameInput = document.getElementById('friend-username-input');
+    if (!usernameInput) return;
+    
+    const username = usernameInput.value.trim();
+    if (!username) {
+      this.showNotification('Wprowadź nazwę użytkownika', 'warning');
       return;
     }
     
-    if (this.chatHeader) {
-      this.chatHeader.innerHTML = `<h2>${session.other_user.username}</h2>`;
+    try {
+      const response = await fetch('/api/friends/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ username })
+      });
       
-      const statusSpan = document.createElement('span');
-      statusSpan.className = `status-indicator ${session.other_user.is_online ? 'online' : 'offline'}`;
-      statusSpan.style.display = 'inline-block';
-      statusSpan.style.marginLeft = '10px';
-      this.chatHeader.querySelector('h2').appendChild(statusSpan);
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        this.showNotification('Zaproszenie wysłane!', 'success');
+        usernameInput.value = '';
+        
+        // Zamknij modal
+        const modal = document.getElementById('add-friend-modal');
+        if (modal) modal.style.display = 'none';
+      } else {
+        this.showNotification(result.message || 'Błąd wysyłania zaproszenia', 'error');
+      }
+    } catch (error) {
+      console.error('❌ Błąd wysyłania zaproszenia:', error);
+      this.showNotification('Błąd połączenia z serwerem', 'error');
     }
-    
-    this.loadMessages(sessionToken);
   }
 
   /**
-   * DODANA: Aktualizacja wskaźnika nieprzeczytanych wiadomości
+   * Pokazuje modal z zaproszeniami do znajomych
    */
-  updateUnreadIndicator(sessionToken) {
-    const friendItem = document.querySelector(`[data-session-token="${sessionToken}"]`);
-    if (friendItem) {
-      let badge = friendItem.querySelector('.unread-badge');
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'unread-badge';
-        badge.style.cssText = `
-          background: #ff4444;
-          color: white;
-          border-radius: 50%;
-          width: 20px;
-          height: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 12px;
-          margin-left: auto;
-          font-weight: bold;
-        `;
-        friendItem.appendChild(badge);
-      }
-      
-      const currentCount = parseInt(badge.textContent) || 0;
-      badge.textContent = currentCount + 1;
-      badge.style.display = 'flex';
-    }
+  showFriendRequestsModal() {
+    // Implementacja modala z zaproszeniami
+    console.log('📨 Pokazuję modal z zaproszeniami');
+    // Tutaj byłaby implementacja modala
   }
 
-/**
-   * Wyświetla powiadomienie
+  /**
+   * Pokazuje powiadomienie
    */
   showNotification(message, type = 'info', duration = 5000) {
+    console.log(`📢 Powiadomienie [${type}]:`, message);
+    
+    // Utwórz element powiadomienia
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
     
-    // Stylizacja
-    notification.style.position = 'fixed';
-    notification.style.top = '20px';
-    notification.style.right = '20px';
-    notification.style.padding = '15px 20px';
-    notification.style.borderRadius = '5px';
-    notification.style.zIndex = '10000';
-    notification.style.maxWidth = '300px';
-    notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-    
-    // Kolory w zależności od typu
-    switch(type) {
-      case 'success':
-        notification.style.backgroundColor = '#4CAF50';
-        notification.style.color = 'white';
-        break;
-      case 'error':
-        notification.style.backgroundColor = '#F44336';
-        notification.style.color = 'white';
-        break;
-      case 'warning':
-        notification.style.backgroundColor = '#FF9800';
-        notification.style.color = 'white';
-        break;
-      default:
-        notification.style.backgroundColor = '#2196F3';
-        notification.style.color = 'white';
-    }
+    // Dodaj style
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      border-radius: 6px;
+      color: white;
+      font-weight: 500;
+      z-index: 10000;
+      max-width: 300px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      background: ${type === 'success' ? '#28a745' : 
+                   type === 'error' ? '#dc3545' : 
+                   type === 'warning' ? '#ffc107' : '#007bff'};
+    `;
     
     document.body.appendChild(notification);
     
@@ -922,139 +982,11 @@ class ChatInterface {
       }
     }, duration);
   }
-
-  /**
-   * Wysyła zaproszenie do znajomych
-   */
-  async sendFriendRequest() {
-    const usernameInput = document.getElementById('friend-user-id');
-    const statusDiv = document.getElementById('friend-request-status');
-    
-    if (!usernameInput || !statusDiv) {
-      console.error('❌ Brak elementów UI dla wysyłania zaproszeń');
-      return;
-    }
-    
-    const username = usernameInput.value.trim();
-    if (!username) {
-      statusDiv.textContent = 'Wprowadź nazwę użytkownika';
-      statusDiv.className = 'search-status search-error';
-      statusDiv.style.display = 'block';
-      return;
-    }
-    
-    try {
-      statusDiv.textContent = 'Wysyłanie zaproszenia...';
-      statusDiv.className = 'search-status';
-      statusDiv.style.display = 'block';
-      
-      if (!this.sessionManager) {
-        throw new Error('Menedżer sesji nie jest dostępny');
-      }
-      
-      const result = await this.sessionManager.sendFriendRequest(username);
-      
-      if (result.success) {
-        statusDiv.textContent = result.message;
-        statusDiv.className = 'search-status search-success';
-        usernameInput.value = '';
-        
-        // Odśwież listę znajomych
-        await this.loadFriends();
-        
-        // Zamknij modal po chwili
-        setTimeout(() => {
-          const modal = document.getElementById('add-friend-modal');
-          if (modal) modal.style.display = 'none';
-        }, 2000);
-      } else {
-        statusDiv.textContent = result.message;
-        statusDiv.className = 'search-status search-error';
-      }
-    } catch (error) {
-      console.error('❌ Błąd wysyłania zaproszenia:', error);
-      statusDiv.textContent = 'Błąd wysyłania zaproszenia: ' + error.message;
-      statusDiv.className = 'search-status search-error';
-    }
-  }
-
-  /**
-   * Ładuje oczekujące zaproszenia
-   */
-  async loadPendingRequests() {
-    if (!this.sessionManager) return;
-    
-    try {
-      const result = await this.sessionManager.getPendingFriendRequests();
-      if (result.success) {
-        this.pendingRequests = result.requests;
-        this.updateRequestBadge();
-      }
-    } catch (error) {
-      console.error('❌ Błąd ładowania zaproszeń:', error);
-    }
-  }
-
-  /**
-   * Aktualizuje badge z liczbą zaproszeń
-   */
-  updateRequestBadge() {
-    if (this.requestBadge) {
-      const count = this.pendingRequests.length;
-      if (count > 0) {
-        this.requestBadge.textContent = count;
-        this.requestBadge.style.display = 'inline-block';
-      } else {
-        this.requestBadge.style.display = 'none';
-      }
-    }
-  }
-
-  /**
-   * Inicjalizuje powiadomienia o zaproszeniach
-   */
-  initializeFriendRequestNotifications() {
-    this.loadPendingRequests();
-  }
-
-  /**
-   * Pokazuje modal z zaproszeniami do znajomych
-   */
-  showFriendRequestsModal() {
-    console.log('Wyświetlanie modalu zaproszeń:', this.pendingRequests);
-    // Implementacja modalu zaproszeń - można rozszerzyć
-    if (this.pendingRequests.length > 0) {
-      const requestsList = this.pendingRequests.map(req => 
-        `${req.sender_username} (${req.created_at})`
-      ).join('\n');
-      
-      if (confirm(`Masz ${this.pendingRequests.length} oczekujących zaproszeń:\n${requestsList}\n\nCzy chcesz przejść do panelu zarządzania?`)) {
-        // Można przekierować do dedykowanego panelu
-        window.location.href = '/friends';
-      }
-    } else {
-      this.showNotification('Brak oczekujących zaproszeń', 'info');
-    }
-  }
-
-  /**
-   * DODANA: Funkcja testowa do dodawania wiadomości
-   */
-  testAddMessage() {
-    console.log('🧪 Test dodawania wiadomości...');
-    
-    const testMessage = {
-      id: 'test-' + Date.now(),
-      content: 'To jest wiadomość testowa',
-      sender_id: parseInt(this.currentUser.id),
-      timestamp: new Date().toISOString(),
-      is_mine: true
-    };
-    
-    console.log('📨 Dodaję wiadomość testową:', testMessage);
-    this.addMessageToUI(testMessage);
-  }
 }
 
-// Inicjalizacja globalnego interfejsu
-window.chatInterface = new ChatInterface();
+// Eksportuj klasę lub ustaw jako globalną
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = ChatInterface;
+} else {
+  window.ChatInterface = ChatInterface;
+}
