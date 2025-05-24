@@ -53,7 +53,7 @@ body {
 }
 
 .user-info {
-  padding: 20px;
+  padding: 20px 25px; /* Zwiększony lewy padding */
   border-bottom: 1px solid var(--border);
   background-color: var(--bg-tertiary);
 }
@@ -62,6 +62,7 @@ body {
   margin: 0 0 10px 0;
   color: var(--primary);
   font-size: 1.2em;
+  padding-left: 5px; /* Dodatkowy odstęp w lewo */
 }
 
 .user-controls {
