@@ -5,8 +5,6 @@ import datetime
 import hashlib
 import json
 import logging
-import secrets
-import string
 
 # Konfiguracja logowania
 logger = logging.getLogger(__name__)
@@ -99,7 +97,7 @@ def get_online_users():
 @chat_api.route('/api/session/init', methods=['POST'])
 @login_required
 def init_chat_session():
-    """POPRAWIONA: Inicjuje sesję czatu z automatyczną wymianą kluczy"""
+    """Inicjuje nową sesję czatu z innym użytkownikiem"""
     try:
         data = request.get_json()
         
@@ -111,25 +109,19 @@ def init_chat_session():
         recipient = User.query.filter_by(user_id=recipient_id).first()
         if not recipient:
             return jsonify({'status': 'error', 'message': 'Adresat nie istnieje'}), 404
-        
-        # POPRAWIONE: Sprawdź czy nie istnieje już aktywna sesja
+            
+        # Sprawdź, czy nie ma już aktywnej sesji między tymi użytkownikami
         existing_session = ChatSession.query.filter(
             ((ChatSession.initiator_id == current_user.id) & (ChatSession.recipient_id == recipient.id)) |
             ((ChatSession.initiator_id == recipient.id) & (ChatSession.recipient_id == current_user.id))
-        ).filter(
-            ChatSession.is_active == True, 
-            ChatSession.expires_at > datetime.datetime.utcnow()
-        ).first()
+        ).filter(ChatSession.is_active == True, ChatSession.expires_at > datetime.datetime.utcnow()).first()
         
         if existing_session:
-            logger.info(f"Znaleziono istniejącą sesję {existing_session.session_token}")
+            # Zwróć informację czy istnieje już wymieniony klucz
+            has_key = existing_session.encrypted_session_key is not None
+            key_acknowledged = existing_session.key_acknowledged
             
-            # NOWE: Sprawdź stan wymiany kluczy
-            has_encrypted_key = existing_session.encrypted_session_key is not None
-            key_acknowledged = existing_session.key_acknowledged or False
-            needs_key_exchange = not has_encrypted_key or not key_acknowledged
-            
-            # Odśwież sesję
+            # Jeśli istnieje aktywna sesja, odśwież ją
             existing_session.last_activity = datetime.datetime.utcnow()
             existing_session.expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
             db.session.commit()
@@ -137,19 +129,17 @@ def init_chat_session():
             # Określ drugiego uczestnika sesji
             other_user = recipient if existing_session.initiator_id == current_user.id else User.query.get(existing_session.initiator_id)
             
-            response_data = {
+            return jsonify({
                 'status': 'success',
-                'message': 'Sesja istnieje',
+                'message': 'Sesja odświeżona',
                 'session': {
                     'id': existing_session.id,
                     'token': existing_session.session_token,
                     'expires_at': existing_session.expires_at.isoformat(),
                     'initiator_id': existing_session.initiator_id,
                     'recipient_id': existing_session.recipient_id,
-                    'has_key': has_encrypted_key,
+                    'has_key': has_key,
                     'key_acknowledged': key_acknowledged,
-                    'needs_key_exchange': needs_key_exchange,
-                    'is_initiator': existing_session.initiator_id == current_user.id,
                     'other_user': {
                         'id': other_user.id,
                         'user_id': other_user.user_id,
@@ -157,16 +147,13 @@ def init_chat_session():
                         'is_online': other_user.is_online if hasattr(other_user, 'is_online') else False
                     }
                 }
-            }
-            
-            # NOWE: Jeśli potrzebna wymiana kluczy, powiadom o tym frontend
-            if needs_key_exchange:
-                response_data['session']['auto_start_key_exchange'] = True
-                logger.info(f"Sesja {existing_session.session_token} wymaga wymiany kluczy")
-            
-            return jsonify(response_data)
+            })
         
-        # NOWE: Tworzenie nowej sesji z flagą do automatycznej wymiany kluczy
+        # Utwórz nową sesję
+        import secrets
+        import string
+        
+        # Generuj token sesji
         session_token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
         expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
         
@@ -177,22 +164,18 @@ def init_chat_session():
             created_at=datetime.datetime.utcnow(),
             last_activity=datetime.datetime.utcnow(),
             expires_at=expires_at,
-            is_active=True,
-            encrypted_session_key=None,  # Będzie ustawiony przez wymianę kluczy
-            key_acknowledged=False
+            is_active=True
         )
         
         db.session.add(new_session)
         db.session.commit()
         
-        logger.info(f"Utworzono nową sesję {session_token} między {current_user.user_id} a {recipient.user_id}")
-        
-        # NOWE: Powiadom drugiego użytkownika o nowej sesji przez WebSocket
+        # Powiadom drugiego użytkownika, jeśli jest online
         try:
             from websocket_handler import ws_handler
             if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
                 ws_handler.send_to_user(recipient.user_id, {
-                    'type': 'new_session_created',
+                    'type': 'session_update',
                     'session_token': session_token,
                     'initiator': {
                         'id': current_user.id,
@@ -201,13 +184,12 @@ def init_chat_session():
                     },
                     'timestamp': datetime.datetime.utcnow().isoformat()
                 })
-                logger.info(f"Powiadomiono {recipient.user_id} o nowej sesji")
         except Exception as ws_error:
-            logger.error(f"Błąd WebSocket podczas powiadomienia o sesji: {ws_error}")
+            logger.error(f"Błąd WebSocket podczas inicjalizacji sesji: {ws_error}")
         
         return jsonify({
             'status': 'success',
-            'message': 'Nowa sesja utworzona',
+            'message': 'Sesja utworzona',
             'session': {
                 'id': new_session.id,
                 'token': new_session.session_token,
@@ -216,9 +198,6 @@ def init_chat_session():
                 'recipient_id': new_session.recipient_id,
                 'has_key': False,
                 'key_acknowledged': False,
-                'needs_key_exchange': True,
-                'auto_start_key_exchange': True,  # NOWE: Flaga dla frontendu
-                'is_initiator': True,
                 'other_user': {
                     'id': recipient.id,
                     'user_id': recipient.user_id,
@@ -227,7 +206,6 @@ def init_chat_session():
                 }
             }
         })
-        
     except Exception as e:
         db.session.rollback()
         logger.error(f"Błąd inicjacji sesji: {e}")
@@ -236,7 +214,7 @@ def init_chat_session():
 @chat_api.route('/api/session/<session_token>/validate', methods=['GET'])
 @login_required
 def validate_session(session_token):
-    """POPRAWIONA: Sprawdza ważność sesji czatu i automatycznie inicjuje wymianę kluczy"""
+    """Sprawdza ważność sesji czatu"""
     try:
         session = ChatSession.query.filter_by(session_token=session_token).first()
         
@@ -255,17 +233,13 @@ def validate_session(session_token):
         session.last_activity = datetime.datetime.utcnow()
         db.session.commit()
         
-        # NOWE: Szczegółowe sprawdzenie stanu kluczy
-        has_encrypted_key = session.encrypted_session_key is not None
-        key_acknowledged = session.key_acknowledged or False
-        needs_key_exchange = not has_encrypted_key or not key_acknowledged
-        is_initiator = session.initiator_id == current_user.id
+        has_key = session.encrypted_session_key is not None
         
         # Znajdź drugiego uczestnika
         other_user_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
         other_user = User.query.get(other_user_id)
         
-        response_data = {
+        return jsonify({
             'status': 'success',
             'session': {
                 'id': session.id,
@@ -274,10 +248,8 @@ def validate_session(session_token):
                 'initiator_id': session.initiator_id,
                 'recipient_id': session.recipient_id,
                 'is_valid': True,
-                'has_key': has_encrypted_key,
-                'key_acknowledged': key_acknowledged,
-                'needs_key_exchange': needs_key_exchange,
-                'is_initiator': is_initiator,
+                'has_key': has_key,
+                'key_acknowledged': session.key_acknowledged,
                 'other_user': {
                     'id': other_user.id,
                     'user_id': other_user.user_id,
@@ -285,26 +257,42 @@ def validate_session(session_token):
                     'is_online': other_user.is_online if hasattr(other_user, 'is_online') else False
                 }
             }
-        }
-        
-        # NOWE: Jeśli potrzebujesz wymiany kluczy i jesteś inicjatorem
-        if needs_key_exchange and is_initiator:
-            response_data['session']['should_generate_key'] = True
-            logger.info(f"Sesja {session_token}: inicjator powinien wygenerować klucz")
-        elif needs_key_exchange and not is_initiator:
-            response_data['session']['should_wait_for_key'] = True
-            logger.info(f"Sesja {session_token}: odbiorca czeka na klucz")
-        
-        return jsonify(response_data)
-        
+        })
     except Exception as e:
         logger.error(f"Błąd walidacji sesji: {e}")
+        return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
+
+@chat_api.route('/api/session/<session_token>/close', methods=['POST'])
+@login_required
+def close_session(session_token):
+    """Zamyka sesję czatu"""
+    try:
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        
+        if not session:
+            return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
+            
+        # Sprawdź czy użytkownik jest uczestnikiem tej sesji
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Brak dostępu do tej sesji'}), 403
+            
+        # Zamknij sesję
+        session.is_active = False
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Sesja zamknięta'
+        })
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Błąd zamykania sesji: {e}")
         return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
 
 @chat_api.route('/api/session/<session_token>/exchange_key', methods=['POST'])
 @login_required
 def exchange_session_key(session_token):
-    """POPRAWIONA: Przesyła zaszyfrowany klucz sesji z powiadomieniami real-time"""
+    """Przesyła zaszyfrowany klucz sesji dla odbiorcy"""
     try:
         data = request.get_json()
         encrypted_key = data.get('encrypted_key')
@@ -320,46 +308,33 @@ def exchange_session_key(session_token):
         # Sprawdź, czy użytkownik jest uczestnikiem sesji
         if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
             return jsonify({'status': 'error', 'message': 'Brak dostępu do tej sesji'}), 403
-        
-        # NOWE: Tylko inicjator może wysłać klucz (lub jeśli nie ma jeszcze klucza)
-        if session.encrypted_session_key and session.initiator_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Klucz już został ustawiony'}), 409
             
         # Zapisz zaszyfrowany klucz sesji
         session.encrypted_session_key = encrypted_key
         session.last_activity = datetime.datetime.utcnow()
         db.session.commit()
         
-        logger.info(f"Klucz sesji zapisany dla {session_token}")
-        
-        # POPRAWIONE: Powiadom drugiego użytkownika z dodatkowymi informacjami
+        # Powiadom drugiego użytkownika
         try:
             recipient_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
             recipient = User.query.get(recipient_id)
             
             from websocket_handler import ws_handler
             if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
-                notification_data = {
-                    'type': 'session_key_received',
+                ws_handler.send_to_user(recipient.user_id, {
+                    'type': 'session_key_update',
                     'session_token': session_token,
                     'encrypted_key': encrypted_key,
                     'sender_id': current_user.user_id,
-                    'sender_username': current_user.username,
-                    'timestamp': datetime.datetime.utcnow().isoformat(),
-                    'action_required': 'acknowledge_key'
-                }
-                
-                ws_handler.send_to_user(recipient.user_id, notification_data)
-                logger.info(f"Powiadomiono {recipient.user_id} o nowym kluczu sesji")
+                    'timestamp': datetime.datetime.utcnow().isoformat()
+                })
         except Exception as ws_error:
             logger.error(f"Błąd WebSocket podczas wymiany klucza: {ws_error}")
         
         return jsonify({
             'status': 'success',
-            'message': 'Klucz sesji przesłany',
-            'next_step': 'wait_for_acknowledgment'
+            'message': 'Klucz sesji przesłany'
         })
-        
     except Exception as e:
         db.session.rollback()
         logger.error(f"Błąd wymiany klucza sesji: {e}")
@@ -368,7 +343,7 @@ def exchange_session_key(session_token):
 @chat_api.route('/api/session/<session_token>/key', methods=['GET'])
 @login_required
 def get_session_key(session_token):
-    """POPRAWIONA: Pobiera zaszyfrowany klucz sesji z dodatkowymi informacjami"""
+    """Pobiera zaszyfrowany klucz sesji"""
     try:
         session = ChatSession.query.filter_by(session_token=session_token).first()
         
@@ -381,30 +356,12 @@ def get_session_key(session_token):
             
         # Sprawdź czy klucz sesji istnieje
         if not session.encrypted_session_key:
-            return jsonify({
-                'status': 'error', 
-                'message': 'Klucz sesji nie został jeszcze przesłany',
-                'should_wait': True
-            }), 404
+            return jsonify({'status': 'error', 'message': 'Klucz sesji nie został jeszcze przesłany'}), 404
             
-        # NOWE: Dodatkowe informacje o stanie sesji
-        is_initiator = session.initiator_id == current_user.id
-        other_user_id = session.recipient_id if is_initiator else session.initiator_id
-        other_user = User.query.get(other_user_id)
-        
         return jsonify({
             'status': 'success',
-            'encrypted_key': session.encrypted_session_key,
-            'session_info': {
-                'is_initiator': is_initiator,
-                'key_acknowledged': session.key_acknowledged,
-                'other_user': {
-                    'user_id': other_user.user_id,
-                    'username': other_user.username
-                }
-            }
+            'encrypted_key': session.encrypted_session_key
         })
-        
     except Exception as e:
         logger.error(f"Błąd pobierania klucza sesji: {e}")
         return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
@@ -412,56 +369,40 @@ def get_session_key(session_token):
 @chat_api.route('/api/session/<session_token>/acknowledge_key', methods=['POST'])
 @login_required
 def acknowledge_session_key(session_token):
-    """POPRAWIONA: Potwierdza odebranie klucza sesji z powiadomieniami real-time"""
+    """Potwierdza odebranie i odszyfrowanie klucza sesji przez odbiorcę"""
     try:
         session = ChatSession.query.filter_by(session_token=session_token).first()
         
         if not session:
             return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
             
-        # Sprawdź czy użytkownik jest uczestnikiem sesji (nie tylko odbiorcą)
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Brak dostępu do tej sesji'}), 403
-        
-        # POPRAWIONE: Sprawdź czy klucz istnieje
-        if not session.encrypted_session_key:
-            return jsonify({'status': 'error', 'message': 'Brak klucza do potwierdzenia'}), 400
+        # Sprawdź czy użytkownik jest odbiorcą sesji
+        if session.recipient_id != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Tylko odbiorca może potwierdzić klucz sesji'}), 403
             
         # Oznacz klucz jako potwierdzony
         session.key_acknowledged = True
         session.last_activity = datetime.datetime.utcnow()
         db.session.commit()
         
-        logger.info(f"Klucz sesji {session_token} potwierdzony przez {current_user.user_id}")
-        
-        # POPRAWIONE: Powiadom wszystkich uczestników o zakończeniu wymiany kluczy
+        # Powiadom inicjatora o potwierdzeniu klucza
         try:
             from websocket_handler import ws_handler
+            initiator = User.query.get(session.initiator_id)
             
-            # Powiadom drugiego uczestnika
-            other_user_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
-            other_user = User.query.get(other_user_id)
-            
-            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(other_user.user_id):
-                ws_handler.send_to_user(other_user.user_id, {
-                    'type': 'key_exchange_completed',
+            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(initiator.user_id):
+                ws_handler.send_to_user(initiator.user_id, {
+                    'type': 'session_key_acknowledged',
                     'session_token': session_token,
-                    'acknowledged_by': current_user.user_id,
-                    'acknowledged_by_username': current_user.username,
-                    'timestamp': datetime.datetime.utcnow().isoformat(),
-                    'status': 'ready_for_messaging'
+                    'timestamp': datetime.datetime.utcnow().isoformat()
                 })
-                logger.info(f"Powiadomiono {other_user.user_id} o zakończeniu wymiany kluczy")
-                
         except Exception as ws_error:
             logger.error(f"Błąd WebSocket podczas potwierdzania klucza: {ws_error}")
         
         return jsonify({
             'status': 'success',
-            'message': 'Klucz sesji potwierdzony',
-            'session_status': 'ready_for_messaging'
+            'message': 'Klucz sesji potwierdzony'
         })
-        
     except Exception as e:
         db.session.rollback()
         logger.error(f"Błąd potwierdzania klucza sesji: {e}")
@@ -470,7 +411,7 @@ def acknowledge_session_key(session_token):
 @chat_api.route('/api/message/send', methods=['POST'])
 @login_required
 def send_message():
-    """POPRAWIONA: Wysyła wiadomość z lepszymi powiadomieniami real-time"""
+    """Wysyła zaszyfrowaną wiadomość z obsługą wzmianek"""
     try:
         data = request.get_json()
         
@@ -503,12 +444,11 @@ def send_message():
                 'message': 'Sesja wygasła'
             }), 401
             
-        # POPRAWIONE: Sprawdź czy wymiana kluczy została zakończona
-        if not session.encrypted_session_key or not session.key_acknowledged:
+        # Sprawdź, czy klucz sesji został potwierdzony
+        if not session.key_acknowledged:
             return jsonify({
                 'status': 'error', 
-                'message': 'Wymiana kluczy nie została zakończona. Poczekaj na zakończenie procesu.',
-                'needs_key_exchange': True
+                'message': 'Wymiana kluczy nie została zakończona'
             }), 400
             
         # Sprawdź, czy użytkownik jest uczestnikiem tej sesji
@@ -523,8 +463,7 @@ def send_message():
             session_id=session.id,
             sender_id=current_user.id,
             content=content,
-            iv=iv,
-            timestamp=datetime.datetime.utcnow()
+            iv=iv
         )
         
         db.session.add(new_message)
@@ -532,52 +471,14 @@ def send_message():
         # Odśwież sesję
         session.last_activity = datetime.datetime.utcnow()
         
-        # Commit przed wysłaniem powiadomień
-        db.session.commit()
-        
-        logger.info(f"Wiadomość zapisana: ID {new_message.id} w sesji {session_token}")
-        
-        # POPRAWIONE: Natychmiast powiadom odbiorcę
-        try:
-            recipient_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
-            recipient = User.query.get(recipient_id)
-            
-            from websocket_handler import ws_handler
-            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
-                message_data = {
-                    'type': 'new_message',
-                    'session_token': session_token,
-                    'message': {
-                        'id': new_message.id,
-                        'sender_id': current_user.id,
-                        'sender_username': current_user.username,
-                        'content': content,
-                        'iv': iv,
-                        'timestamp': new_message.timestamp.isoformat(),
-                        'is_mine': False
-                    },
-                    'session_info': {
-                        'other_user': {
-                            'user_id': current_user.user_id,
-                            'username': current_user.username
-                        }
-                    }
-                }
-                
-                success = ws_handler.send_to_user(recipient.user_id, message_data)
-                if success:
-                    logger.info(f"Powiadomiono {recipient.user_id} o nowej wiadomości")
-                else:
-                    logger.warning(f"Nie udało się powiadomić {recipient.user_id}")
-        except Exception as ws_error:
-            logger.error(f"Błąd WebSocket podczas wysyłania wiadomości: {ws_error}")
-        
-        # Obsługa wzmianek (bez zmian)
+        # Obsługa wzmianek
         if mentions and len(mentions) > 0:
             for username in mentions:
+                # Znajdź użytkownika po nazwie
                 mentioned_user = User.query.filter_by(username=username).first()
                 
                 if mentioned_user:
+                    # Jeśli użytkownik istnieje i mamy dostęp do handlera WebSocket
                     try:
                         from websocket_handler import ws_handler
                         if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(mentioned_user.user_id):
@@ -593,7 +494,33 @@ def send_message():
                                 'timestamp': datetime.datetime.utcnow().isoformat()
                             })
                     except Exception as e:
-                        logger.error(f"Błąd wysyłania powiadomienia o wzmiance: {e}")
+                        # Błędy związane z WebSocket nie powinny zatrzymywać całego procesu
+                        logger.error(f"Ostrzeżenie: Nie można wysłać powiadomienia o wzmiance: {e}")
+        
+        # Powiadom odbiorcę o nowej wiadomości
+        try:
+            recipient_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
+            recipient = User.query.get(recipient_id)
+            
+            from websocket_handler import ws_handler
+            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(recipient.user_id):
+                logger.debug(f"Wysyłanie powiadomienia o nowej wiadomości do {recipient.user_id}")
+                ws_handler.send_to_user(recipient.user_id, {
+                    'type': 'new_message',
+                    'session_token': session_token,
+                    'message': {
+                        'id': new_message.id,
+                        'sender_id': current_user.id,
+                        'content': content,
+                        'iv': iv,
+                        'timestamp': datetime.datetime.utcnow().isoformat()
+                    }
+                })
+        except Exception as ws_error:
+            logger.error(f"Błąd WebSocket podczas wysyłania wiadomości: {ws_error}")
+        
+        # Zakończ transakcję
+        db.session.commit()
         
         return jsonify({
             'status': 'success',
@@ -602,7 +529,6 @@ def send_message():
                 'timestamp': new_message.timestamp.isoformat()
             }
         })
-        
     except Exception as e:
         db.session.rollback()
         logger.error(f"Błąd wysyłania wiadomości: {e}")
@@ -611,7 +537,7 @@ def send_message():
 @chat_api.route('/api/messages/<session_token>', methods=['GET'])
 @login_required
 def get_messages(session_token):
-    """POPRAWIONA: Pobiera wiadomości z sesji z automatycznym oznaczaniem jako przeczytane"""
+    """Pobiera wiadomości z sesji"""
     try:
         session = ChatSession.query.filter_by(session_token=session_token).first()
         
@@ -629,38 +555,17 @@ def get_messages(session_token):
         # Pobierz wiadomości
         messages = Message.query.filter_by(session_id=session.id).order_by(Message.timestamp).all()
         
-        # POPRAWIONE: Oznacz nieswoje wiadomości jako przeczytane i powiadom nadawcę
-        other_user_id = session.initiator_id if session.recipient_id == current_user.id else session.recipient_id
+        # Oznacz wszystkie nieswoje wiadomości jako przeczytane
         unread_messages = Message.query.filter_by(
             session_id=session.id,
-            sender_id=other_user_id,
+            sender_id=session.initiator_id if session.recipient_id == current_user.id else session.recipient_id,
             read=False
         ).all()
         
-        if unread_messages:
-            for msg in unread_messages:
-                msg.read = True
-            
-            db.session.commit()
-            logger.info(f"Oznaczono {len(unread_messages)} wiadomości jako przeczytane w sesji {session_token}")
-            
-            # NOWE: Powiadom nadawcę o przeczytaniu wiadomości
-            try:
-                from websocket_handler import ws_handler
-                other_user = User.query.get(other_user_id)
-                
-                if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(other_user.user_id):
-                    ws_handler.send_to_user(other_user.user_id, {
-                        'type': 'messages_read',
-                        'session_token': session_token,
-                        'read_by': current_user.user_id,
-                        'read_by_username': current_user.username,
-                        'message_count': len(unread_messages),
-                        'timestamp': datetime.datetime.utcnow().isoformat()
-                    })
-                    logger.info(f"Powiadomiono {other_user.user_id} o przeczytaniu wiadomości")
-            except Exception as ws_error:
-                logger.error(f"Błąd powiadomienia o przeczytaniu: {ws_error}")
+        for msg in unread_messages:
+            msg.read = True
+        
+        db.session.commit()
         
         message_list = [{
             'id': msg.id,
@@ -668,20 +573,13 @@ def get_messages(session_token):
             'content': msg.content,
             'iv': msg.iv,
             'timestamp': msg.timestamp.isoformat(),
-            'is_mine': msg.sender_id == current_user.id,
-            'read': msg.read
+            'is_mine': msg.sender_id == current_user.id
         } for msg in messages]
         
         return jsonify({
             'status': 'success',
-            'messages': message_list,
-            'session_info': {
-                'token': session_token,
-                'total_messages': len(message_list),
-                'unread_marked': len(unread_messages)
-            }
+            'messages': message_list
         })
-        
     except Exception as e:
         db.session.rollback()
         logger.error(f"Błąd pobierania wiadomości: {e}")
@@ -690,14 +588,14 @@ def get_messages(session_token):
 @chat_api.route('/api/sessions/active', methods=['GET'])
 @login_required
 def get_active_sessions():
-    """POPRAWIONA: Pobiera aktywne sesje z dodatkowymi informacjami o stanie kluczy"""
+    """Pobiera wszystkie aktywne sesje czatu dla użytkownika"""
     try:
         # Pobierz aktywne sesje
         active_sessions = ChatSession.query.filter(
             ((ChatSession.initiator_id == current_user.id) | (ChatSession.recipient_id == current_user.id)),
             ChatSession.is_active == True,
             ChatSession.expires_at > datetime.datetime.utcnow()
-        ).order_by(ChatSession.last_activity.desc()).all()
+        ).all()
         
         session_list = []
         for session in active_sessions:
@@ -712,112 +610,31 @@ def get_active_sessions():
                 read=False
             ).count()
             
-            # NOWE: Sprawdź stan wymiany kluczy
-            has_encrypted_key = session.encrypted_session_key is not None
-            key_acknowledged = session.key_acknowledged or False
-            is_ready = has_encrypted_key and key_acknowledged
-            needs_key_exchange = not is_ready
-            is_initiator = session.initiator_id == current_user.id
-            
-            # Pobierz ostatnią wiadomość
-            last_message = Message.query.filter_by(session_id=session.id)\
-                .order_by(Message.timestamp.desc()).first()
-            
-            session_data = {
+            session_list.append({
                 'id': session.id,
                 'token': session.session_token,
                 'expires_at': session.expires_at.isoformat(),
                 'last_activity': session.last_activity.isoformat(),
-                'has_key': has_encrypted_key,
-                'key_acknowledged': key_acknowledged,
-                'is_ready': is_ready,
-                'needs_key_exchange': needs_key_exchange,
-                'is_initiator': is_initiator,
+                'has_key': session.encrypted_session_key is not None,
+                'key_acknowledged': session.key_acknowledged,
                 'other_user': {
                     'id': other_user.id,
                     'user_id': other_user.user_id,
                     'username': other_user.username,
                     'is_online': other_user.is_online if hasattr(other_user, 'is_online') else False
                 },
-                'unread_count': unread_count,
-                'last_message': None
-            }
-            
-            # NOWE: Dodaj informacje o ostatniej wiadomości (jeśli istnieje)
-            if last_message:
-                session_data['last_message'] = {
-                    'id': last_message.id,
-                    'sender_id': last_message.sender_id,
-                    'timestamp': last_message.timestamp.isoformat(),
-                    'is_mine': last_message.sender_id == current_user.id,
-                    'read': last_message.read
-                }
-            
-            session_list.append(session_data)
+                'unread_count': unread_count
+            })
         
         return jsonify({
             'status': 'success',
-            'sessions': session_list,
-            'total_sessions': len(session_list),
-            'ready_sessions': len([s for s in session_list if s['is_ready']]),
-            'pending_key_exchange': len([s for s in session_list if s['needs_key_exchange']])
+            'sessions': session_list
         })
-        
     except Exception as e:
         logger.error(f"Błąd pobierania aktywnych sesji: {e}")
         return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
 
-@chat_api.route('/api/session/<session_token>/close', methods=['POST'])
-@login_required
-def close_session(session_token):
-    """POPRAWIONA: Zamyka sesję czatu z powiadomieniem drugiego użytkownika"""
-    try:
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        
-        if not session:
-            return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
-            
-        # Sprawdź czy użytkownik jest uczestnikiem tej sesji
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Brak dostępu do tej sesji'}), 403
-        
-        # Znajdź drugiego użytkownika przed zamknięciem
-        other_user_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
-        other_user = User.query.get(other_user_id)
-        
-        # Zamknij sesję
-        session.is_active = False
-        session.last_activity = datetime.datetime.utcnow()
-        db.session.commit()
-        
-        logger.info(f"Sesja {session_token} zamknięta przez {current_user.user_id}")
-        
-        # NOWE: Powiadom drugiego użytkownika o zamknięciu sesji
-        try:
-            from websocket_handler import ws_handler
-            if hasattr(ws_handler, 'is_user_online') and ws_handler.is_user_online(other_user.user_id):
-                ws_handler.send_to_user(other_user.user_id, {
-                    'type': 'session_closed',
-                    'session_token': session_token,
-                    'closed_by': current_user.user_id,
-                    'closed_by_username': current_user.username,
-                    'timestamp': datetime.datetime.utcnow().isoformat()
-                })
-                logger.info(f"Powiadomiono {other_user.user_id} o zamknięciu sesji")
-        except Exception as ws_error:
-            logger.error(f"Błąd powiadomienia o zamknięciu sesji: {ws_error}")
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Sesja zamknięta'
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Błąd zamykania sesji: {e}")
-        return jsonify({'status': 'error', 'message': f'Błąd: {str(e)}'}), 500
-
-# === ZNAJOMI - BEZ ZMIAN ===
+# === ZNAJOMI ===
 
 @chat_api.route('/api/friends', methods=['GET'])
 @login_required
@@ -1103,7 +920,7 @@ def reject_friend_request(request_id):
             'message': f'Błąd podczas odrzucania zaproszenia: {str(e)}'
         }), 500
 
-# === POLLING FALLBACK - BEZ ZMIAN ===
+# === POLLING FALLBACK ===
 
 @chat_api.route('/api/polling/messages', methods=['GET'])
 @login_required
