@@ -484,7 +484,7 @@ class ChatInterface {
         // Dodaj wiadomość do UI od razu (optymistyczne UI)
         const newMessage = {
           id: result.messageData?.id || Date.now().toString(),
-          sender_id: parseInt(this.user.id),
+          sender_id: parseInt(this.currentuser.id),
           content: messageContent,
           timestamp: result.messageData?.timestamp || new Date().toISOString(),
           is_mine: true
@@ -926,7 +926,7 @@ class ChatInterface {
         </div>
       </div>
       ${unreadCount > 0 ? `<div class="unread-count">${unreadCount}</div>` : ''}
-    `;
+      `;
     
     li.addEventListener('click', () => this.selectFriend(friend));
     
