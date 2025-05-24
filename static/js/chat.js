@@ -534,6 +534,8 @@ class ChatManager {
     const content = this.elements.messageInput?.value.trim();
     if (!content || !this.currentSession) return;
     
+    console.log('🚀 Sending message to session:', this.currentSession.token);
+    
     // Disable input
     this.elements.messageInput.disabled = true;
     this.elements.sendButton.disabled = true;
@@ -552,10 +554,15 @@ class ChatManager {
       const sessionKey = await window.cryptoManager.importSessionKey(sessionKeyBase64);
       const encrypted = await window.cryptoManager.encryptMessage(sessionKey, content);
       
+      console.log('🔐 Message encrypted, sending to server...');
+      
       // Send to server
       const response = await fetch('/api/message/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
         body: JSON.stringify({
           session_token: this.currentSession.token,
           content: encrypted.data,
@@ -563,7 +570,16 @@ class ChatManager {
         })
       });
       
+      console.log('📡 Server response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Server error:', response.status, errorText);
+        throw new Error(`Server error: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('✅ Server response:', data);
       
       if (data.status === 'success') {
         // Clear input
@@ -580,12 +596,13 @@ class ChatManager {
         
         this._addMessageToUI(newMessage);
         this._storeMessage(this.currentSession.token, newMessage);
+        console.log('✅ Message sent successfully');
       } else {
         this._showNotification(data.message || 'Send failed', 'error');
       }
     } catch (error) {
-      console.error("Send message error:", error);
-      this._showNotification('Failed to send message', 'error');
+      console.error("❌ Send message error:", error);
+      this._showNotification('Failed to send message: ' + error.message, 'error');
     } finally {
       // Re-enable input
       this.elements.messageInput.disabled = false;
