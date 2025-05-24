@@ -524,4 +524,4 @@ window.chatCrypto = window.unifiedCrypto;
 window.e2eeProtocol = window.unifiedCrypto;
 
 console.log("🔒 UnifiedCrypto załadowany (session-only mode - maksymalne bezpieczeństwo)");
-console.log("📊 Security info:", window.unifiedCrypto.getSecurity
+console.log("📊 Security info:", window.unifiedCrypto.getSecurityInfo());
