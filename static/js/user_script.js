@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', function () {
       console.log("🔑 Ładowanie klucza prywatnego...");
       
       // NAPRAWIONE: Zachowaj klucz prywatny w localStorage dla UnifiedCrypto
-      localStorage.setItem('private_key_pem', privateKeyPEM);
+      sessionStorage.setItem('private_key_pem', privateKeyPEM);
       
       // NAPRAWIONE: Sprawdź czy UnifiedCrypto jest dostępny
       // (w logowaniu nie potrzebujemy UnifiedCrypto bo to jest przed załadowaniem chat.html)
