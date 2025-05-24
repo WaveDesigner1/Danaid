@@ -346,6 +346,7 @@ class ChatManager {
       console.error("Pending requests loading error:", error);
     }
   }
+
   // === UI RENDERING ===
   _renderFriendsList() {
     if (!this.elements.friendsList) return;
@@ -617,41 +618,6 @@ class ChatManager {
         
         // Encrypt and send session key
         const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(recipientPublicKey, sessionKey);
-        
-        const keyResponse = await fetch(`/api/session/${sessionToken}/exchange_key`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ encrypted_key: encryptedSessionKey })
-        });
-        
-        if (!keyResponse.ok) {
-          throw new Error('Failed to exchange session key');
-        }
-        
-        console.log("✅ Session key generated and sent");
-      } else {
-        // Retrieve existing session key
-        const response = await fetch(`/api/session/${sessionToken}/key`);
-        const data = await response.json();
-        
-        if (data.status === 'success') {
-          const sessionKeyBase64 = await window.cryptoManager.decryptSessionKey(data.encrypted_key);
-          window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
-          
-          // Acknowledge key receipt
-          await fetch(`/api/session/${sessionToken}/acknowledge_key`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-          });
-          
-          console.log("✅ Session key retrieved and acknowledged");
-        }
-      }
-    } catch (error) {
-      console.error("Session key error:", error);
-      throw error;
-    }
-  } window.cryptoManager.encryptSessionKey(recipientPublicKey, sessionKey);
         
         const keyResponse = await fetch(`/api/session/${sessionToken}/exchange_key`, {
           method: 'POST',
