@@ -72,7 +72,7 @@
             <span class="search-close">&times;</span>
             <h2>Dodaj znajomego</h2>
             <div class="search-form">
-                <input type="text" id="friend-user-id" placeholder="Nazwa użytkownika" />
+                <input type="text" id="friend-username-input" placeholder="Nazwa użytkownika" />
                 <button id="send-friend-request-btn">Wyślij zaproszenie</button>
             </div>
             <div id="friend-request-status" class="search-status" style="display: none;"></div>
@@ -155,6 +155,30 @@
         }
         
         console.log("=== DANAID CHAT Z SOCKET.IO GOTOWY ===");
+        
+        // *** DODAJ TĘ CZĘŚĆ - INICJALIZACJA CHATINTERFACE ***
+        // Inicjalizuj ChatInterface po załadowaniu wszystkich modułów
+        function initializeChatInterface() {
+            try {
+                if (typeof ChatInterface !== 'undefined' && window.sessionManager) {
+                    console.log("🚀 Inicjalizuję ChatInterface...");
+                    
+                    // Stwórz globalną instancję ChatInterface
+                    window.chatInterface = new ChatInterface(window.sessionManager);
+                    
+                    console.log("✅ ChatInterface zainicjalizowany pomyślnie!");
+                } else {
+                    console.error("❌ ChatInterface lub SessionManager nie są dostępne");
+                    setTimeout(initializeChatInterface, 1000); // Spróbuj ponownie za sekundę
+                }
+            } catch (error) {
+                console.error("❌ Błąd inicjalizacji ChatInterface:", error);
+                setTimeout(initializeChatInterface, 2000); // Spróbuj znów za 2 sekundy
+            }
+        }
+        
+        // Inicjalizuj po małym opóźnieniu, żeby wszystkie moduły były gotowe
+        setTimeout(initializeChatInterface, 500);
     </script>
 </body>
 </html>
