@@ -159,23 +159,31 @@
         // *** DODAJ TĘ CZĘŚĆ - INICJALIZACJA CHATINTERFACE ***
         // Inicjalizuj ChatInterface po załadowaniu wszystkich modułów
         function initializeChatInterface() {
+            console.log("🔍 Sprawdzam dostępność komponentów...");
+            console.log("- ChatInterface:", typeof ChatInterface);
+            console.log("- SessionManager:", typeof window.sessionManager);
+    
+        if (typeof ChatInterface !== 'undefined' && window.sessionManager) {
             try {
-                if (typeof ChatInterface !== 'undefined' && window.sessionManager) {
-                    console.log("🚀 Inicjalizuję ChatInterface...");
-                    
-                    // Stwórz globalną instancję ChatInterface
-                    window.chatInterface = new ChatInterface(window.sessionManager);
-                    
-                    console.log("✅ ChatInterface zainicjalizowany pomyślnie!");
-                } else {
-                    console.error("❌ ChatInterface lub SessionManager nie są dostępne");
-                    setTimeout(initializeChatInterface, 1000); // Spróbuj ponownie za sekundę
-                }
+                console.log("🚀 Inicjalizuję ChatInterface...");
+            
+                // Stwórz globalną instancję ChatInterface
+                window.chatInterface = new ChatInterface(window.sessionManager);
+            
+                console.log("✅ ChatInterface zainicjalizowany pomyślnie!");
+                return true; // Sukces
             } catch (error) {
                 console.error("❌ Błąd inicjalizacji ChatInterface:", error);
-                setTimeout(initializeChatInterface, 2000); // Spróbuj znów za 2 sekundy
+                return false;
             }
+        } else {
+            console.error("❌ ChatInterface lub SessionManager nie są dostępne");
+            console.log("💡 Sprawdź czy wszystkie pliki .js są poprawnie załadowane");
+            return false;
         }
+    }
+
+        
         
         // Inicjalizuj po małym opóźnieniu, żeby wszystkie moduły były gotowe
         setTimeout(initializeChatInterface, 500);
