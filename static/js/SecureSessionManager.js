@@ -411,6 +411,15 @@ class SecureSessionManager {
       if (this.onSessionsUpdated) {
         this.onSessionsUpdated(this.activeSessions);
       }
+      for (const session of this.activeSessions) {
+        if (session.needs_key_exchange && session.is_initiator && 
+            !this.keyExchangeInProgress.has(session.token)) {
+          console.log('🔑 Auto-wymiana kluczy dla sesji:', session.token?.substring(0, 10) + '...');
+          setTimeout(() => {
+            this.startAutomaticKeyExchange(session.token, session);
+          }, 1000);
+        }
+      }
       
       return {
         status: 'success',
