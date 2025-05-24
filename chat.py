@@ -108,47 +108,76 @@ def get_friends():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@chat_bp.route('/api/friend_requests', methods=['POST'])
+@chat_bp.route('/api/message/send', methods=['POST'])
 @login_required
-def send_friend_request():
-    """Wysyła zaproszenie do znajomych"""
+def send_message():
+    """Wysyła wiadomość"""
     try:
+        print("📨 Send message endpoint called")  # Debug
         data = request.get_json()
-        username = data.get('username')
-        if not username:
-            return jsonify({'status': 'error', 'message': 'Brak nazwy użytkownika'}), 400
-            
-        recipient = User.query.filter_by(username=username).first()
-        if not recipient:
-            return jsonify({'status': 'error', 'message': 'Użytkownik nie znaleziony'}), 404
-            
-        if recipient.id == current_user.id:
-            return jsonify({'status': 'error', 'message': 'Nie możesz dodać siebie'}), 400
-            
-        # Sprawdź czy już są znajomymi
-        if current_user.is_friend_with(recipient.id):
-            return jsonify({'status': 'error', 'message': 'Już jesteście znajomymi'}), 400
-            
-        # Sprawdź istniejące zaproszenie
-        existing = FriendRequest.query.filter_by(
-            from_user_id=current_user.id,
-            to_user_id=recipient.id,
-            status='pending'
-        ).first()
-        if existing:
-            return jsonify({'status': 'error', 'message': 'Zaproszenie już wysłane'}), 400
-            
-        # Utwórz zaproszenie
-        new_request = FriendRequest(
-            from_user_id=current_user.id,
-            to_user_id=recipient.id,
-            status='pending'
-        )
-        db.session.add(new_request)
-        db.session.commit()
+        print("Request data:", data)  # Debug
         
-        return jsonify({'status': 'success', 'message': 'Zaproszenie wysłane', 'request_id': new_request.id})
+        required_fields = ['session_token', 'content', 'iv']
+        
+        if not data or not all(field in data for field in required_fields):
+            print("❌ Brakujące dane:", data)
+            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
+            
+        session_token = data.get('session_token')
+        content = data.get('content')
+        iv = data.get('iv')
+        
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            print("❌ Nieprawidłowa sesja:", session_token)
+            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
+            
+        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
+            print("❌ Sesja wygasła")
+            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
+            
+        # 🔧 ZMIENIONE: Nie wymagamy key_acknowledged (może być False na początku)
+        if not session.encrypted_session_key:
+            print("❌ Brak klucza sesji")
+            return jsonify({'status': 'error', 'message': 'Brak klucza sesji'}), 400
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            print("❌ Brak dostępu do sesji")
+            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
+        
+        print("✅ Walidacja przeszła, zapisuję wiadomość")
+        
+        # Zapisz wiadomość
+        new_message = Message(
+            session_id=session.id,
+            sender_id=current_user.id,
+            content=content,
+            iv=iv,
+            timestamp=datetime.datetime.utcnow(),
+            read=False
+        )
+        db.session.add(new_message)
+        
+        # Odśwież sesję
+        session.last_activity = datetime.datetime.utcnow()
+        
+        # Automatycznie potwierdź klucz jeśli jeszcze nie został potwierdzony
+        if not session.key_acknowledged:
+            session.key_acknowledged = True
+            print("✅ Klucz automatycznie potwierdzony")
+            
+        db.session.commit()
+        print("✅ Wiadomość zapisana:", new_message.id)
+        
+        return jsonify({
+            'status': 'success',
+            'message': {
+                'id': new_message.id,
+                'timestamp': new_message.timestamp.isoformat()
+            }
+        })
     except Exception as e:
+        print(f"❌ Błąd wysyłania wiadomości: {e}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
