@@ -477,57 +477,6 @@ def acknowledge_session_key(session_token):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # === MESSAGES API ===
-@chat_bp.route('/api/message/send', methods=['POST'])
-@login_required
-def send_message():
-    """Wysyła wiadomość"""
-    try:
-        data = request.get_json()
-        required_fields = ['session_token', 'content', 'iv']
-        
-        if not data or not all(field in data for field in required_fields):
-            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
-            
-        session_token = data.get('session_token')
-        content = data.get('content')
-        iv = data.get('iv')
-        
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        if not session:
-            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
-            
-        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
-            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
-            
-        if not session.key_acknowledged:
-            return jsonify({'status': 'error', 'message': 'Klucz nie potwierdzony'}), 400
-            
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
-        
-        # Zapisz wiadomość
-        new_message = Message(
-            session_id=session.id,
-            sender_id=current_user.id,
-            content=content,
-            iv=iv
-        )
-        db.session.add(new_message)
-        
-        # Odśwież sesję
-        session.last_activity = datetime.datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({
-            'status': 'success',
-            'message': {
-                'id': new_message.id,
-                'timestamp': new_message.timestamp.isoformat()
-            }
-        })
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @chat_bp.route('/api/messages/<session_token>')
 @login_required
