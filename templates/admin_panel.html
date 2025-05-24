@@ -6,9 +6,10 @@
     <title>Panel Administratora</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_panel.css') }}">
+    <!-- ZMIANA: Zunifikowany CSS zamiast admin_panel.css -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
-<body class="admin-panel">
+<body class="admin-app">
     <header class="admin-header">
         <div class="admin-logo">Admin Panel</div>
         <nav class="admin-nav">
@@ -19,7 +20,7 @@
         </nav>
     </header>
 
-    <div class="admin-container">
+    <div class="admin-main">
         <aside class="admin-sidebar">
             <div class="admin-menu">
                 <ul>
@@ -31,42 +32,42 @@
         </aside>
 
         <main class="admin-content">
-            <div class="admin-card">
-                <div class="admin-card-header">
+            <div class="card">
+                <div class="card-header">
                     <h3><i class="fa fa-dashboard"></i> Dashboard</h3>
-                    <button id="refresh-stats" class="admin-btn secondary">
+                    <button id="refresh-stats" class="btn btn-secondary btn-sm">
                         <i class="fa fa-refresh"></i> Odśwież statystyki
                     </button>
                 </div>
-                <div class="admin-card-body">
-                    <div class="admin-stats-container">
-                        <div class="admin-stat-card">
-                            <div class="admin-stat-icon">
+                <div class="card-body">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">
                                 <i class="fa fa-users"></i>
                             </div>
-                            <div class="admin-stat-value" id="users-count">-</div>
-                            <div class="admin-stat-label">Użytkownicy</div>
+                            <div class="stat-value" id="users-count">-</div>
+                            <div class="stat-label">Użytkownicy</div>
                         </div>
-                        <div class="admin-stat-card">
-                            <div class="admin-stat-icon">
+                        <div class="stat-card">
+                            <div class="stat-icon">
                                 <i class="fa fa-comments"></i>
                             </div>
-                            <div class="admin-stat-value" id="sessions-count">-</div>
-                            <div class="admin-stat-label">Sesje Czatu</div>
+                            <div class="stat-value" id="sessions-count">-</div>
+                            <div class="stat-label">Sesje Czatu</div>
                         </div>
-                        <div class="admin-stat-card">
-                            <div class="admin-stat-icon">
+                        <div class="stat-card">
+                            <div class="stat-icon">
                                 <i class="fa fa-envelope"></i>
                             </div>
-                            <div class="admin-stat-value" id="messages-count">-</div>
-                            <div class="admin-stat-label">Wiadomości</div>
+                            <div class="stat-value" id="messages-count">-</div>
+                            <div class="stat-label">Wiadomości</div>
                         </div>
-                        <div class="admin-stat-card">
-                            <div class="admin-stat-icon">
+                        <div class="stat-card">
+                            <div class="stat-icon">
                                 <i class="fa fa-user-circle"></i>
                             </div>
-                            <div class="admin-stat-value" id="online-count">-</div>
-                            <div class="admin-stat-label">Użytkownicy Online</div>
+                            <div class="stat-value" id="online-count">-</div>
+                            <div class="stat-label">Użytkownicy Online</div>
                         </div>
                     </div>
                 </div>
@@ -74,7 +75,7 @@
         </main>
     </div>
 
-    <!-- Kontener powiadomień (będzie wypełniony dynamicznie) -->
+    <!-- Kontener powiadomień -->
     <div id="notifications-container"></div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -82,7 +83,6 @@
     <script>
         // Funkcja do ładowania statystyk
         function loadStats() {
-            // Pobierz wszystkie statystyki za jednym razem
             fetch('/api/admin/stats?' + new Date().getTime(), {
                 method: 'GET',
                 headers: {
@@ -102,19 +102,13 @@
             .then(result => {
                 console.log("Pobrane statystyki:", result);
                 
-                // Sprawdź format odpowiedzi
                 if (result.status === 'error') {
                     console.error('API error:', result.message);
-                    document.getElementById('users-count').textContent = '-';
-                    document.getElementById('sessions-count').textContent = '-';
-                    document.getElementById('messages-count').textContent = '-';
-                    document.getElementById('online-count').textContent = '-';
                     showNotification('Błąd podczas pobierania statystyk: ' + result.message, 'error');
                     return;
                 }
                 
                 if (result.status === 'success' && result.data) {
-                    // Aktualizuj wszystkie liczniki
                     const stats = result.data;
                     document.getElementById('users-count').textContent = stats.users_count;
                     document.getElementById('sessions-count').textContent = stats.sessions_count;
@@ -122,102 +116,35 @@
                     document.getElementById('online-count').textContent = stats.online_users_count;
                 } else {
                     console.error('Nieprawidłowy format danych:', result);
-                    document.getElementById('users-count').textContent = '-';
-                    document.getElementById('sessions-count').textContent = '-';
-                    document.getElementById('messages-count').textContent = '-';
-                    document.getElementById('online-count').textContent = '-';
                     showNotification('Błąd: Nieprawidłowy format danych statystyk', 'error');
                 }
             })
             .catch(error => {
                 console.error('Błąd podczas pobierania statystyk:', error);
-                document.getElementById('users-count').textContent = '-';
-                document.getElementById('sessions-count').textContent = '-';
-                document.getElementById('messages-count').textContent = '-';
-                document.getElementById('online-count').textContent = '-';
                 showNotification('Błąd podczas pobierania statystyk: ' + error.message, 'error');
             });
         }
         
-        // Funkcja do wyświetlania powiadomień
+        // Funkcja powiadomień (uproszczona - korzysta z nowych CSS classes)
         function showNotification(message, type = 'info') {
-            // Mapowanie typów na klasy
-            const typeClass = {
-                'success': 'success',
-                'error': 'danger',
-                'info': 'info',
-                'warning': 'warning'
-            };
-            
-            // Wybór ikony
-            const iconClass = {
-                'success': 'check-circle',
-                'error': 'exclamation-circle',
-                'info': 'info-circle',
-                'warning': 'exclamation-triangle'
-            };
-            
-            // Domyślny typ, jeśli podany jest nieprawidłowy
-            const alertClass = typeClass[type] || 'info';
-            const icon = iconClass[type] || 'info-circle';
-            
-            // Sprawdź, czy kontener powiadomień istnieje
-            let notificationsContainer = document.getElementById('notifications-container');
-            
-            if (!notificationsContainer) {
-                // Utwórz kontener, jeśli nie istnieje
-                notificationsContainer = document.createElement('div');
-                notificationsContainer.id = 'notifications-container';
-                notificationsContainer.style.position = 'fixed';
-                notificationsContainer.style.top = '20px';
-                notificationsContainer.style.right = '20px';
-                notificationsContainer.style.zIndex = '9999';
-                document.body.appendChild(notificationsContainer);
-            }
-            
-            // Utwórz powiadomienie
             const notification = document.createElement('div');
-            notification.className = `admin-card`;
-            notification.style.minWidth = '300px';
-            notification.style.marginBottom = '10px';
-            notification.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-            notification.style.backgroundColor = 'var(--admin-bg-medium)';
-            notification.style.padding = '15px';
-            notification.style.borderLeft = `4px solid var(--admin-${alertClass})`;
-            notification.innerHTML = `
-                <button type="button" class="close" style="color: var(--admin-text);">&times;</button>
-                <div>
-                    <i class="fa fa-${icon}" style="color: var(--admin-${alertClass}); margin-right: 8px;"></i>
-                    ${message}
-                </div>
-            `;
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
             
-            // Dodaj powiadomienie do kontenera
-            notificationsContainer.appendChild(notification);
+            const container = document.getElementById('notifications-container') || document.body;
+            container.appendChild(notification);
             
-            // Automatycznie zamknij po 5 sekundach
             setTimeout(() => {
-                notification.style.opacity = '0';
-                notification.style.transition = 'opacity 0.5s';
-                setTimeout(() => {
-                    if (notification.parentNode === notificationsContainer) {
-                        notificationsContainer.removeChild(notification);
-                    }
-                }, 500);
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
             }, 5000);
-            
-            // Obsługa przycisku zamknięcia
-            const closeButton = notification.querySelector('.close');
-            closeButton.addEventListener('click', function() {
-                notification.remove();
-            });
         }
 
-        // Ładowanie statystyk przy załadowaniu strony
+        // Inicjalizacja
         document.addEventListener('DOMContentLoaded', function() {
             loadStats();
             
-            // Obsługa kliknięcia przycisku odświeżenia statystyk
             const refreshStatsButton = document.getElementById('refresh-stats');
             if (refreshStatsButton) {
                 refreshStatsButton.addEventListener('click', function() {
@@ -226,7 +153,7 @@
                 });
             }
             
-            // Odświeżanie statystyk co 30 sekund
+            // Odświeżanie co 30 sekund
             setInterval(loadStats, 30000);
         });
     </script>
