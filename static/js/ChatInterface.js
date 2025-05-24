@@ -2,6 +2,11 @@
  * ChatInterface - POPRAWIONA wersja z automatyczną wymianą kluczy
  * Używa UnifiedCrypto i SocketIOHandler z real-time messaging
  */
+let messageLoadingInProgress = new Set();
+let lastLoadTime = {};
+let switchSessionTimeout = null;
+let lastSwitchTime = {};
+
 class ChatInterface {
   constructor(sessionManager) {
     // Inicjalizacja menedżera sesji
