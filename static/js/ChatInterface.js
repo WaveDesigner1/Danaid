@@ -594,7 +594,7 @@ class ChatInterface {
         if (session && session.other_user) {
           const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
           if (friend) {
-            this.switchToSession(sessionToken); // ZMIENIONE NA switchToSession
+            this.switchToSession(sessionToken);
             
             // Po przełączeniu, wyświetl wiadomość
             setTimeout(() => {
@@ -668,6 +668,33 @@ class ChatInterface {
     messageDiv.className = `message ${isSent ? 'sent' : 'received'}`;
     
     const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.textContent = message.content || '[Pusta wiadomość]';
+    
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'message-info';
+    
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'message-time';
+    timeSpan.textContent = this.formatTime(message.timestamp);
+    
+    infoDiv.appendChild(timeSpan);
+    messageDiv.appendChild(contentDiv);
+    messageDiv.appendChild(infoDiv);
+    
+    // Dodaj style inline
+    messageDiv.style.cssText = `
+      margin-bottom: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      max-width: 70%;
+      word-wrap: break-word;
+      ${isSent ? 
+        'background: #007bff; color: white; margin-left: auto; text-align: right;' : 
+        'background: #f1f1f1; color: black; margin-right: auto; text-align: left;'
+      }
+    `;
+    
     contentDiv.style.cssText = 'margin-bottom: 5px; font-size: 14px;';
     infoDiv.style.cssText = 'font-size: 12px; opacity: 0.7;';
     
@@ -1076,32 +1103,4 @@ document.addEventListener('DOMContentLoaded', () => {
   initChatInterface();
 });
 
-console.log("✅ ChatInterface załadowany z automatyczną wymianą kluczy i real-time messaging");.className = 'message-content';
-    contentDiv.textContent = message.content || '[Pusta wiadomość]';
-    
-    const infoDiv = document.createElement('div');
-    infoDiv.className = 'message-info';
-    
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'message-time';
-    timeSpan.textContent = this.formatTime(message.timestamp);
-    
-    infoDiv.appendChild(timeSpan);
-    messageDiv.appendChild(contentDiv);
-    messageDiv.appendChild(infoDiv);
-    
-    // Dodaj style inline
-    messageDiv.style.cssText = `
-      margin-bottom: 10px;
-      padding: 10px;
-      border-radius: 8px;
-      max-width: 70%;
-      word-wrap: break-word;
-      ${isSent ? 
-        'background: #007bff; color: white; margin-left: auto; text-align: right;' : 
-        'background: #f1f1f1; color: black; margin-right: auto; text-align: left;'
-      }
-    `;
-    
-    contentDiv
-
+console.log("✅ ChatInterface załadowany z automatyczną wymianą kluczy i real-time messaging");
