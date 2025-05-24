@@ -3,136 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <title>Rejestracja - Czat szyfrowany</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #333333;
-            color: #FFFFFF;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        
-        .container {
-            background-color: #444444;
-            border-radius: 8px;
-            padding: 30px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            width: 400px;
-            max-width: 90%;
-        }
-        
-        h1 {
-            text-align: center;
-            color: #FF9800;
-            margin-bottom: 25px;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 500;
-        }
-        
-        input[type="text"],
-        input[type="password"] {
-            width: 100%;
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px solid #555555;
-            background-color: #3a3a3a;
-            color: #FFFFFF;
-            font-size: 16px;
-            box-sizing: border-box;
-        }
-        
-        button {
-            background-color: #FF9800;
-            color: #333333;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            width: 100%;
-            transition: background-color 0.3s, transform 0.2s;
-        }
-        
-        button:hover {
-            background-color: #F57C00;
-            transform: translateY(-2px);
-        }
-        
-        #status {
-            margin-top: 20px;
-            padding: 10px;
-            border-radius: 4px;
-            background-color: #3a3a3a;
-            text-align: center;
-        }
-        
-        .download-button {
-            display: inline-block;
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 15px;
-            text-decoration: none;
-            border-radius: 4px;
-            margin-top: 10px;
-        }
-        
-        .download-button:hover {
-            background-color: #45a049;
-        }
-        
-        .login-link {
-            text-align: center;
-            margin-top: 15px;
-        }
-        
-        .login-link a {
-            color: #FF9800;
-            text-decoration: none;
-        }
-        
-        .login-link a:hover {
-            text-decoration: underline;
-        }
-    </style>
+    <!-- ZMIANA: Zunifikowany CSS zamiast inline styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>Rejestracja</h1>
-        <form id="registerForm">
-            <div class="form-group">
-                <label for="username">Nazwa użytkownika:</label>
-                <input type="text" id="username" name="username" required autocomplete="username">
+    <div class="login-container">
+        <div class="login-card">
+            <h1>Rejestracja</h1>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="username">Nazwa użytkownika:</label>
+                    <input type="text" id="username" name="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">Hasło:</label>
+                    <input type="password" id="password" name="password" required autocomplete="new-password">
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">
+                        Hasło musi zawierać minimum 8 znaków, dużą literę, cyfrę i znak specjalny.
+                    </small>
+                </div>
+                <button type="submit" class="btn btn-primary">Zarejestruj się</button>
+                <div id="status" style="display: none;"></div>
+            </form>
+            <div class="login-link">
+                Masz już konto? <a href="/">Zaloguj się</a>
             </div>
-            <div class="form-group">
-                <label for="password">Hasło:</label>
-                <input type="password" id="password" name="password" required autocomplete="new-password">
-                <small style="display: block; margin-top: 5px; color: #aaa;">
-                    Hasło musi zawierać minimum 8 znaków, dużą literę, cyfrę i znak specjalny.
-                </small>
-            </div>
-            <button type="submit">Zarejestruj się</button>
-            <div id="status" style="display: none;"></div>
-        </form>
-        <div class="login-link">
-            Masz już konto? <a href="/">Zaloguj się</a>
         </div>
     </div>
 
-    <!-- Skrypty -->
-    <script src="{{ url_for('static', filename='js/static_messages.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/register_send.js') }}"></script>
+    <!-- ZAKTUALIZOWANE SKRYPTY -->
+    <!-- ZMIANA: Usunięto static_messages.js i register_send.js -->
+    <!-- ZMIANA: Nowy zunifikowany auth.js (login + register) -->
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 </body>
 </html>
