@@ -19,23 +19,94 @@ class UnifiedCrypto {
   /**
    * Ładuje klucze z pamięci lokalnej
    */
-  async loadKeys() {
+ async loadKeys() {
+    console.log('🔑 loadKeys - START (pobieranie z localStorage + baza)');
+    
+    let privateKeyLoaded = false;
+    let publicKeyLoaded = false;
+    
+    // 1. KLUCZ PRYWATNY Z LOCALSTORAGE
     const privateKeyPEM = localStorage.getItem('private_key_pem');
     if (!privateKeyPEM) {
-      console.warn("Brak klucza prywatnego w localStorage");
-      return false;
+      console.warn("⚠️ Brak klucza prywatnego w localStorage");
+    } else {
+      try {
+        this.privateKey = await this.importPrivateKeyFromPEM(privateKeyPEM);
+        console.log("✅ Klucz prywatny załadowany z localStorage");
+        privateKeyLoaded = true;
+      } catch (error) {
+        console.error('❌ Błąd ładowania klucza prywatnego:', error);
+      }
     }
     
-    try {
-      this.privateKey = await this.importPrivateKeyFromPEM(privateKeyPEM);
-      console.log("Klucz prywatny załadowany pomyślnie");
+    // 2. KLUCZ PUBLICZNY Z BAZY DANYCH
+    const userId = sessionStorage.getItem('user_id');
+    if (!userId) {
+      console.warn("⚠️ Brak user_id w sessionStorage");
+    } else {
+      try {
+        console.log('🌐 Pobieranie klucza publicznego z bazy...');
+        
+        const response = await fetch(`/api/user/${userId}/public_key`, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          credentials: 'same-origin'
+        });
+        
+        console.log('📡 Odpowiedź serwera:', response.status);
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('📦 Dane z serwera:', {
+            hasPublicKey: !!data.public_key,
+            publicKeyLength: data.public_key?.length
+          });
+          
+          if (data.public_key) {
+            this.publicKey = await this.importPublicKeyFromPEM(data.public_key);
+            console.log("✅ Klucz publiczny załadowany z bazy");
+            publicKeyLoaded = true;
+            
+            // Opcjonalnie zapisz w localStorage dla szybszego dostępu
+            localStorage.setItem('user_public_key_pem', data.public_key);
+          } else {
+            console.warn("⚠️ Serwer nie zwrócił klucza publicznego");
+          }
+        } else {
+          console.error(`❌ Błąd HTTP ${response.status} przy pobieraniu klucza publicznego`);
+        }
+      } catch (error) {
+        console.error('❌ Błąd pobierania klucza publicznego z bazy:', error);
+        
+        // Fallback: spróbuj z localStorage
+        const cachedPublicKey = localStorage.getItem('user_public_key_pem');
+        if (cachedPublicKey) {
+          try {
+            this.publicKey = await this.importPublicKeyFromPEM(cachedPublicKey);
+            console.log("✅ Klucz publiczny załadowany z cache localStorage");
+            publicKeyLoaded = true;
+          } catch (cacheError) {
+            console.error('❌ Błąd ładowania z cache:', cacheError);
+          }
+        }
+      }
+    }
+    
+    // 3. PODSUMOWANIE
+    console.log('🎯 Stan kluczy po loadKeys:', {
+      privateKey: privateKeyLoaded,
+      publicKey: publicKeyLoaded,
+      hasPrivateKey: !!this.privateKey,
+      hasPublicKey: !!this.publicKey
+    });
+    
+    if (privateKeyLoaded && publicKeyLoaded) {
+      console.log('✅ Wszystkie klucze załadowane pomyślnie');
       return true;
-    } catch (error) {
-      console.error('Błąd podczas ładowania klucza prywatnego:', error);
-      return false;
+    } else {
+      console.warn('⚠️ Nie wszystkie klucze zostały załadowane');
+      return privateKeyLoaded; // Przynajmniej klucz prywatny
     }
   }
-
   /**
    * Generuje parę kluczy RSA
    */
