@@ -1,4 +1,4 @@
-**
+/**
  * ChatInterface - ZAKTUALIZOWANA wersja interfejsu użytkownika czatu
  * Używa UnifiedCrypto i SocketIOHandler zamiast WebSocketHandler
  */
@@ -854,6 +854,15 @@ class ChatInterface {
   }
 
   /**
+   * Aktualizuje listę znajomych
+   */
+  updateFriendsList(friends) {
+    this.friends = friends || [];
+    this.renderFriendsList();
+    console.log(`👥 Zaktualizowano listę znajomych: ${this.friends.length} znajomych`);
+  }
+
+  /**
    * Inicjalizuje powiadomienia o zaproszeniach do znajomych
    */
   initializeFriendRequestNotifications() {
@@ -940,9 +949,134 @@ class ChatInterface {
    * Pokazuje modal z zaproszeniami do znajomych
    */
   showFriendRequestsModal() {
-    // Implementacja modala z zaproszeniami
     console.log('📨 Pokazuję modal z zaproszeniami');
-    // Tutaj byłaby implementacja modala
+    
+    // Tworzy i wyświetla modal z listą zaproszeń
+    let modal = document.getElementById('friend-requests-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'friend-requests-modal';
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>Zaproszenia do znajomych</h3>
+            <span class="modal-close">&times;</span>
+          </div>
+          <div class="modal-body">
+            <div id="friend-requests-list"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      
+      // Obsługa zamykania modala
+      modal.querySelector('.modal-close').addEventListener('click', () => {
+        modal.style.display = 'none';
+      });
+      
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          modal.style.display = 'none';
+        }
+      });
+    }
+    
+    // Wypełnij listę zaproszeń
+    const requestsList = modal.querySelector('#friend-requests-list');
+    if (requestsList) {
+      if (this.pendingRequests.length === 0) {
+        requestsList.innerHTML = '<p>Brak nowych zaproszeń</p>';
+      } else {
+        requestsList.innerHTML = this.pendingRequests.map(request => `
+          <div class="friend-request-item">
+            <div class="request-info">
+              <strong>${request.sender_username}</strong>
+              <small>${this.formatTime(request.created_at)}</small>
+            </div>
+            <div class="request-actions">
+              <button class="btn btn-accept" onclick="chatInterface.acceptFriendRequest(${request.id})">
+                Akceptuj
+              </button>
+              <button class="btn btn-decline" onclick="chatInterface.declineFriendRequest(${request.id})">
+                Odrzuć
+              </button>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+    
+    modal.style.display = 'block';
+  }
+
+  /**
+   * Akceptuje zaproszenie do znajomych
+   */
+  async acceptFriendRequest(requestId) {
+    try {
+      const response = await fetch(`/api/friends/request/${requestId}/accept`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+      });
+      
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        this.showNotification('Zaproszenie zaakceptowane!', 'success');
+        this.loadPendingRequests();
+        this.loadFriends(); // Odśwież listę znajomych
+        
+        // Zamknij modal jeśli nie ma więcej zaproszeń
+        if (this.pendingRequests.length <= 1) {
+          const modal = document.getElementById('friend-requests-modal');
+          if (modal) modal.style.display = 'none';
+        }
+      } else {
+        this.showNotification(result.message || 'Błąd akceptacji zaproszenia', 'error');
+      }
+    } catch (error) {
+      console.error('❌ Błąd akceptacji zaproszenia:', error);
+      this.showNotification('Błąd połączenia z serwerem', 'error');
+    }
+  }
+
+  /**
+   * Odrzuca zaproszenie do znajomych
+   */
+  async declineFriendRequest(requestId) {
+    try {
+      const response = await fetch(`/api/friends/request/${requestId}/decline`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+      });
+      
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        this.showNotification('Zaproszenie odrzucone', 'info');
+        this.loadPendingRequests();
+        
+        // Zamknij modal jeśli nie ma więcej zaproszeń
+        if (this.pendingRequests.length <= 1) {
+          const modal = document.getElementById('friend-requests-modal');
+          if (modal) modal.style.display = 'none';
+        }
+      } else {
+        this.showNotification(result.message || 'Błąd odrzucenia zaproszenia', 'error');
+      }
+    } catch (error) {
+      console.error('❌ Błąd odrzucenia zaproszenia:', error);
+      this.showNotification('Błąd połączenia z serwerem', 'error');
+    }
   }
 
   /**
