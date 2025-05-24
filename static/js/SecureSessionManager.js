@@ -906,6 +906,9 @@ class SecureSessionManager {
   /**
    * Obsługuje wylogowanie użytkownika - ZAKTUALIZOWANA
    */
+  /**
+   * Obsługuje wylogowanie użytkownika - ZAKTUALIZOWANA
+   */
   async logout() {
     try {
       console.log('🚪 Rozpoczynam wylogowanie...');
@@ -951,6 +954,8 @@ class SecureSessionManager {
       window.location.href = '/logout';
     }
   }
+} // ← DODAJ TO ZAMKNIĘCIE KLASY!
+
 // Inicjalizacja globalnego SessionManager - POPRAWIONA z obsługą błędów
 try {
   window.sessionManager = new SecureSessionManager();
