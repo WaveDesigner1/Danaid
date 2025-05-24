@@ -2,6 +2,9 @@
  * SecureSessionManager - POPRAWIONA wersja z automatyczną wymianą kluczy
  * Używa UnifiedCrypto i SocketIOHandler z real-time messaging
  */
+let messageLoadingInProgress = new Set();
+let fetchingInProgress = new Set(); // DODAJ TO
+
 class SecureSessionManager {
   constructor() {
     this.activeSessions = [];
@@ -759,69 +762,90 @@ class SecureSessionManager {
    * Pobieranie wiadomości z serwera z deszyfrowaniem
    */
   async fetchMessagesFromServer(sessionToken) {
-    try {
-      console.log('🌐 Pobieranie wiadomości z serwera dla:', sessionToken);
-      
-      const response = await fetch(`/api/messages/${sessionToken}`, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'same-origin'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.status !== 'success') {
-        throw new Error(data.message || 'Błąd pobierania wiadomości');
-      }
-      
-      // Odszyfruj wiadomości jeśli są zaszyfrowane
-      const decryptedMessages = [];
-      
-      for (const message of data.messages || []) {
-        try {
-          if (message.content && message.iv && window.unifiedCrypto) {
-            const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
-            if (sessionKeyBase64) {
-              const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
-              const decryptedContent = await window.unifiedCrypto.decryptMessage(sessionKey, {
-                data: message.content,
-                iv: message.iv
-              });
-              
-              message.content = decryptedContent;
-            }
-          }
-          
-          decryptedMessages.push(message);
-        } catch (decryptError) {
-          console.error('❌ Błąd deszyfrowania wiadomości:', decryptError);
-          decryptedMessages.push({
-            ...message,
-            content: '[Nie można odszyfrować wiadomości]',
-            decryption_error: true
-          });
-        }
-      }
-      
-      console.log(`✅ Pobrano i odszyfrowano ${decryptedMessages.length} wiadomości`);
-      
-      return {
-        status: 'success',
-        messages: decryptedMessages
-      };
-      
-    } catch (error) {
-      console.error('❌ Błąd pobierania wiadomości z serwera:', error);
+  try {
+    // ZABEZPIECZENIE: Sprawdź czy już pobieramy dla tej sesji
+    if (fetchingInProgress.has(sessionToken)) {
+      console.log('⚠️ Pobieranie wiadomości już w toku dla:', sessionToken?.substring(0, 10) + '...');
       return {
         status: 'error',
-        message: error.message,
+        message: 'Pobieranie już w toku',
         messages: []
       };
     }
+
+    // Dodaj do listy w toku
+    fetchingInProgress.add(sessionToken);
+    
+    console.log('🌐 Pobieranie wiadomości z serwera dla:', sessionToken?.substring(0, 10) + '...');
+    
+    const response = await fetch(`/api/messages/${sessionToken}`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.status !== 'success') {
+      throw new Error(data.message || 'Błąd pobierania wiadomości');
+    }
+    
+    // Odszyfruj wiadomości jeśli są zaszyfrowane
+    const decryptedMessages = [];
+    
+    for (const message of data.messages || []) {
+      try {
+        if (message.content && message.iv && window.unifiedCrypto) {
+          const sessionKeyBase64 = window.unifiedCrypto.getSessionKey(sessionToken);
+          if (sessionKeyBase64) {
+            const sessionKey = await window.unifiedCrypto.importSessionKey(sessionKeyBase64);
+            const decryptedContent = await window.unifiedCrypto.decryptMessage(sessionKey, {
+              data: message.content,
+              iv: message.iv
+            });
+            
+            message.content = decryptedContent;
+          }
+        }
+        
+        decryptedMessages.push(message);
+      } catch (decryptError) {
+        console.error('❌ Błąd deszyfrowania wiadomości:', decryptError);
+        decryptedMessages.push({
+          ...message,
+          content: '[Nie można odszyfrować wiadomości]',
+          decryption_error: true
+        });
+      }
+    }
+    
+    // Zapisz wiadomości lokalnie (zapobiegaj duplikatom)
+    for (const message of decryptedMessages) {
+      await this.storeMessage(sessionToken, message);
+    }
+    
+    console.log(`✅ Pobrano i odszyfrowano ${decryptedMessages.length} wiadomości`);
+    
+    return {
+      status: 'success',
+      messages: decryptedMessages
+    };
+    
+  } catch (error) {
+    console.error('❌ Błąd pobierania wiadomości z serwera:', error);
+    return {
+      status: 'error',
+      message: error.message,
+      messages: []
+    };
+  } finally {
+    // WAŻNE: Zawsze usuń z listy w toku
+    fetchingInProgress.delete(sessionToken);
   }
+}
 
   /**
    * Pobieranie listy znajomych
