@@ -620,3 +620,98 @@ def get_user_info(user_id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# === DODAJ TE ENDPOINTY NA KOŃCU chat.py ===
+
+@chat_bp.route('/api/messages/<session_token>/clear', methods=['DELETE'])
+@login_required
+def clear_session_messages(session_token):
+    """Usuwa wszystkie wiadomości z sesji"""
+    try:
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        
+        if not session:
+            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Access denied'}), 403
+        
+        # Delete all messages in this session
+        deleted_count = Message.query.filter_by(session_id=session.id).delete()
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success', 
+            'message': f'Deleted {deleted_count} messages',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@chat_bp.route('/api/message/<int:message_id>', methods=['DELETE'])
+@login_required
+def delete_single_message(message_id):
+    """Usuwa pojedynczą wiadomość"""
+    try:
+        message = Message.query.get(message_id)
+        
+        if not message:
+            return jsonify({'status': 'error', 'message': 'Message not found'}), 404
+            
+        # Check if user has access to this message
+        session = ChatSession.query.get(message.session_id)
+        if not session or (session.initiator_id != current_user.id and session.recipient_id != current_user.id):
+            return jsonify({'status': 'error', 'message': 'Access denied'}), 403
+            
+        # Only sender can delete their own messages
+        if message.sender_id != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Can only delete own messages'}), 403
+        
+        db.session.delete(message)
+        db.session.commit()
+        
+        return jsonify({'status': 'success', 'message': 'Message deleted'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@chat_bp.route('/api/sessions/<session_token>/stats')
+@login_required
+def get_session_stats(session_token):
+    """Pobiera statystyki sesji"""
+    try:
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        
+        if not session:
+            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Access denied'}), 403
+        
+        # Count messages
+        total_messages = Message.query.filter_by(session_id=session.id).count()
+        my_messages = Message.query.filter_by(session_id=session.id, sender_id=current_user.id).count()
+        other_messages = total_messages - my_messages
+        
+        # Get first and last message timestamps
+        first_message = Message.query.filter_by(session_id=session.id).order_by(Message.timestamp).first()
+        last_message = Message.query.filter_by(session_id=session.id).order_by(Message.timestamp.desc()).first()
+        
+        return jsonify({
+            'status': 'success',
+            'stats': {
+                'total_messages': total_messages,
+                'my_messages': my_messages,
+                'other_messages': other_messages,
+                'first_message': first_message.timestamp.isoformat() if first_message else None,
+                'last_message': last_message.timestamp.isoformat() if last_message else None,
+                'session_created': session.created_at.isoformat(),
+                'last_activity': session.last_activity.isoformat()
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
