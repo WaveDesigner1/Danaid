@@ -1,6 +1,6 @@
 /**
- * chat.js - ZOPTYMALIZOWANY Chat Manager - REAL-TIME ONLY
- * NAPRAWIONO: Echo filter, optimistic updates, notification sound
+ * chat.js - KOMPLETNY Chat Manager z naprawionym KEY EXCHANGE
+ * NAPRAWIONO: Echo filter, key exchange logic, real-time messaging
  */
 class ChatManager {
   constructor() {
@@ -273,7 +273,6 @@ class ChatManager {
     console.log("📨 Real-time message received:", data.message.id, "from:", data.message.sender_id);
     
     // === POPRAWIONY ECHO FILTER ===
-    // Konwertuj oba ID do string dla porównania
     const messageSenderId = String(data.message.sender_id);
     const currentUserId = String(this.user.id);
     
@@ -297,60 +296,44 @@ class ChatManager {
       this._updateUnreadCount(data.session_token);
     }
     
-    // Play notification sound (bez 404 error)
+    // Play notification sound (silent mode)
     this._playNotificationSoundSafe();
   }
 
-  // === BEZPIECZNY NOTIFICATION SOUND ===
   _playNotificationSoundSafe() {
-    // Usuń błąd 404 - brak notification.mp3
     console.log("🔔 Notification (silent mode - no sound file)");
-    // Opcjonalnie: użyj systemowego dźwięku
-    // if (window.Audio) {
-    //   try {
-    //     const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1');
-    //     audio.volume = 0.1;
-    //     audio.play().catch(() => {});
-    //   } catch (e) {}
-    // }
   }
 
   // === IMPROVED DECRYPTION FUNCTIONS ===
   _needsDecryption(message) {
-    // Brak IV = na pewno nie zaszyfrowane
     if (!message.iv) {
       console.log("🔍 No IV - plain text");
       return false;
     }
     
-    // Bardzo krótkie (mniej niż 20 znaków) = prawdopodobnie plain text
     if (message.content.length < 20) {
       console.log("🔍 Very short message - probably plain text");
       return false;
     }
     
-    // Sprawdź czy to wygląda jak base64 (typowe dla AES-GCM output)
     const base64Pattern = /^[A-Za-z0-9+/]+={0,2}$/;
     if (base64Pattern.test(message.content)) {
       console.log("🔐 Base64 pattern detected - needs decryption");
       return true;
     }
     
-    // Sprawdź czy to wygląda jak hex (alternatywny format)
     const hexPattern = /^[a-fA-F0-9]+$/;
     if (hexPattern.test(message.content) && message.content.length > 32) {
       console.log("🔐 Hex pattern detected - needs decryption");
       return true;
     }
     
-    // Sprawdź czy ma nietypowe znaki dla normalnego tekstu
     const hasUnusualChars = /[^\w\s\.\,\!\?\-\(\)\[\]\"\']+/.test(message.content);
     if (hasUnusualChars && message.content.length > 30) {
       console.log("🔐 Unusual characters detected - might be encrypted");
       return true;
     }
     
-    // Jeśli nic nie pasuje, prawdopodobnie plain text
     console.log("📝 Looks like plain text");
     return false;
   }
@@ -418,8 +401,6 @@ class ChatManager {
             console.log("✅ Message decrypted successfully:", decryptedContent.slice(0, 30) + "...");
           } catch (decryptError) {
             console.error("⚠️ Decryption failed:", decryptError.message);
-            
-            // Try debug decryption for more info
             processedMessage.content = await this._debugDecryption(sessionToken, message);
           }
         } else {
@@ -441,8 +422,6 @@ class ChatManager {
       
     } catch (error) {
       console.error("❌ Message processing error:", error);
-      
-      // Store error message
       const errorMessage = { ...message, content: '[Processing failed: ' + error.message + ']' };
       await this._storeMessage(sessionToken, errorMessage);
     }
@@ -464,9 +443,205 @@ class ChatManager {
     this._renderFriendsList();
   }
 
-  // === POLLING FALLBACK (INVISIBLE BACKUP) ===
+  // === NAPRAWIONY KEY EXCHANGE LOGIC ===
+  async _ensureSessionKey() {
+    if (!this.currentSession) {
+      throw new Error('No current session');
+    }
+    
+    const sessionToken = this.currentSession.token;
+    
+    // Debouncing - jeśli już trwa exchange dla tej sesji, poczekaj
+    if (this.keyExchangePromises.has(sessionToken)) {
+      console.log("🔄 Key exchange already in progress, waiting...");
+      return await this.keyExchangePromises.get(sessionToken);
+    }
+    
+    // Check if we already have session key
+    if (await this._getSessionKeyOptimized(sessionToken)) {
+      console.log("✅ Session key already exists");
+      return;
+    }
+    
+    // === NOWA LOGIKA: SPRAWDŹ CZY JESTEŚ INITIATOREM ===
+    const isInitiator = (parseInt(this.user.id) === this.currentSession.initiator_id);
+    console.log(`🔑 Key exchange role: ${isInitiator ? 'INITIATOR' : 'RECIPIENT'}`);
+    
+    // Start key exchange
+    const exchangePromise = isInitiator ? 
+      this._performKeyGeneration(sessionToken) : 
+      this._performKeyRetrieval(sessionToken);
+      
+    this.keyExchangePromises.set(sessionToken, exchangePromise);
+    
+    try {
+      await exchangePromise;
+      console.log("✅ Key exchange completed");
+    } finally {
+      // Clean up promise
+      this.keyExchangePromises.delete(sessionToken);
+    }
+  }
+
+  async _performKeyGeneration(sessionToken) {
+    console.log("🔑 INITIATOR: Generating NEW session key...");
+    
+    try {
+      // 1. Generate AES session key
+      const sessionKey = await window.cryptoManager.generateSessionKey();
+      const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
+      
+      // 2. Store locally FIRST
+      window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
+      console.log("✅ Session key stored locally");
+      
+      // 3. Get recipient's public key
+      const publicKey = await this._getRecipientPublicKey(this.currentSession.other_user.user_id);
+      
+      // 4. Encrypt session key with recipient's RSA public key
+      const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(publicKey, sessionKey);
+      console.log("🔐 Session key encrypted for recipient");
+      
+      // 5. Send encrypted key to server
+      const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ encrypted_key: encryptedSessionKey })
+      });
+      
+      if (!response.ok) {
+        window.cryptoManager.removeSessionKey(sessionToken);
+        throw new Error(`Key exchange failed: ${response.status}`);
+      }
+      
+      console.log("✅ INITIATOR: Session key sent to server");
+      
+    } catch (error) {
+      window.cryptoManager.removeSessionKey(sessionToken);
+      throw new Error(`Session key generation failed: ${error.message}`);
+    }
+  }
+
+  async _performKeyRetrieval(sessionToken) {
+    console.log("🔓 RECIPIENT: Retrieving session key...");
+    
+    try {
+      // 1. Try to get encrypted key from server
+      let encryptedKey = null;
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      while (!encryptedKey && attempts < maxAttempts) {
+        attempts++;
+        console.log(`🔍 Attempt ${attempts}: Checking for session key...`);
+        
+        const response = await fetch(`/api/session/${sessionToken}/get_key`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.status === 'success' && data.encrypted_session_key) {
+            encryptedKey = data.encrypted_session_key;
+            console.log("✅ Found encrypted session key from initiator");
+            break;
+          }
+        }
+        
+        // Wait 1 second before retry
+        if (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      
+      if (!encryptedKey) {
+        throw new Error('Timeout: No session key from initiator');
+      }
+      
+      // 2. Decrypt with our private RSA key
+      console.log("🔓 Decrypting session key with private key...");
+      const sessionKeyBase64 = await window.cryptoManager.decryptSessionKey(encryptedKey);
+      
+      // 3. Store decrypted session key locally
+      window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
+      console.log("✅ RECIPIENT: Session key decrypted and stored");
+      
+      // 4. Acknowledge receipt
+      const ackResponse = await fetch(`/api/session/${sessionToken}/exchange_key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ encrypted_key: 'ACK' }) // Just acknowledge
+      });
+      
+      if (ackResponse.ok) {
+        console.log("✅ RECIPIENT: Key receipt acknowledged");
+      }
+      
+    } catch (error) {
+      throw new Error(`Session key retrieval failed: ${error.message}`);
+    }
+  }
+
+  async _getSessionKeyOptimized(sessionToken) {
+    // Cache check
+    const cacheKey = `session_key_${sessionToken}`;
+    if (this.apiCache.has(cacheKey)) {
+      const cached = this.apiCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < 300000) { // 5 min cache
+        return cached.key;
+      }
+    }
+    
+    // Get from crypto manager
+    const sessionKeyBase64 = window.cryptoManager.getSessionKey(sessionToken);
+    if (sessionKeyBase64) {
+      try {
+        const sessionKey = await window.cryptoManager.importSessionKey(sessionKeyBase64);
+        
+        // Cache result
+        this.apiCache.set(cacheKey, {
+          key: sessionKey,
+          timestamp: Date.now()
+        });
+        
+        return sessionKey;
+      } catch (error) {
+        console.error("Session key import error:", error);
+        return null;
+      }
+    }
+    
+    return null;
+  }
+
+  async _getRecipientPublicKey(userId) {
+    const cacheKey = `public_key_${userId}`;
+    
+    if (this.apiCache.has(cacheKey)) {
+      const cached = this.apiCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < 3600000) { // 1 hour cache
+        return cached.key;
+      }
+    }
+    
+    const response = await fetch(`/api/user/${userId}/public_key`);
+    if (!response.ok) {
+      throw new Error(`Failed to get public key: ${response.status}`);
+    }
+    
+    const keyData = await response.json();
+    const publicKey = await window.cryptoManager.importPublicKeyFromPEM(keyData.public_key);
+    
+    // Cache result
+    this.apiCache.set(cacheKey, {
+      key: publicKey,
+      timestamp: Date.now()
+    });
+    
+    return publicKey;
+  }
+
+  // === POLLING FALLBACK ===
   _enablePollingFallback() {
-    if (this.pollingInterval) return; // Already enabled
+    if (this.pollingInterval) return;
     
     console.log("🔄 Enabling invisible polling backup (Socket.IO failed)...");
     
@@ -488,7 +663,7 @@ class ChatManager {
             });
             
             lastMessageId = data.last_id;
-            consecutiveErrors = 0; // Reset error counter
+            consecutiveErrors = 0;
           }
         } else {
           throw new Error(`HTTP ${response.status}`);
@@ -497,24 +672,21 @@ class ChatManager {
         consecutiveErrors++;
         console.error(`Polling error (${consecutiveErrors}):`, error.message);
         
-        // If too many errors, try to reinit Socket.IO
         if (consecutiveErrors >= 5) {
           console.log("🔄 Too many polling errors - trying Socket.IO reconnect");
           this._initSocket();
           consecutiveErrors = 0;
         }
       }
-    }, 3000); // Poll every 3 seconds
+    }, 3000);
   }
 
-  // === EVENT HANDLERS (CLEANED - NO REFRESH BUTTON) ===
+  // === EVENT HANDLERS ===
   _initEvents() {
     if (!this.elements.sendButton || !this.elements.messageInput) return;
     
-    // Send message
     this.elements.sendButton.addEventListener('click', () => this.sendMessage());
     
-    // Enter to send
     this.elements.messageInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -522,23 +694,19 @@ class ChatManager {
       }
     });
     
-    // Add friend
     this.elements.addFriendBtn?.addEventListener('click', () => {
       this._showAddFriendModal();
     });
     
-    // Logout
     this.elements.logoutBtn?.addEventListener('click', (e) => {
       e.preventDefault();
       this.logout();
     });
     
-    // Friend requests notification
     this.elements.requestBadge?.parentElement?.addEventListener('click', () => {
       this._showFriendRequestsModal();
     });
     
-    // Modal events
     this._initModalEvents();
   }
 
@@ -554,18 +722,15 @@ class ChatManager {
   }
 
   _initModalEvents() {
-    // Add friend modal
     const sendRequestBtn = document.getElementById('send-friend-request-btn');
     sendRequestBtn?.addEventListener('click', () => this._sendFriendRequest());
     
-    // Close modals
     document.querySelectorAll('.modal .close, .modal-close').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.target.closest('.modal').style.display = 'none';
       });
     });
     
-    // Click outside to close
     document.addEventListener('click', (e) => {
       if (e.target.classList.contains('modal')) {
         e.target.style.display = 'none';
@@ -582,7 +747,6 @@ class ChatManager {
         this._loadPendingRequests()
       ]);
       
-      // Select first session if available
       if (this.sessions.length > 0) {
         await this._selectSession(this.sessions[0]);
       }
@@ -679,7 +843,7 @@ class ChatManager {
     const friendElement = document.querySelector(`[data-user-id="${friend.user_id}"]`);
     friendElement?.classList.add('active');
     
-    // Update header with status AND show clear button
+    // Update header
     if (this.elements.chatHeader) {
       this.elements.chatHeader.innerHTML = `
         <div class="chat-header-info">
@@ -690,17 +854,16 @@ class ChatManager {
           <span id="session-status" class="session-status">Connecting...</span>
         </div>
         <div class="chat-header-actions">
-          <button id="clear-conversation-btn" class="btn btn-warning btn-sm visible" title="Clear all messages">
+          <button id="clear-conversation-btn" class="btn btn-warning btn-sm" title="Clear all messages">
             <i class="fas fa-trash"></i> Clear
           </button>
         </div>
       `;
       
-      // Re-attach clear button handler
       this._initClearButton();
     }
     
-    // Initialize session
+    // Initialize session - tutaj dzieje się automatyczna wymiana kluczy!
     await this._initSession(friend.user_id);
   }
 
@@ -740,7 +903,7 @@ class ChatManager {
         // Load messages first, then try key exchange
         await this._loadMessages(data.session.token);
         
-        // Try key exchange (non-blocking)
+        // Try key exchange (non-blocking) - TUTAJ DZIEJE SIĘ MAGIA!
         this._ensureSessionKey()
           .then(() => this._updateSessionStatus('ready'))
           .catch(() => this._updateSessionStatus('pending'));
@@ -763,134 +926,6 @@ class ChatManager {
     if (friend) {
       await this._selectFriend(friend);
     }
-  }
-
-  // === SESSION KEY MANAGEMENT ===
-  async _getSessionKeyOptimized(sessionToken) {
-    // Cache check
-    const cacheKey = `session_key_${sessionToken}`;
-    if (this.apiCache.has(cacheKey)) {
-      const cached = this.apiCache.get(cacheKey);
-      if (Date.now() - cached.timestamp < 300000) { // 5 min cache
-        return cached.key;
-      }
-    }
-    
-    // Get from crypto manager
-    const sessionKeyBase64 = window.cryptoManager.getSessionKey(sessionToken);
-    if (sessionKeyBase64) {
-      try {
-        const sessionKey = await window.cryptoManager.importSessionKey(sessionKeyBase64);
-        
-        // Cache result
-        this.apiCache.set(cacheKey, {
-          key: sessionKey,
-          timestamp: Date.now()
-        });
-        
-        return sessionKey;
-      } catch (error) {
-        console.error("Session key import error:", error);
-        return null;
-      }
-    }
-    
-    return null;
-  }
-
-  async _ensureSessionKey() {
-    if (!this.currentSession) {
-      throw new Error('No current session');
-    }
-    
-    const sessionToken = this.currentSession.token;
-    
-    // Debouncing - jeśli już trwa exchange dla tej sesji, poczekaj
-    if (this.keyExchangePromises.has(sessionToken)) {
-      console.log("🔄 Key exchange already in progress, waiting...");
-      return await this.keyExchangePromises.get(sessionToken);
-    }
-    
-    // Check if we already have session key
-    if (await this._getSessionKeyOptimized(sessionToken)) {
-      console.log("✅ Session key already exists");
-      return;
-    }
-    
-    // Start key exchange
-    const exchangePromise = this._performKeyExchange(sessionToken);
-    this.keyExchangePromises.set(sessionToken, exchangePromise);
-    
-    try {
-      await exchangePromise;
-      console.log("✅ Key exchange completed");
-    } finally {
-      // Clean up promise
-      this.keyExchangePromises.delete(sessionToken);
-    }
-  }
-
-  async _performKeyExchange(sessionToken) {
-    console.log("🔑 Generating NEW session key...");
-    
-    try {
-      const sessionKey = await window.cryptoManager.generateSessionKey();
-      const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
-      
-      // Store locally first (CRITICAL)
-      window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
-      
-      // Get recipient's public key (with cache)
-      const publicKey = await this._getRecipientPublicKey(this.currentSession.other_user.user_id);
-      
-      // Encrypt and send session key
-      const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(publicKey, sessionKey);
-      
-      const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ encrypted_key: encryptedSessionKey })
-      });
-      
-      if (!response.ok) {
-        window.cryptoManager.removeSessionKey(sessionToken);
-        throw new Error(`Key exchange failed: ${response.status}`);
-      }
-      
-      // Clear cache for this session key
-      this.apiCache.delete(`session_key_${sessionToken}`);
-      
-    } catch (error) {
-      window.cryptoManager.removeSessionKey(sessionToken);
-      throw new Error(`Session key setup failed: ${error.message}`);
-    }
-  }
-
-  async _getRecipientPublicKey(userId) {
-    const cacheKey = `public_key_${userId}`;
-    
-    if (this.apiCache.has(cacheKey)) {
-      const cached = this.apiCache.get(cacheKey);
-      if (Date.now() - cached.timestamp < 3600000) { // 1 hour cache
-        return cached.key;
-      }
-    }
-    
-    const response = await fetch(`/api/user/${userId}/public_key`);
-    if (!response.ok) {
-      throw new Error(`Failed to get public key: ${response.status}`);
-    }
-    
-    const keyData = await response.json();
-    const publicKey = await window.cryptoManager.importPublicKeyFromPEM(keyData.public_key);
-    
-    // Cache result
-    this.apiCache.set(cacheKey, {
-      key: publicKey,
-      timestamp: Date.now()
-    });
-    
-    return publicKey;
   }
 
   // === MESSAGE LOADING & DISPLAY ===
@@ -1036,10 +1071,7 @@ class ChatManager {
         this.elements.messageInput.value = '';
         
         // === USUNIĘTE: OPTIMISTIC UI UPDATE ===
-        // Nie dodawaj wiadomości lokalnie - pozwól Socket.IO obsłużyć
-        // this._addMessageToUI(newMessage); // <-- USUNIĘTE
-        // await this._storeMessage(this.currentSession.token, newMessage); // <-- USUNIĘTE
-        
+        // Pozwól Socket.IO obsłużyć wszystkie wiadomości
         console.log('✅ Message sent - waiting for real-time confirmation');
       } else {
         this._showNotification(data.message || 'Send failed', 'error');
@@ -1164,7 +1196,6 @@ class ChatManager {
   }
 
   _showFriendRequestsModal() {
-    // Create or show friend requests modal
     let modal = document.getElementById('friend-requests-modal');
     if (!modal) {
       modal = this._createFriendRequestsModal();
@@ -1191,7 +1222,6 @@ class ChatManager {
       </div>
     `;
     
-    // Add event listeners
     modal.querySelector('.modal-close').addEventListener('click', () => {
       modal.style.display = 'none';
     });
@@ -1275,14 +1305,12 @@ class ChatManager {
     const token = sessionToken || this.currentSession?.token;
     if (!token) return;
     
-    // Get current friend name for better UX
     const currentFriend = this.currentSession?.other_user?.username || 'this contact';
     
     if (!confirm(`Delete all messages with ${currentFriend}?\n\nThis will permanently delete the conversation from both devices and cannot be undone.`)) {
       return;
     }
     
-    // Show loading state
     const clearBtn = document.getElementById('clear-conversation-btn');
     const originalText = clearBtn?.innerHTML;
     if (clearBtn) {
@@ -1291,7 +1319,6 @@ class ChatManager {
     }
     
     try {
-      // 1. Clear from server
       const response = await fetch(`/api/messages/${token}/clear`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' }
@@ -1304,10 +1331,10 @@ class ChatManager {
       
       const result = await response.json();
       
-      // 2. Clear from local storage
+      // Clear from local storage
       this.messages.delete(token);
       
-      // 3. Clear from IndexedDB
+      // Clear from IndexedDB
       if (this.db) {
         const tx = this.db.transaction(['messages'], 'readwrite');
         const store = tx.objectStore('messages');
@@ -1329,10 +1356,10 @@ class ChatManager {
         });
       }
       
-      // 4. Clear API cache for this session
+      // Clear API cache for this session
       this.apiCache.delete(`session_key_${token}`);
       
-      // 5. Clear UI if it's current session
+      // Clear UI if it's current session
       if (token === this.currentSession?.token && this.elements.messagesContainer) {
         this.elements.messagesContainer.innerHTML = `
           <div style="text-align: center; padding: 40px; color: var(--text-muted);">
@@ -1349,7 +1376,6 @@ class ChatManager {
       console.error("Clear conversation error:", error);
       this._showNotification(`❌ Failed to clear conversation: ${error.message}`, 'error');
     } finally {
-      // Restore button state
       if (clearBtn) {
         clearBtn.innerHTML = originalText || '<i class="fas fa-trash"></i> Clear';
         clearBtn.disabled = false;
@@ -1362,13 +1388,11 @@ class ChatManager {
     try {
       console.log('🚪 Real-time logout process...');
       
-      // Clear all caches and processing queues
       this.apiCache.clear();
       this.keyExchangePromises.clear();
       this.messageProcessingQueue = [];
       console.log('✅ All caches cleared');
       
-      // Close sessions (with timeout)
       if (this.sessions?.length > 0) {
         const closePromises = this.sessions.map(session => 
           Promise.race([
@@ -1377,14 +1401,13 @@ class ChatManager {
               headers: { 'Content-Type': 'application/json' }
             }),
             new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
-          ]).catch(() => {}) // Non-critical
+          ]).catch(() => {})
         );
         
         await Promise.allSettled(closePromises);
         console.log(`✅ Closed ${this.sessions.length} sessions`);
       }
       
-      // Clear crypto + disconnect socket
       if (window.cryptoManager) {
         window.cryptoManager.clearAllKeys();
         console.log('✅ Crypto keys cleared');
@@ -1395,17 +1418,14 @@ class ChatManager {
         console.log('✅ Socket disconnected');
       }
       
-      // Clear polling interval
       if (this.pollingInterval) {
         clearInterval(this.pollingInterval);
         this.pollingInterval = null;
       }
       
-      // Clear sessionStorage only (preserve messages in IndexedDB for next login)
       sessionStorage.clear();
       console.log('✅ Session storage cleared');
       
-      // Clear memory
       Object.assign(this, {
         currentSession: null,
         friends: [],
@@ -1413,46 +1433,17 @@ class ChatManager {
         messages: new Map()
       });
       
-      // Close database connection
       if (this.db) {
         this.db.close();
         console.log('✅ Database connection closed');
       }
       
-      // Redirect
       window.location.href = '/logout';
       
     } catch (error) {
       console.error("Logout error:", error);
-      // Force redirect even on error
       window.location.href = '/logout';
     }
-  }
-
-  // === CLEANUP ON DESTROY ===
-  destroy() {
-    // Clear polling interval
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-    }
-    
-    // Clear all caches
-    this.apiCache.clear();
-    this.keyExchangePromises.clear();
-    this.messageProcessingQueue = [];
-    
-    // Disconnect socket
-    if (this.socket) {
-      this.socket.disconnect();
-    }
-    
-    // Close database
-    if (this.db) {
-      this.db.close();
-    }
-    
-    console.log("🧹 Real-time ChatManager destroyed");
   }
 
   // === UTILITIES ===
@@ -1484,7 +1475,6 @@ class ChatManager {
   }
 
   _playNotificationSound() {
-    // Używaj bezpiecznej wersji
     this._playNotificationSoundSafe();
   }
 
@@ -1511,7 +1501,6 @@ class ChatManager {
   }
 
   _showNotification(message, type = 'info', duration = 5000) {
-    // Prevent notification spam
     const existingNotifications = document.querySelectorAll('.notification');
     if (existingNotifications.length > 3) {
       existingNotifications[0].remove();
@@ -1530,7 +1519,7 @@ class ChatManager {
     }, duration);
   }
 
-  // === PERFORMANCE MONITORING ===
+  // === DEBUG & PERFORMANCE ===
   getPerformanceStats() {
     return {
       cacheSize: this.apiCache.size,
@@ -1546,7 +1535,6 @@ class ChatManager {
     };
   }
 
-  // === DEBUG HELPER ===
   debugInfo() {
     console.log("=== CHAT MANAGER DEBUG INFO ===");
     console.log("Performance Stats:", this.getPerformanceStats());
@@ -1556,7 +1544,6 @@ class ChatManager {
     console.log("Active Key Exchanges:", Array.from(this.keyExchangePromises.keys()).map(k => k.slice(0, 8) + "..."));
   }
 
-  // === TEST FUNCTION (for console debugging) ===
   async testDecryption(sessionToken, messageContent, iv) {
     console.log("=== MANUAL DECRYPTION TEST ===");
     
@@ -1568,11 +1555,30 @@ class ChatManager {
     };
     
     console.log("Testing message:", fakeMessage);
-    
     const result = await this._debugDecryption(sessionToken, fakeMessage);
     console.log("Final result:", result);
-    
     return result;
+  }
+
+  destroy() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+    
+    this.apiCache.clear();
+    this.keyExchangePromises.clear();
+    this.messageProcessingQueue = [];
+    
+    if (this.socket) {
+      this.socket.disconnect();
+    }
+    
+    if (this.db) {
+      this.db.close();
+    }
+    
+    console.log("🧹 Real-time ChatManager destroyed");
   }
 }
 
@@ -1580,22 +1586,19 @@ class ChatManager {
 window.addEventListener('unhandledrejection', (event) => {
   console.error('Unhandled promise rejection:', event.reason);
   
-  // Don't show UI notifications for crypto errors during logout
   if (event.reason?.message?.includes('session key') || 
       event.reason?.message?.includes('crypto') ||
       window.location.href.includes('logout')) {
     return;
   }
   
-  // Show notification for other errors
   if (window.chatManager) {
     window.chatManager._showNotification('⚠️ Connection error occurred', 'warning', 3000);
   }
 });
 
-// === KEYBOARD SHORTCUTS (CLEANED - NO REFRESH) ===
+// === KEYBOARD SHORTCUTS ===
 document.addEventListener('keydown', (e) => {
-  // Ctrl+Shift+Delete - Clear conversation
   if (e.ctrlKey && e.shiftKey && e.key === 'Delete') {
     if (window.chatManager && window.chatManager.currentSession) {
       e.preventDefault();
@@ -1603,7 +1606,6 @@ document.addEventListener('keydown', (e) => {
     }
   }
   
-  // Ctrl+Shift+D - Debug info
   if (e.ctrlKey && e.shiftKey && e.key === 'D') {
     if (window.chatManager) {
       e.preventDefault();
@@ -1617,7 +1619,7 @@ if (typeof PerformanceObserver !== 'undefined') {
   const observer = new PerformanceObserver((list) => {
     const entries = list.getEntries();
     entries.forEach((entry) => {
-      if (entry.duration > 100) { // Log slow operations
+      if (entry.duration > 100) {
         console.warn(`Slow operation detected: ${entry.name} took ${entry.duration.toFixed(2)}ms`);
       }
     });
