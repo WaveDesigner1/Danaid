@@ -1,6 +1,6 @@
 """
 chat.py - Zunifikowany moduł czatu z naprawioną funkcjonalnością real-time
-NAPRAWIONO: Socket.IO integration, friend requests, message broadcasting
+NAPRAWIONO: Socket.IO integration, friend requests, message broadcasting, KEY EXCHANGE
 """
 from flask import Blueprint, render_template, request, jsonify, current_app
 from flask_login import login_required, current_user
@@ -316,11 +316,11 @@ def get_active_sessions():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# === KEY EXCHANGE API ===
+# === NAPRAWIONY KEY EXCHANGE ===
 @chat_bp.route('/api/session/<session_token>/exchange_key', methods=['POST'])
 @login_required
 def exchange_session_key(session_token):
-    """Wymiana klucza sesji"""
+    """Naprawiona wymiana klucza sesji - koordynacja między użytkownikami"""
     try:
         data = request.get_json()
         encrypted_key = data.get('encrypted_key')
@@ -334,14 +334,75 @@ def exchange_session_key(session_token):
             
         if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
             return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
-            
-        session.encrypted_session_key = encrypted_key
-        session.last_activity = datetime.datetime.utcnow()
-        db.session.commit()
         
-        return jsonify({'status': 'success', 'message': 'Klucz wymieniony'})
+        print(f"🔑 Key exchange request from user {current_user.id} for session {session_token[:8]}...")
+        
+        # === NOWA LOGIKA: KTO GENERUJE KLUCZ? ===
+        # ZASADA: Initiator (ten kto zaczął sesję) generuje i wysyła klucz
+        # Recipient otrzymuje i zapisuje klucz
+        
+        is_initiator = (current_user.id == session.initiator_id)
+        
+        if is_initiator:
+            # INITIATOR: Zapisuje zaszyfrowany klucz dla odbiorcy
+            print(f"✅ Initiator {current_user.id} storing encrypted key for recipient")
+            session.encrypted_session_key = encrypted_key
+            session.last_activity = datetime.datetime.utcnow()
+            db.session.commit()
+            
+            return jsonify({'status': 'success', 'message': 'Klucz wysłany do odbiorcy'})
+            
+        else:
+            # RECIPIENT: Oznacza potwierdzenie odbioru klucza
+            print(f"🔓 Recipient {current_user.id} acknowledging key receipt")
+            
+            if not session.encrypted_session_key:
+                return jsonify({'status': 'error', 'message': 'Brak klucza od initiatora'}), 400
+            
+            # Oznacz, że recipient potwierdził odbiór klucza
+            session.key_acknowledged = True
+            session.last_activity = datetime.datetime.utcnow()
+            db.session.commit()
+            
+            return jsonify({
+                'status': 'success', 
+                'message': 'Klucz potwierdzony'
+            })
+            
     except Exception as e:
         db.session.rollback()
+        print(f"❌ Key exchange error: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# === NOWY ENDPOINT: POBIERZ KLUCZ SESJI ===
+@chat_bp.route('/api/session/<session_token>/get_key', methods=['GET'])
+@login_required
+def get_session_key(session_token):
+    """Pobiera zaszyfrowany klucz sesji dla odbiorcy"""
+    try:
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
+        
+        # Sprawdź czy klucz istnieje
+        if not session.encrypted_session_key:
+            return jsonify({'status': 'error', 'message': 'Klucz jeszcze nie wygenerowany'}), 404
+        
+        print(f"🔑 Serving encrypted session key for session {session_token[:8]} to user {current_user.id}")
+        
+        # Zwróć zaszyfrowany klucz
+        return jsonify({
+            'status': 'success',
+            'encrypted_session_key': session.encrypted_session_key,
+            'key_acknowledged': session.key_acknowledged,
+            'initiator_id': session.initiator_id
+        })
+        
+    except Exception as e:
+        print(f"❌ Get session key error: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @chat_bp.route('/api/session/<session_token>/close', methods=['POST'])
@@ -591,10 +652,9 @@ def init_socketio_handler(socketio):
     print("🔌 Initializing Socket.IO handlers...")
     
     # Import the handler
-    from socketio_handler import init_socketio_handler as init_handler
-    
-    # Initialize with socketio instance
     try:
+        from socketio_handler import init_socketio_handler as init_handler
+        # Initialize with socketio instance
         handler = init_handler(socketio)
         print("✅ Socket.IO handler from socketio_handler.py initialized")
     except Exception as e:
