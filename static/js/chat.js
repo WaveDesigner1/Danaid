@@ -1,7 +1,7 @@
 /**
- * chat.js - ZOPTYMALIZOWANY Chat Manager
+ * chat.js - ZOPTYMALIZOWANY Chat Manager z poprawkami deszyfrowania
  * Usunięto duplikacje, dodano cache, debouncing, unified message processing
- * Redukcja z 1400 → 600 linii kodu
+ * Poprawiono funkcje _needsDecryption, _processMessage, dodano _debugDecryption
  */
 class ChatManager {
   constructor() {
@@ -140,7 +140,7 @@ class ChatManager {
     }
   }
 
-// === SOCKET.IO INTEGRATION ===
+  // === SOCKET.IO INTEGRATION ===
   async _initSocket() {
     try {
       // Get Socket.IO config (with cache)
@@ -265,7 +265,79 @@ class ChatManager {
     this._playNotificationSound();
   }
 
-  // === ZUNIFIKOWANE PRZETWARZANIE WIADOMOŚCI ===
+  // === POPRAWIONA FUNKCJA _needsDecryption ===
+  _needsDecryption(message) {
+    // Brak IV = na pewno nie zaszyfrowane
+    if (!message.iv) {
+      console.log("🔍 No IV - plain text");
+      return false;
+    }
+    
+    // Bardzo krótkie (mniej niż 20 znaków) = prawdopodobnie plain text
+    if (message.content.length < 20) {
+      console.log("🔍 Very short message - probably plain text");
+      return false;
+    }
+    
+    // Sprawdź czy to wygląda jak base64 (typowe dla AES-GCM output)
+    const base64Pattern = /^[A-Za-z0-9+/]+={0,2}$/;
+    if (base64Pattern.test(message.content)) {
+      console.log("🔐 Base64 pattern detected - needs decryption");
+      return true;
+    }
+    
+    // Sprawdź czy to wygląda jak hex (alternatywny format)
+    const hexPattern = /^[a-fA-F0-9]+$/;
+    if (hexPattern.test(message.content) && message.content.length > 32) {
+      console.log("🔐 Hex pattern detected - needs decryption");
+      return true;
+    }
+    
+    // Sprawdź czy ma nietypowe znaki dla normalnego tekstu
+    const hasUnusualChars = /[^\w\s\.\,\!\?\-\(\)\[\]\"\']+/.test(message.content);
+    if (hasUnusualChars && message.content.length > 30) {
+      console.log("🔐 Unusual characters detected - might be encrypted");
+      return true;
+    }
+    
+    // Jeśli nic nie pasuje, prawdopodobnie plain text
+    console.log("📝 Looks like plain text");
+    return false;
+  }
+
+  // === DODATKOWA FUNKCJA DEBUG ===
+  async _debugDecryption(sessionToken, message) {
+    console.log("=== DEBUG DECRYPTION ===");
+    console.log("Session token:", sessionToken.slice(0, 8) + "...");
+    console.log("Message content preview:", message.content.slice(0, 100) + "...");
+    console.log("Message IV:", message.iv);
+    console.log("Content length:", message.content.length);
+    console.log("Needs decryption:", this._needsDecryption(message));
+    
+    const sessionKeyBase64 = window.cryptoManager.getSessionKey(sessionToken);
+    console.log("Has session key:", !!sessionKeyBase64);
+    
+    if (sessionKeyBase64 && this._needsDecryption(message)) {
+      try {
+        const sessionKey = await window.cryptoManager.importSessionKey(sessionKeyBase64);
+        console.log("✅ Session key imported successfully");
+        
+        const decrypted = await window.cryptoManager.decryptMessage(sessionKey, {
+          data: message.content,
+          iv: message.iv
+        });
+        console.log("✅ Decryption successful:", decrypted.slice(0, 50) + "...");
+        return decrypted;
+      } catch (error) {
+        console.error("❌ Decryption failed:", error.message);
+        return "[Decryption failed: " + error.message + "]";
+      }
+    }
+    
+    return message.content;
+  }
+
+  // === POPRAWIONA FUNKCJA _processMessage ===
   async _processMessage(sessionToken, message, source = 'unknown') {
     try {
       console.log(`📨 Processing ${source} message for session: ${sessionToken.slice(0, 8)}`);
@@ -280,30 +352,34 @@ class ChatManager {
       
       let processedMessage = { ...message };
       
-      // === INTELLIGENT DECRYPTION ===
+      // === IMPROVED DECRYPTION LOGIC ===
       const needsDecryption = this._needsDecryption(message);
+      console.log(`🔍 Message needs decryption: ${needsDecryption}`);
       
       if (needsDecryption) {
         const sessionKey = await this._getSessionKeyOptimized(sessionToken);
         
         if (sessionKey) {
           try {
+            console.log("🔐 Attempting decryption...");
             const decryptedContent = await window.cryptoManager.decryptMessage(sessionKey, {
               data: message.content,
               iv: message.iv
             });
             processedMessage.content = decryptedContent;
-            console.log("✅ Message decrypted successfully");
+            console.log("✅ Message decrypted successfully:", decryptedContent.slice(0, 30) + "...");
           } catch (decryptError) {
-            console.log("⚠️ Decryption failed - probably old key");
-            processedMessage.content = source === 'import' 
-              ? '[Old message - different encryption key]'
-              : '[Decryption failed]';
+            console.error("⚠️ Decryption failed:", decryptError.message);
+            
+            // Try debug decryption for more info
+            processedMessage.content = await this._debugDecryption(sessionToken, message);
           }
         } else {
+          console.log("⚠️ No session key available");
           processedMessage.content = '[Encrypted - key not available]';
-          console.log("⚠️ No session key available for decryption");
         }
+      } else {
+        console.log("📝 Message is plain text, no decryption needed");
       }
       
       // Store processed message
@@ -316,29 +392,31 @@ class ChatManager {
       }
       
     } catch (error) {
-      console.error("Message processing error:", error);
+      console.error("❌ Message processing error:", error);
       
       // Store error message
-      const errorMessage = { ...message, content: '[Processing failed]' };
+      const errorMessage = { ...message, content: '[Processing failed: ' + error.message + ']' };
       await this._storeMessage(sessionToken, errorMessage);
     }
   }
 
-  // === INTELIGENTNE SPRAWDZENIE CZY TRZEBA DESZYFROWAĆ ===
-  _needsDecryption(message) {
-    // Nie ma IV = nie zaszyfrowane
-    if (!message.iv) return false;
+  // === DODATKOWA FUNKCJA TESTOWA ===
+  async testDecryption(sessionToken, messageContent, iv) {
+    console.log("=== MANUAL DECRYPTION TEST ===");
     
-    // Krótkie wiadomości prawdopodobnie plain text
-    if (message.content.length < 50) return false;
+    const fakeMessage = {
+      content: messageContent,
+      iv: iv,
+      id: 'test',
+      timestamp: new Date().toISOString()
+    };
     
-    // Zawiera spacje = prawdopodobnie plain text
-    if (message.content.includes(' ')) return false;
+    console.log("Testing message:", fakeMessage);
     
-    // Wygląda jak base64 = prawdopodobnie zaszyfrowane
-    if (/^[A-Za-z0-9+/=]+$/.test(message.content)) return true;
+    const result = await this._debugDecryption(sessionToken, fakeMessage);
+    console.log("Final result:", result);
     
-    return false;
+    return result;
   }
 
   _handleFriendRequest(data) {
@@ -387,7 +465,7 @@ class ChatManager {
     }, 3000); // Poll every 3 seconds
   }
 
-// === EVENT HANDLERS ===
+  // === EVENT HANDLERS ===
   _initEvents() {
     if (!this.elements.sendButton || !this.elements.messageInput) return;
     
@@ -652,9 +730,10 @@ class ChatManager {
     
     const friend = this.friends.find(f => f.user_id === session.other_user.user_id);
     if (friend) {
-      this._selectFriend(friend);
+      await this._selectFriend(friend);
     }
   }
+
   // === ZOPTYMALIZOWANE POBIERANIE KLUCZA SESJI ===
   async _getSessionKeyOptimized(sessionToken) {
     // Cache check
@@ -872,7 +951,7 @@ class ChatManager {
     this._scrollToBottom();
   }
 
-// === ZOPTYMALIZOWANE WYSYŁANIE WIADOMOŚCI ===
+  // === ZOPTYMALIZOWANE WYSYŁANIE WIADOMOŚCI ===
   async sendMessage() {
     const content = this.elements.messageInput?.value.trim();
     if (!content || !this.currentSession) return;
@@ -1029,7 +1108,7 @@ class ChatManager {
     }
   }
 
-  // === DODANA FUNKCJA: SPRAWDZENIE REAL-TIME STATUS ===
+  // === SPRAWDZENIE REAL-TIME STATUS ===
   checkRealTimeStatus() {
     if (this.socket && this.socket.connected) {
       return {
@@ -1052,7 +1131,7 @@ class ChatManager {
     }
   }
 
-// === FRIEND MANAGEMENT ===
+  // === FRIEND MANAGEMENT ===
   _showAddFriendModal() {
     const modal = document.getElementById('add-friend-modal');
     if (modal) modal.style.display = 'block';
@@ -1195,7 +1274,7 @@ class ChatManager {
     }
   }
 
-// === ZAKTUALIZOWANA FUNKCJA clearConversation (z lepszym UX) ===
+  // === CLEAR CONVERSATION ===
   async clearConversation(sessionToken = null) {
     const token = sessionToken || this.currentSession?.token;
     if (!token) return;
@@ -1282,7 +1361,7 @@ class ChatManager {
     }
   }
 
-  // === CLEANUP PRZY LOGOUT ===  
+  // === LOGOUT ===
   async logout() {
     try {
       console.log('🚪 Optimized logout process...');
@@ -1380,7 +1459,7 @@ class ChatManager {
     console.log("🧹 Optimized ChatManager destroyed");
   }
 
-// === UTILITIES ===
+  // === UTILITIES ===
   _updateRequestBadge(count) {
     if (!this.elements.requestBadge) return;
     
@@ -1556,4 +1635,3 @@ window.chatInterface = window.chatManager;
 
 // Debug helper for console
 window.debugChat = () => window.chatManager.debugInfo();
-
