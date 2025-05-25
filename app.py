@@ -18,9 +18,6 @@ from models import db, User, ChatSession, Message
 from admin import init_admin
 from auth import auth_bp
 from chat import chat_bp  # ✅ chat.py zawiera teraz wszystko (chat + chat_api + socketio)
-# ❌ USUNIĘTE: from chat_api import chat_api  # Scalono z chat.py
-# ❌ USUNIĘTE: from database_migrations import apply_e2ee_migrations  # Wbudowano w chat.py
-# 🔧 WARUNKOWO: init_socketio_handler może być w chat.py lub zintegrowane bezpośrednio
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
@@ -99,12 +96,15 @@ def create_app():
     app.config['SESSION_TYPE'] = 'filesystem'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
     
-    # Inicjalizacja Socket.IO
+    # 🔥 INICJALIZACJA SOCKET.IO Z POPRAWKAMI
     socketio = SocketIO(app, 
                        cors_allowed_origins="*", 
                        logger=False, 
                        engineio_logger=False,
                        async_mode='threading')
+    
+    # 🔥 MAKE SOCKETIO AVAILABLE GLOBALLY
+    app.socketio = socketio
     
     # Inicjalizacja bazy danych i logowania
     db.init_app(app)
@@ -114,24 +114,23 @@ def create_app():
     # 🔄 ZOPTYMALIZOWANE BLUEPRINTY (po scaleniu)
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)  # ✅ chat_bp zawiera teraz wszystkie endpointy z chat_api
-    # ❌ USUNIĘTE: app.register_blueprint(chat_api)  # Scalono z chat_bp
     
     # Inicjalizacja panelu admina
     init_admin(app)
     
-    # 🔄 ZOPTYMALIZOWANE SOCKET.IO (sprawdź czy funkcja istnieje)
-    try:
-        from chat import init_socketio_handler
-        init_socketio_handler(socketio)
-        print("✅ Socket.IO handler zainicjalizowany z chat.py")
-    except ImportError:
-        print("⚠️  init_socketio_handler nie znaleziono - może być zintegrowane bezpośrednio w chat.py")
-        pass
+    # 🔥 INITIALIZE SOCKET.IO HANDLERS
+    with app.app_context():
+        try:
+            from chat import init_socketio_handler
+            init_socketio_handler(socketio)
+            print("✅ Socket.IO handler zainicjalizowany z chat.py")
+        except ImportError as e:
+            print(f"⚠️ Socket.IO handler import error: {e}")
+        except Exception as e:
+            print(f"❌ Socket.IO handler init error: {e}")
  
-    # 🔄 MIGRACJE TERAZ W CHAT.PY
-    # Uruchom migracje bazy danych (scalono z chat.py)
+    # Uruchom migracje bazy danych
     apply_migrations(app)
-    # ❌ USUNIĘTE: apply_e2ee_migrations(app)  # Wbudowano w apply_migrations
 
     # Socket.IO konfiguracja dla frontendu
     @app.route('/api/websocket/config')
