@@ -1,9 +1,8 @@
 """
-chat.py - Zunifikowany moduł czatu (scalenie chat.py + chat_api.py)
-CZĘŚĆ 1: Podstawowe API - Users, Friends, Sessions
-Redukcja z 850 → 400 linii kodu
+chat.py - Zunifikowany moduł czatu z naprawioną funkcjonalnością real-time
+NAPRAWIONO: Socket.IO integration, friend requests, message broadcasting
 """
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, current_app
 from flask_login import login_required, current_user
 from models import User, ChatSession, Message, db, Friend, FriendRequest
 import datetime
@@ -108,76 +107,51 @@ def get_friends():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@chat_bp.route('/api/message/send', methods=['POST'])
+@chat_bp.route('/api/friend_requests', methods=['POST'])
 @login_required
-def send_message():
-    """Wysyła wiadomość"""
+def send_friend_request():
+    """Wysyła zaproszenie do znajomych"""
     try:
-        print("📨 Send message endpoint called")  # Debug
         data = request.get_json()
-        print("Request data:", data)  # Debug
+        username = data.get('username')
         
-        required_fields = ['session_token', 'content', 'iv']
-        
-        if not data or not all(field in data for field in required_fields):
-            print("❌ Brakujące dane:", data)
-            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
+        if not username:
+            return jsonify({'status': 'error', 'message': 'Username required'}), 400
             
-        session_token = data.get('session_token')
-        content = data.get('content')
-        iv = data.get('iv')
-        
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        if not session:
-            print("❌ Nieprawidłowa sesja:", session_token)
-            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
+        # Find target user
+        target_user = User.query.filter_by(username=username).first()
+        if not target_user:
+            return jsonify({'status': 'error', 'message': 'User not found'}), 404
             
-        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
-            print("❌ Sesja wygasła")
-            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
+        if target_user.id == current_user.id:
+            return jsonify({'status': 'error', 'message': 'Cannot add yourself'}), 400
             
-        # 🔧 ZMIENIONE: Nie wymagamy key_acknowledged (może być False na początku)
-        if not session.encrypted_session_key:
-            print("❌ Brak klucza sesji")
-            return jsonify({'status': 'error', 'message': 'Brak klucza sesji'}), 400
+        # Check if already friends
+        if current_user.is_friend_with(target_user.id):
+            return jsonify({'status': 'error', 'message': 'Already friends'}), 400
             
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            print("❌ Brak dostępu do sesji")
-            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
+        # Check if request already exists
+        existing = FriendRequest.query.filter_by(
+            from_user_id=current_user.id,
+            to_user_id=target_user.id,
+            status='pending'
+        ).first()
         
-        print("✅ Walidacja przeszła, zapisuję wiadomość")
-        
-        # Zapisz wiadomość
-        new_message = Message(
-            session_id=session.id,
-            sender_id=current_user.id,
-            content=content,
-            iv=iv,
-            timestamp=datetime.datetime.utcnow(),
-            read=False
+        if existing:
+            return jsonify({'status': 'error', 'message': 'Request already sent'}), 400
+            
+        # Create friend request
+        friend_request = FriendRequest(
+            from_user_id=current_user.id,
+            to_user_id=target_user.id,
+            status='pending'
         )
-        db.session.add(new_message)
-        
-        # Odśwież sesję
-        session.last_activity = datetime.datetime.utcnow()
-        
-        # Automatycznie potwierdź klucz jeśli jeszcze nie został potwierdzony
-        if not session.key_acknowledged:
-            session.key_acknowledged = True
-            print("✅ Klucz automatycznie potwierdzony")
-            
+        db.session.add(friend_request)
         db.session.commit()
-        print("✅ Wiadomość zapisana:", new_message.id)
         
-        return jsonify({
-            'status': 'success',
-            'message': {
-                'id': new_message.id,
-                'timestamp': new_message.timestamp.isoformat()
-            }
-        })
+        return jsonify({'status': 'success', 'message': 'Friend request sent'})
+        
     except Exception as e:
-        print(f"❌ Błąd wysyłania wiadomości: {e}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -342,49 +316,6 @@ def get_active_sessions():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@chat_bp.route('/api/session/<session_token>/validate')
-@login_required
-def validate_session(session_token):
-    """Waliduje sesję"""
-    try:
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        
-        if not session:
-            return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
-            
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
-            
-        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
-            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
-            
-        # Odśwież sesję
-        session.last_activity = datetime.datetime.utcnow()
-        db.session.commit()
-        
-        other_user_id = session.recipient_id if session.initiator_id == current_user.id else session.initiator_id
-        other_user = User.query.get(other_user_id)
-        
-        return jsonify({
-            'status': 'success',
-            'session': {
-                'id': session.id,
-                'token': session.session_token,
-                'expires_at': session.expires_at.isoformat(),
-                'is_valid': True,
-                'has_key': session.encrypted_session_key is not None,
-                'key_acknowledged': session.key_acknowledged,
-                'other_user': {
-                    'id': other_user.id,
-                    'user_id': other_user.user_id,
-                    'username': other_user.username,
-                    'is_online': getattr(other_user, 'is_online', False)
-                }
-            }
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
 # === KEY EXCHANGE API ===
 @chat_bp.route('/api/session/<session_token>/exchange_key', methods=['POST'])
 @login_required
@@ -413,26 +344,6 @@ def exchange_session_key(session_token):
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@chat_bp.route('/api/session/<session_token>/key')
-@login_required
-def get_session_key(session_token):
-    """Pobiera klucz sesji"""
-    try:
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        
-        if not session:
-            return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
-            
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
-            
-        if not session.encrypted_session_key:
-            return jsonify({'status': 'error', 'message': 'Brak klucza'}), 404
-            
-        return jsonify({'status': 'success', 'encrypted_key': session.encrypted_session_key})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
 @chat_bp.route('/api/session/<session_token>/close', methods=['POST'])
 @login_required
 def close_session(session_token):
@@ -454,30 +365,7 @@ def close_session(session_token):
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@chat_bp.route('/api/session/<session_token>/acknowledge_key', methods=['POST'])
-@login_required
-def acknowledge_session_key(session_token):
-    """Potwierdza klucz sesji"""
-    try:
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        
-        if not session:
-            return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
-            
-        if session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Tylko odbiorca może potwierdzić'}), 403
-            
-        session.key_acknowledged = True
-        session.last_activity = datetime.datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({'status': 'success', 'message': 'Klucz potwierdzony'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
 # === MESSAGES API ===
-
 @chat_bp.route('/api/messages/<session_token>')
 @login_required
 def get_messages(session_token):
@@ -520,6 +408,124 @@ def get_messages(session_token):
         
         return jsonify({'status': 'success', 'messages': message_list})
     except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@chat_bp.route('/api/message/send', methods=['POST'])
+@login_required
+def send_message():
+    """Wysyła wiadomość z real-time broadcast"""
+    try:
+        print("📨 Send message endpoint called")
+        data = request.get_json()
+        print("Request data:", data)
+        
+        required_fields = ['session_token', 'content', 'iv']
+        
+        if not data or not all(field in data for field in required_fields):
+            print("❌ Brakujące dane:", data)
+            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
+            
+        session_token = data.get('session_token')
+        content = data.get('content')
+        iv = data.get('iv')
+        
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            print("❌ Nieprawidłowa sesja:", session_token)
+            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
+            
+        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
+            print("❌ Sesja wygasła")
+            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
+            
+        if not session.encrypted_session_key:
+            print("❌ Brak klucza sesji")
+            return jsonify({'status': 'error', 'message': 'Brak klucza sesji'}), 400
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            print("❌ Brak dostępu do sesji")
+            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
+        
+        print("✅ Walidacja przeszła, zapisuję wiadomość")
+        
+        # Zapisz wiadomość
+        new_message = Message(
+            session_id=session.id,
+            sender_id=current_user.id,
+            content=content,
+            iv=iv,
+            timestamp=datetime.datetime.utcnow(),
+            read=False
+        )
+        db.session.add(new_message)
+        
+        # Odśwież sesję
+        session.last_activity = datetime.datetime.utcnow()
+        
+        if not session.key_acknowledged:
+            session.key_acknowledged = True
+            print("✅ Klucz automatycznie potwierdzony")
+            
+        db.session.commit()
+        print("✅ Wiadomość zapisana:", new_message.id)
+        
+        # 🔥 REAL-TIME BROADCAST
+        try:
+            socketio = getattr(current_app, 'socketio', None)
+            if socketio and hasattr(socketio, 'broadcast_new_message'):
+                message_data = {
+                    'id': new_message.id,
+                    'sender_id': current_user.id,
+                    'content': content,
+                    'iv': iv,
+                    'timestamp': new_message.timestamp.isoformat(),
+                    'is_mine': False  # For recipient
+                }
+                socketio.broadcast_new_message(session_token, message_data)
+                print("📡 Real-time message broadcasted")
+            else:
+                print("⚠️ Socket.IO not available for broadcast")
+        except Exception as broadcast_error:
+            print(f"⚠️ Broadcast failed: {broadcast_error}")
+            # Don't fail the message send if broadcast fails
+        
+        return jsonify({
+            'status': 'success',
+            'message': {
+                'id': new_message.id,
+                'timestamp': new_message.timestamp.isoformat()
+            }
+        })
+    except Exception as e:
+        print(f"❌ Błąd wysyłania wiadomości: {e}")
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@chat_bp.route('/api/messages/<session_token>/clear', methods=['DELETE'])
+@login_required
+def clear_session_messages(session_token):
+    """Usuwa wszystkie wiadomości z sesji"""
+    try:
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        
+        if not session:
+            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({'status': 'error', 'message': 'Access denied'}), 403
+        
+        # Delete all messages in this session
+        deleted_count = Message.query.filter_by(session_id=session.id).delete()
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success', 
+            'message': f'Deleted {deleted_count} messages',
+            'deleted_count': deleted_count
+        })
+        
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # === POLLING FALLBACK ===
@@ -579,139 +585,75 @@ def polling_messages():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# === UTILITY ENDPOINTS ===
-@chat_bp.route('/api/users')
-@login_required  
-def get_users():
-    """Lista wszystkich użytkowników (poza sobą)"""
+# === SOCKET.IO INTEGRATION ===
+def init_socketio_handler(socketio):
+    """Initialize Socket.IO handlers for real-time messaging"""
+    print("🔌 Initializing Socket.IO handlers...")
+    
+    # Import the handler
+    from socketio_handler import init_socketio_handler as init_handler
+    
+    # Initialize with socketio instance
     try:
-        users = User.query.filter(User.id != current_user.id).all()
-        
-        user_list = [{
-            'id': user.id,
-            'user_id': user.user_id,
-            'username': user.username,
-            'is_online': getattr(user, 'is_online', False)
-        } for user in users]
-        
-        return jsonify({'status': 'success', 'users': user_list})
+        handler = init_handler(socketio)
+        print("✅ Socket.IO handler from socketio_handler.py initialized")
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@chat_bp.route('/api/user/<user_id>/info')
-@login_required
-def get_user_info(user_id):
-    """Informacje o użytkowniku"""
-    try:
-        user = User.query.filter_by(user_id=user_id).first()
+        print(f"⚠️ Failed to init external handler: {e}")
+        handler = None
+    
+    # Add custom events for chat functionality
+    @socketio.on('connect')
+    def handle_connect():
+        print(f"🔌 Client connected: {request.sid}")
         
-        if not user:
-            return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+    @socketio.on('disconnect') 
+    def handle_disconnect():
+        print(f"🔌 Client disconnected: {request.sid}")
+        
+    @socketio.on('join_session')
+    def handle_join_session(data):
+        """Join user to session room for real-time updates"""
+        session_token = data.get('session_token')
+        if session_token:
+            from flask_socketio import join_room
+            join_room(f"session_{session_token}")
+            print(f"👤 User joined session room: {session_token[:8]}...")
+    
+    # Real-time message broadcasting function
+    def broadcast_new_message(session_token, message_data):
+        """Broadcast new message to relevant users"""
+        try:
+            session = ChatSession.query.filter_by(session_token=session_token).first()
+            if not session:
+                return
+                
+            # Get recipient
+            sender_id = message_data.get('sender_id')
+            if sender_id == session.initiator_id:
+                recipient_id = session.recipient_id
+            else:
+                recipient_id = session.initiator_id
+                
+            # Send to recipient's room and session room
+            socketio.emit('message', {
+                'type': 'new_message',
+                'session_token': session_token,
+                'message': message_data
+            }, room=f"user_{recipient_id}")
             
-        return jsonify({
-            'status': 'success',
-            'user': {
-                'id': user.id,
-                'user_id': user.user_id,
-                'username': user.username,
-                'is_online': getattr(user, 'is_online', False)
-            }
-        })
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-# === DODAJ TE ENDPOINTY NA KOŃCU chat.py ===
-
-@chat_bp.route('/api/messages/<session_token>/clear', methods=['DELETE'])
-@login_required
-def clear_session_messages(session_token):
-    """Usuwa wszystkie wiadomości z sesji"""
-    try:
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        
-        if not session:
-            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
+            socketio.emit('message', {
+                'type': 'new_message',
+                'session_token': session_token,
+                'message': message_data
+            }, room=f"session_{session_token}")
             
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Access denied'}), 403
-        
-        # Delete all messages in this session
-        deleted_count = Message.query.filter_by(session_id=session.id).delete()
-        db.session.commit()
-        
-        return jsonify({
-            'status': 'success', 
-            'message': f'Deleted {deleted_count} messages',
-            'deleted_count': deleted_count
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@chat_bp.route('/api/message/<int:message_id>', methods=['DELETE'])
-@login_required
-def delete_single_message(message_id):
-    """Usuwa pojedynczą wiadomość"""
-    try:
-        message = Message.query.get(message_id)
-        
-        if not message:
-            return jsonify({'status': 'error', 'message': 'Message not found'}), 404
+            print(f"📨 Message broadcasted to user_{recipient_id} and session_{session_token[:8]}...")
             
-        # Check if user has access to this message
-        session = ChatSession.query.get(message.session_id)
-        if not session or (session.initiator_id != current_user.id and session.recipient_id != current_user.id):
-            return jsonify({'status': 'error', 'message': 'Access denied'}), 403
-            
-        # Only sender can delete their own messages
-        if message.sender_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Can only delete own messages'}), 403
-        
-        db.session.delete(message)
-        db.session.commit()
-        
-        return jsonify({'status': 'success', 'message': 'Message deleted'})
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@chat_bp.route('/api/sessions/<session_token>/stats')
-@login_required
-def get_session_stats(session_token):
-    """Pobiera statystyki sesji"""
-    try:
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        
-        if not session:
-            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
-            
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Access denied'}), 403
-        
-        # Count messages
-        total_messages = Message.query.filter_by(session_id=session.id).count()
-        my_messages = Message.query.filter_by(session_id=session.id, sender_id=current_user.id).count()
-        other_messages = total_messages - my_messages
-        
-        # Get first and last message timestamps
-        first_message = Message.query.filter_by(session_id=session.id).order_by(Message.timestamp).first()
-        last_message = Message.query.filter_by(session_id=session.id).order_by(Message.timestamp.desc()).first()
-        
-        return jsonify({
-            'status': 'success',
-            'stats': {
-                'total_messages': total_messages,
-                'my_messages': my_messages,
-                'other_messages': other_messages,
-                'first_message': first_message.timestamp.isoformat() if first_message else None,
-                'last_message': last_message.timestamp.isoformat() if last_message else None,
-                'session_created': session.created_at.isoformat(),
-                'last_activity': session.last_activity.isoformat()
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
+        except Exception as e:
+            print(f"❌ Broadcast error: {e}")
+    
+    # Make broadcast function available globally
+    socketio.broadcast_new_message = broadcast_new_message
+    
+    print("✅ Socket.IO handlers initialized successfully")
+    return handler
