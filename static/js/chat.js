@@ -1,7 +1,3 @@
-} catch (error) {
-      console.error("Friends loading error:", error);
-    }
-  }
 
   async _loadSessions() {
     try {
