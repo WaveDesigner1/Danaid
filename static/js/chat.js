@@ -1,6 +1,6 @@
 /**
  * chat.js - ZOPTYMALIZOWANY Chat Manager - REAL-TIME ONLY
- * Naprawiono: błąd składni na początku pliku, funkcje deszyfrowania, real-time messaging
+ * NAPRAWIONO: Echo filter, optimistic updates, notification sound
  */
 class ChatManager {
   constructor() {
@@ -268,12 +268,24 @@ class ChatManager {
     }
   }
 
-  // === REAL-TIME MESSAGE HANDLING ===
+  // === NAPRAWIONY REAL-TIME MESSAGE HANDLING ===
   async _handleNewMessage(data) {
-    // Avoid echo
-    if (data.message.sender_id == this.user.id) return;
+    console.log("📨 Real-time message received:", data.message.id, "from:", data.message.sender_id);
     
-    console.log("📨 Processing real-time message:", data.message.id);
+    // === POPRAWIONY ECHO FILTER ===
+    // Konwertuj oba ID do string dla porównania
+    const messageSenderId = String(data.message.sender_id);
+    const currentUserId = String(this.user.id);
+    
+    console.log("🔍 Echo check:", messageSenderId, "vs", currentUserId);
+    
+    // Sprawdź czy to nasza własna wiadomość (echo)
+    if (messageSenderId === currentUserId) {
+      console.log("🔇 Echo detected - ignoring own message");
+      return; // Ignoruj własne wiadomości
+    }
+    
+    console.log("📨 Processing real-time message from other user:", data.message.id);
     
     // Process message through unified pipeline
     await this._processMessage(data.session_token, data.message, 'realtime');
@@ -285,7 +297,22 @@ class ChatManager {
       this._updateUnreadCount(data.session_token);
     }
     
-    this._playNotificationSound();
+    // Play notification sound (bez 404 error)
+    this._playNotificationSoundSafe();
+  }
+
+  // === BEZPIECZNY NOTIFICATION SOUND ===
+  _playNotificationSoundSafe() {
+    // Usuń błąd 404 - brak notification.mp3
+    console.log("🔔 Notification (silent mode - no sound file)");
+    // Opcjonalnie: użyj systemowego dźwięku
+    // if (window.Audio) {
+    //   try {
+    //     const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1');
+    //     audio.volume = 0.1;
+    //     audio.play().catch(() => {});
+    //   } catch (e) {}
+    // }
   }
 
   // === IMPROVED DECRYPTION FUNCTIONS ===
@@ -953,7 +980,7 @@ class ChatManager {
     this._scrollToBottom();
   }
 
-  // === MESSAGE SENDING ===
+  // === NAPRAWIONY sendMessage() ===
   async sendMessage() {
     const content = this.elements.messageInput?.value.trim();
     if (!content || !this.currentSession) return;
@@ -1008,18 +1035,12 @@ class ChatManager {
         // Clear input
         this.elements.messageInput.value = '';
         
-        // Add to UI optimistically (real-time will handle recipient)
-        const newMessage = {
-          id: data.message.id,
-          sender_id: parseInt(this.user.id),
-          content: content, // Store decrypted for local display
-          timestamp: data.message.timestamp,
-          is_mine: true
-        };
+        // === USUNIĘTE: OPTIMISTIC UI UPDATE ===
+        // Nie dodawaj wiadomości lokalnie - pozwól Socket.IO obsłużyć
+        // this._addMessageToUI(newMessage); // <-- USUNIĘTE
+        // await this._storeMessage(this.currentSession.token, newMessage); // <-- USUNIĘTE
         
-        this._addMessageToUI(newMessage);
-        await this._storeMessage(this.currentSession.token, newMessage);
-        console.log('✅ Message sent successfully');
+        console.log('✅ Message sent - waiting for real-time confirmation');
       } else {
         this._showNotification(data.message || 'Send failed', 'error');
       }
@@ -1463,11 +1484,8 @@ class ChatManager {
   }
 
   _playNotificationSound() {
-    try {
-      const audio = new Audio('/static/sounds/notification.mp3');
-      audio.volume = 0.3;
-      audio.play().catch(() => {}); // Ignore errors
-    } catch (e) {}
+    // Używaj bezpiecznej wersji
+    this._playNotificationSoundSafe();
   }
 
   _scrollToBottom() {
