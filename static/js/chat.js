@@ -1,6 +1,6 @@
 /**
  * chat.js - KOMPLETNY Chat Manager z naprawionym KEY EXCHANGE
- * NAPRAWIONO: Echo filter, key exchange logic, real-time messaging
+ * NAPRAWIONO: Echo filter, key exchange logic, real-time messaging, automatic key generation
  */
 class ChatManager {
   constructor() {
@@ -483,26 +483,48 @@ class ChatManager {
     }
   }
 
+  // === NAPRAWIONA FUNKCJA: _performKeyGeneration ===
   async _performKeyGeneration(sessionToken) {
-    console.log("🔑 INITIATOR: Generating NEW session key...");
+    console.log("🔑 INITIATOR: Checking if key was auto-generated...");
     
     try {
-      // 1. Generate AES session key
+      // 1. Sprawdź czy klucz już istnieje (auto-generated przez serwer)
+      const sessionKeyBase64 = window.cryptoManager.getSessionKey(sessionToken);
+      if (sessionKeyBase64) {
+        console.log("✅ INITIATOR: Session key already exists locally");
+        return; // Klucz już istnieje, nic nie rób
+      }
+      
+      // 2. Sprawdź czy serwer już wygenerował klucz
+      const checkResponse = await fetch(`/api/session/${sessionToken}/get_key`);
+      if (checkResponse.ok) {
+        const checkData = await checkResponse.json();
+        if (checkData.status === 'success' && checkData.encrypted_session_key) {
+          console.log("✅ INITIATOR: Server already has encrypted key - this shouldn't happen");
+          // Jeśli serwer ma klucz, ale nie mamy go lokalnie, może być problem
+          return;
+        }
+      }
+      
+      // 3. Serwer nie ma klucza - prawdopodobnie błąd auto-generacji
+      console.log("⚠️ INITIATOR: No key found on server, generating manually as fallback...");
+      
+      // Fallback: Wygeneruj klucz ręcznie (stary kod)
       const sessionKey = await window.cryptoManager.generateSessionKey();
-      const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
+      const sessionKeyBase64New = await window.cryptoManager.exportSessionKey(sessionKey);
       
-      // 2. Store locally FIRST
-      window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
-      console.log("✅ Session key stored locally");
+      // Store locally FIRST
+      window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64New);
+      console.log("✅ Fallback session key stored locally");
       
-      // 3. Get recipient's public key
+      // Get recipient's public key
       const publicKey = await this._getRecipientPublicKey(this.currentSession.other_user.user_id);
       
-      // 4. Encrypt session key with recipient's RSA public key
+      // Encrypt session key with recipient's RSA public key
       const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(publicKey, sessionKey);
-      console.log("🔐 Session key encrypted for recipient");
+      console.log("🔐 Fallback session key encrypted for recipient");
       
-      // 5. Send encrypted key to server
+      // Send encrypted key to server
       const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -511,10 +533,10 @@ class ChatManager {
       
       if (!response.ok) {
         window.cryptoManager.removeSessionKey(sessionToken);
-        throw new Error(`Key exchange failed: ${response.status}`);
+        throw new Error(`Fallback key exchange failed: ${response.status}`);
       }
       
-      console.log("✅ INITIATOR: Session key sent to server");
+      console.log("✅ INITIATOR: Fallback session key sent to server");
       
     } catch (error) {
       window.cryptoManager.removeSessionKey(sessionToken);
@@ -631,6 +653,7 @@ class ChatManager {
       throw new Error(`Session key retrieval failed: ${error.message}`);
     }
   }
+
   async _getSessionKeyOptimized(sessionToken) {
     // Cache check
     const cacheKey = `session_key_${sessionToken}`;
