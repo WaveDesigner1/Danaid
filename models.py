@@ -67,14 +67,28 @@ class ChatSession(db.Model):
     last_activity = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
-    # Nowe pole do przechowywania zaszyfrowanego klucza sesji
-    encrypted_session_key = db.Column(db.Text, nullable=True)
-    # Pole określające, czy odbiorca potwierdził odebranie klucza
-    key_acknowledged = db.Column(db.Boolean, default=False)
+    
+    # === POLA DLA KEY EXCHANGE ===
+    encrypted_session_key = db.Column(db.Text, nullable=True)  # Zaszyfrowany klucz AES
+    key_acknowledged = db.Column(db.Boolean, default=False)    # Czy recipient potwierdził odbiór
+    key_created_at = db.Column(db.DateTime, nullable=True)     # Kiedy klucz został utworzony
+    key_acknowledged_at = db.Column(db.DateTime, nullable=True) # Kiedy klucz został potwierdzony
     
     initiator = db.relationship('User', foreign_keys=[initiator_id])
     recipient = db.relationship('User', foreign_keys=[recipient_id])
     messages = db.relationship('Message', backref='session', lazy='dynamic')
+    
+    def is_key_ready(self):
+        """Sprawdza czy klucz sesji jest gotowy do użycia"""
+        return (self.encrypted_session_key is not None and 
+                self.encrypted_session_key != 'ACK' and 
+                len(self.encrypted_session_key) > 100)
+    
+    def mark_key_acknowledged(self):
+        """Oznacza klucz jako potwierdzony"""
+        self.key_acknowledged = True
+        self.key_acknowledged_at = datetime.datetime.utcnow()
+        db.session.commit()
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
