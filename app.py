@@ -40,20 +40,35 @@ def load_user(user_id):
         print(f"Błąd ładowania użytkownika: {e}")
         return None
 
-# Automatyczne migracje bazy danych
+# === NAPRAWIONE AUTOMATYCZNE MIGRACJE BAZY DANYCH ===
 def apply_migrations(app):
-    """Automatyczne migracje bazy danych"""
+    """Automatyczne migracje bazy danych z obsługą key exchange"""
     with app.app_context():
         inspector = inspect(db.engine)
+        print("🔄 Applying database migrations...")
         
         # Migracja 1: Dodanie kolumny is_online do tabeli user (jeśli nie istnieje)
-        apply_migration(inspector, 'user', 'is_online', 'ALTER TABLE "user" ADD COLUMN is_online BOOLEAN DEFAULT FALSE')
+        apply_migration(inspector, 'user', 'is_online', 
+            'ALTER TABLE "user" ADD COLUMN is_online BOOLEAN DEFAULT FALSE')
         
+        # === NOWE MIGRACJE DLA KEY EXCHANGE ===
         # Migracja 2: Dodanie kolumny encrypted_session_key do tabeli chat_session
-        apply_migration(inspector, 'chat_session', 'encrypted_session_key', 'ALTER TABLE "chat_session" ADD COLUMN encrypted_session_key TEXT')
+        apply_migration(inspector, 'chat_session', 'encrypted_session_key', 
+            'ALTER TABLE "chat_session" ADD COLUMN encrypted_session_key TEXT')
         
         # Migracja 3: Dodanie kolumny key_acknowledged do tabeli chat_session
-        apply_migration(inspector, 'chat_session', 'key_acknowledged', 'ALTER TABLE "chat_session" ADD COLUMN key_acknowledged BOOLEAN DEFAULT FALSE')
+        apply_migration(inspector, 'chat_session', 'key_acknowledged', 
+            'ALTER TABLE "chat_session" ADD COLUMN key_acknowledged BOOLEAN DEFAULT FALSE')
+        
+        # Migracja 4: Dodanie kolumny key_created_at do tabeli chat_session
+        apply_migration(inspector, 'chat_session', 'key_created_at', 
+            'ALTER TABLE "chat_session" ADD COLUMN key_created_at TIMESTAMP')
+        
+        # Migracja 5: Dodanie kolumny key_acknowledged_at do tabeli chat_session
+        apply_migration(inspector, 'chat_session', 'key_acknowledged_at', 
+            'ALTER TABLE "chat_session" ADD COLUMN key_acknowledged_at TIMESTAMP')
+        
+        print("✅ Database migrations completed")
 
 def apply_migration(inspector, table, column, sql_statement):
     """Wykonuje pojedynczą migrację, jeśli jest potrzebna"""
@@ -61,13 +76,17 @@ def apply_migration(inspector, table, column, sql_statement):
         columns = [c['name'] for c in inspector.get_columns(table)]
         if column not in columns:
             try:
-                print(f"Wykonywanie migracji: Dodawanie kolumny {column} do tabeli {table}")
+                print(f"🔄 Executing migration: Adding column {column} to table {table}")
                 db.session.execute(text(sql_statement))
                 db.session.commit()
-                print(f"Migracja zakończona pomyślnie")
+                print(f"✅ Migration completed: {column} added to {table}")
             except Exception as e:
-                print(f"Błąd podczas migracji: {e}")
+                print(f"❌ Migration error: {e}")
                 db.session.rollback()
+        else:
+            print(f"✓ Column {column} already exists in table {table}")
+    else:
+        print(f"⚠️ Table {table} does not exist - will be created later")
 
 # Główna funkcja tworząca aplikację
 def create_app():
@@ -129,7 +148,7 @@ def create_app():
         except Exception as e:
             print(f"❌ Socket.IO handler init error: {e}")
  
-    # Uruchom migracje bazy danych
+    # === NAPRAWIONE MIGRACJE - URUCHOM PRZED INICJALIZACJĄ TABEL ===
     apply_migrations(app)
 
     # Socket.IO konfiguracja dla frontendu
@@ -157,7 +176,7 @@ def create_app():
         js_content = f"window._socketConfig = {json.dumps(config)};"
         return Response(js_content, mimetype='application/javascript')
 
-    # Debug endpoint
+    # === ENHANCED DEBUG ENDPOINT ===
     @app.route('/db-debug')
     def db_debug():
         try:
@@ -167,6 +186,27 @@ def create_app():
             result = db.session.execute(text("SELECT 1 as test")).fetchone()
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()
+            
+            # Get column info for key tables
+            table_schemas = {}
+            key_tables = ['user', 'chat_session', 'message', 'friend', 'friend_request']
+            
+            for table in key_tables:
+                if table in tables:
+                    try:
+                        columns = inspector.get_columns(table)
+                        table_schemas[table] = [{'name': col['name'], 'type': str(col['type'])} for col in columns]
+                    except Exception as e:
+                        table_schemas[table] = f"Error: {str(e)}"
+            
+            # Get record counts
+            record_counts = {}
+            for table in tables:
+                try:
+                    count = db.session.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
+                    record_counts[table] = count
+                except Exception as e:
+                    record_counts[table] = f"Error: {str(e)}"
             
             safe_connection = str(db.engine.url)
             if ":" in safe_connection and "@" in safe_connection:
@@ -181,7 +221,12 @@ def create_app():
                 "engine": engine_name,
                 "test_query": dict(result) if result else None,
                 "tables": tables,
-                "connection_string": safe_connection
+                "table_schemas": table_schemas,
+                "record_counts": record_counts,
+                "connection_string": safe_connection,
+                "key_exchange_fields": {
+                    "chat_session": table_schemas.get('chat_session', 'Table not found')
+                }
             })
         except Exception as e:
             return jsonify({
@@ -190,35 +235,95 @@ def create_app():
                 "error_type": type(e).__name__
             }), 500
     
+    # === KEY EXCHANGE DEBUG ENDPOINT ===
+    @app.route('/api/debug/key_exchange')
+    @login_required
+    def debug_key_exchange():
+        """Debug endpoint for key exchange status"""
+        try:
+            # Get user's active sessions
+            sessions = ChatSession.query.filter(
+                ((ChatSession.initiator_id == current_user.id) | (ChatSession.recipient_id == current_user.id)),
+                ChatSession.is_active == True,
+                ChatSession.expires_at > datetime.datetime.utcnow()
+            ).all()
+            
+            session_debug = []
+            for session in sessions:
+                is_initiator = (session.initiator_id == current_user.id)
+                other_user_id = session.recipient_id if is_initiator else session.initiator_id
+                other_user = User.query.get(other_user_id)
+                
+                session_debug.append({
+                    'token': session.session_token[:8] + '...',
+                    'role': 'INITIATOR' if is_initiator else 'RECIPIENT',
+                    'other_user': other_user.username if other_user else 'Unknown',
+                    'has_encrypted_key': bool(session.encrypted_session_key),
+                    'key_length': len(session.encrypted_session_key) if session.encrypted_session_key else 0,
+                    'key_is_ack': session.encrypted_session_key == 'ACK' if session.encrypted_session_key else False,
+                    'key_acknowledged': session.key_acknowledged,
+                    'key_ready': session.is_key_ready() if hasattr(session, 'is_key_ready') else 'Unknown',
+                    'created_at': session.created_at.isoformat(),
+                    'key_created_at': session.key_created_at.isoformat() if session.key_created_at else None,
+                    'key_acknowledged_at': session.key_acknowledged_at.isoformat() if session.key_acknowledged_at else None
+                })
+            
+            return jsonify({
+                'status': 'success',
+                'user_id': current_user.id,
+                'username': current_user.username,
+                'sessions': session_debug,
+                'timestamp': datetime.datetime.utcnow().isoformat()
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 500
+    
     # Inicjalizacja bazy danych przy pierwszym uruchomieniu
     with app.app_context():
         try:
             # Sprawdź połączenie
             db.session.execute(text("SELECT 1"))
-            print("Połączenie z bazą danych nawiązane pomyślnie")
+            print("✅ Database connection established successfully")
             
             # Utwórz tabele (bezpieczna metoda)
             inspector = inspect(db.engine)
             existing_tables = inspector.get_table_names()
             
             if not existing_tables:
-                print("Baza danych jest pusta, tworzę schemat...")
+                print("🔄 Database is empty, creating schema...")
                 db.create_all()
+                print("✅ Database schema created")
             else:
-                print(f"Znaleziono istniejące tabele: {existing_tables}")
+                print(f"✅ Found existing tables: {existing_tables}")
                 
                 # Sprawdź, czy wszystkie modele mają odpowiadające tabele
                 models = db.Model.__subclasses__()
-                model_tables = [model.__tablename__ for model in models]
+                model_tables = [model.__tablename__ for model in models if hasattr(model, '__tablename__')]
                 
                 missing_tables = [table for table in model_tables if table not in existing_tables]
                 if missing_tables:
-                    print(f"Brakujące tabele: {missing_tables}")
+                    print(f"🔄 Missing tables found: {missing_tables}")
                     db.create_all()
-                    print("Dodano brakujące tabele")
+                    print("✅ Missing tables created")
+                else:
+                    print("✅ All required tables exist")
+            
+            # Verify key exchange fields exist
+            if 'chat_session' in existing_tables:
+                columns = [c['name'] for c in inspector.get_columns('chat_session')]
+                key_fields = ['encrypted_session_key', 'key_acknowledged', 'key_created_at', 'key_acknowledged_at']
+                missing_fields = [field for field in key_fields if field not in columns]
+                if missing_fields:
+                    print(f"⚠️ Missing key exchange fields: {missing_fields}")
+                else:
+                    print("✅ All key exchange fields present in chat_session table")
             
         except Exception as e:
-            print(f"Błąd podczas inicjalizacji bazy danych: {e}")
+            print(f"❌ Database initialization error: {e}")
             traceback.print_exc()
             db.session.rollback()
 
