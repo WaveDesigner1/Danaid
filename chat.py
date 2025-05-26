@@ -230,7 +230,7 @@ def reject_friend_request(request_id):
         db.session.commit()
         
         return jsonify({'status': 'success', 'message': 'Zaproszenie odrzucone'})
-    except Exception e:
+    except Exception as e:
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
