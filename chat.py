@@ -238,7 +238,7 @@ def reject_friend_request(request_id):
 @chat_bp.route('/api/session/init', methods=['POST'])
 @login_required
 def init_chat_session():
-    """Inicjuje sesję czatu"""
+    """Inicjuje sesję czatu z automatycznym generowaniem klucza"""
     try:
         data = request.get_json()
         recipient_id = data.get('recipient_id')
@@ -251,6 +251,69 @@ def init_chat_session():
             return jsonify({'status': 'error', 'message': 'Adresat nie istnieje'}), 404
             
         session = _find_or_create_session(recipient.id)
+        print(f"🔑 Session initialized: {session.session_token[:8]} - INITIATOR: {current_user.id}")
+        
+        # === AUTOMATYCZNE GENEROWANIE KLUCZA PRZEZ INITIATORA ===
+        is_initiator = (current_user.id == session.initiator_id)
+        
+        if is_initiator and not session.encrypted_session_key:
+            print(f"🔑 INITIATOR {current_user.id} - Auto-generating session key...")
+            
+            try:
+                # 1. Wygeneruj klucz AES sesji (po stronie serwera)
+                import secrets
+                import base64
+                from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+                from cryptography.hazmat.primitives import serialization, hashes
+                from cryptography.hazmat.primitives.asymmetric import rsa, padding
+                
+                # Generuj losowy 32-bajtowy klucz AES
+                aes_key = secrets.token_bytes(32)  # 256-bit AES key
+                aes_key_base64 = base64.b64encode(aes_key).decode('utf-8')
+                print(f"🔑 Generated AES key, length: {len(aes_key_base64)}")
+                
+                # 2. Pobierz klucz publiczny odbiorcy
+                recipient_public_key_pem = recipient.public_key
+                if not recipient_public_key_pem:
+                    raise Exception("Recipient has no public key")
+                
+                # Import klucza publicznego
+                from cryptography.hazmat.primitives import serialization
+                public_key = serialization.load_pem_public_key(recipient_public_key_pem.encode('utf-8'))
+                print(f"🔑 Loaded recipient's public key")
+                
+                # 3. Zaszyfruj klucz AES kluczem publicznym odbiorcy (RSA-OAEP)
+                encrypted_aes_key = public_key.encrypt(
+                    aes_key,
+                    padding.OAEP(
+                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                        algorithm=hashes.SHA256(),
+                        label=None
+                    )
+                )
+                
+                # Convert to base64 for storage
+                encrypted_key_base64 = base64.b64encode(encrypted_aes_key).decode('utf-8')
+                print(f"🔑 Encrypted session key with RSA, length: {len(encrypted_key_base64)}")
+                
+                # 4. Zapisz zaszyfrowany klucz w sesji
+                session.encrypted_session_key = encrypted_key_base64
+                session.key_created_at = datetime.datetime.utcnow()
+                session.key_acknowledged = False
+                db.session.commit()
+                
+                print(f"✅ INITIATOR {current_user.id}: Auto-generated and stored session key for {session.session_token[:8]}")
+                
+            except Exception as key_error:
+                print(f"❌ Auto key generation failed: {key_error}")
+                # Don't fail the session creation, just log the error
+                session.encrypted_session_key = None
+        
+        elif not is_initiator:
+            print(f"🔓 RECIPIENT {current_user.id} - will retrieve key from initiator")
+        
+        else:
+            print(f"🔑 Session key already exists: {bool(session.encrypted_session_key)}")
         
         return jsonify({
             'status': 'success',
@@ -263,6 +326,7 @@ def init_chat_session():
                 'recipient_id': session.recipient_id,
                 'has_key': session.encrypted_session_key is not None,
                 'key_acknowledged': session.key_acknowledged,
+                'auto_key_generated': is_initiator and session.encrypted_session_key is not None,
                 'other_user': {
                     'id': recipient.id,
                     'user_id': recipient.user_id,
@@ -273,6 +337,9 @@ def init_chat_session():
         })
     except Exception as e:
         db.session.rollback()
+        print(f"❌ Session initialization error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @chat_bp.route('/api/sessions/active')
