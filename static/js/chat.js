@@ -535,51 +535,102 @@ class ChatManager {
         attempts++;
         console.log(`🔍 Attempt ${attempts}: Checking for session key...`);
         
-        const response = await fetch(`/api/session/${sessionToken}/get_key`);
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.status === 'success' && data.encrypted_session_key) {
-            encryptedKey = data.encrypted_session_key;
-            console.log("✅ Found encrypted session key from initiator");
-            break;
+        try {
+          const response = await fetch(`/api/session/${sessionToken}/get_key`);
+          console.log("📡 Get key response status:", response.status);
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log("📨 Get key response data:", data);
+            
+            if (data.status === 'success' && data.encrypted_session_key) {
+              encryptedKey = data.encrypted_session_key;
+              console.log("✅ Found encrypted session key from initiator, length:", encryptedKey.length);
+              break;
+            } else {
+              console.log("⚠️ No key available yet, status:", data.status);
+            }
+          } else {
+            console.log("❌ HTTP error:", response.status);
           }
+        } catch (fetchError) {
+          console.error("❌ Fetch error:", fetchError);
         }
         
         // Wait 1 second before retry
         if (attempts < maxAttempts) {
+          console.log("⏳ Waiting 1 second before retry...");
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       
       if (!encryptedKey) {
-        throw new Error('Timeout: No session key from initiator');
+        throw new Error('Timeout: No session key from initiator after 10 attempts');
       }
       
       // 2. Decrypt with our private RSA key
       console.log("🔓 Decrypting session key with private key...");
-      const sessionKeyBase64 = await window.cryptoManager.decryptSessionKey(encryptedKey);
+      console.log("🔑 Encrypted key preview:", encryptedKey.slice(0, 50) + "...");
+      
+      let sessionKeyBase64;
+      try {
+        sessionKeyBase64 = await window.cryptoManager.decryptSessionKey(encryptedKey);
+        console.log("✅ Session key decrypted successfully, length:", sessionKeyBase64.length);
+      } catch (decryptError) {
+        console.error("❌ Session key decryption failed:", decryptError);
+        
+        // Try to debug the issue
+        console.log("🔍 Debug info:");
+        console.log("- Private key available:", !!window.cryptoManager.privateKey);
+        console.log("- Encrypted key type:", typeof encryptedKey);
+        console.log("- Encrypted key valid base64:", /^[A-Za-z0-9+/]+={0,2}$/.test(encryptedKey));
+        
+        throw new Error(`Session key decryption failed: ${decryptError.message}`);
+      }
       
       // 3. Store decrypted session key locally
-      window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
-      console.log("✅ RECIPIENT: Session key decrypted and stored");
+      console.log("💾 Storing session key locally...");
+      const storeResult = window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
+      
+      if (storeResult) {
+        console.log("✅ RECIPIENT: Session key decrypted and stored successfully");
+      } else {
+        throw new Error("Failed to store session key locally");
+      }
       
       // 4. Acknowledge receipt
-      const ackResponse = await fetch(`/api/session/${sessionToken}/exchange_key`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ encrypted_key: 'ACK' }) // Just acknowledge
-      });
+      console.log("📤 Sending acknowledgment to server...");
+      try {
+        const ackResponse = await fetch(`/api/session/${sessionToken}/exchange_key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ encrypted_key: 'ACK' }) // Just acknowledge
+        });
+        
+        if (ackResponse.ok) {
+          console.log("✅ RECIPIENT: Key receipt acknowledged");
+        } else {
+          console.warn("⚠️ Acknowledgment failed, but key is stored locally");
+        }
+      } catch (ackError) {
+        console.warn("⚠️ Acknowledgment error:", ackError);
+        // Don't throw - key is already stored locally
+      }
       
-      if (ackResponse.ok) {
-        console.log("✅ RECIPIENT: Key receipt acknowledged");
+      // 5. Verify that key is actually stored and accessible
+      console.log("🔍 Verifying stored key...");
+      const verifyKey = window.cryptoManager.getSessionKey(sessionToken);
+      if (verifyKey) {
+        console.log("✅ Key verification successful - ready for messaging");
+      } else {
+        throw new Error("Key storage verification failed");
       }
       
     } catch (error) {
+      console.error("❌ Complete key retrieval process failed:", error);
       throw new Error(`Session key retrieval failed: ${error.message}`);
     }
   }
-
   async _getSessionKeyOptimized(sessionToken) {
     // Cache check
     const cacheKey = `session_key_${sessionToken}`;
