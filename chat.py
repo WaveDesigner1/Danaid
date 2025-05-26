@@ -1,6 +1,7 @@
 """
 chat.py - Zunifikowany moduł czatu z naprawioną funkcjonalnością real-time
 NAPRAWIONO: Socket.IO integration, friend requests, message broadcasting, KEY EXCHANGE
+NAPRAWIONO: Endpoint get_key zwracał "ACK" zamiast prawdziwego klucza
 """
 from flask import Blueprint, render_template, request, jsonify, current_app
 from flask_login import login_required, current_user
@@ -229,7 +230,7 @@ def reject_friend_request(request_id):
         db.session.commit()
         
         return jsonify({'status': 'success', 'message': 'Zaproszenie odrzucone'})
-    except Exception as e:
+    except Exception e:
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -336,37 +337,65 @@ def exchange_session_key(session_token):
             return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
         
         print(f"🔑 Key exchange request from user {current_user.id} for session {session_token[:8]}...")
+        print(f"🔑 Encrypted key data: {encrypted_key[:50]}...")
         
-        # === NOWA LOGIKA: KTO GENERUJE KLUCZ? ===
-        # ZASADA: Initiator (ten kto zaczął sesję) generuje i wysyła klucz
-        # Recipient otrzymuje i zapisuje klucz
-        
+        # === NAPRAWIONA LOGIKA: ROZRÓŻNIENIE ACK od KLUCZA ===
         is_initiator = (current_user.id == session.initiator_id)
         
-        if is_initiator:
-            # INITIATOR: Zapisuje zaszyfrowany klucz dla odbiorcy
-            print(f"✅ Initiator {current_user.id} storing encrypted key for recipient")
-            session.encrypted_session_key = encrypted_key
-            session.last_activity = datetime.datetime.utcnow()
-            db.session.commit()
+        if encrypted_key == 'ACK':
+            # === RECIPIENT POTWIERDZA ODBIÓR KLUCZA ===
+            print(f"🔓 RECIPIENT {current_user.id} acknowledging key receipt for session {session_token[:8]}")
             
-            return jsonify({'status': 'success', 'message': 'Klucz wysłany do odbiorcy'})
+            if is_initiator:
+                return jsonify({'status': 'error', 'message': 'Initiator cannot send ACK'}), 400
             
-        else:
-            # RECIPIENT: Oznacza potwierdzenie odbioru klucza
-            print(f"🔓 Recipient {current_user.id} acknowledging key receipt")
-            
-            if not session.encrypted_session_key:
-                return jsonify({'status': 'error', 'message': 'Brak klucza od initiatora'}), 400
-            
-            # Oznacz, że recipient potwierdził odbiór klucza
+            # Oznacz że klucz został potwierdzony
             session.key_acknowledged = True
             session.last_activity = datetime.datetime.utcnow()
             db.session.commit()
             
             return jsonify({
                 'status': 'success', 
-                'message': 'Klucz potwierdzony'
+                'message': 'Key receipt acknowledged'
+            })
+            
+        else:
+            # === INITIATOR WYSYŁA ZASZYFROWANY KLUCZ ===
+            print(f"🔑 INITIATOR {current_user.id} sending encrypted key for session {session_token[:8]}")
+            print(f"🔑 Encrypted key length: {len(encrypted_key)}")
+            
+            if not is_initiator:
+                return jsonify({'status': 'error', 'message': 'Only initiator can send encrypted key'}), 403
+            
+            # Walidacja klucza - powinien być długi (RSA 2048-bit = ~344 znaki base64)
+            if len(encrypted_key) < 100:
+                print(f"❌ Key too short: {len(encrypted_key)} chars")
+                return jsonify({
+                    'status': 'error', 
+                    'message': f'Invalid key length: {len(encrypted_key)} (expected >100)'
+                }), 400
+            
+            # Sprawdź czy to prawidłowy base64
+            import base64
+            try:
+                base64.b64decode(encrypted_key)
+            except Exception:
+                return jsonify({
+                    'status': 'error', 
+                    'message': 'Invalid base64 format'
+                }), 400
+            
+            # Zapisz zaszyfrowany klucz
+            session.encrypted_session_key = encrypted_key
+            session.last_activity = datetime.datetime.utcnow()
+            session.key_acknowledged = False  # Resetuj potwierdzenie
+            db.session.commit()
+            
+            print(f"✅ INITIATOR: Encrypted session key stored for {session_token[:8]} (length: {len(encrypted_key)})")
+            
+            return jsonify({
+                'status': 'success', 
+                'message': 'Encrypted session key stored'
             })
             
     except Exception as e:
@@ -374,24 +403,38 @@ def exchange_session_key(session_token):
         print(f"❌ Key exchange error: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# === NOWY ENDPOINT: POBIERZ KLUCZ SESJI ===
+# === NAPRAWIONY ENDPOINT: POBIERZ KLUCZ SESJI ===
 @chat_bp.route('/api/session/<session_token>/get_key', methods=['GET'])
 @login_required
 def get_session_key(session_token):
-    """Pobiera zaszyfrowany klucz sesji dla odbiorcy"""
+    """NAPRAWIONY: Pobiera zaszyfrowany klucz sesji dla odbiorcy"""
     try:
         session = ChatSession.query.filter_by(session_token=session_token).first()
         if not session:
-            return jsonify({'status': 'error', 'message': 'Sesja nie istnieje'}), 404
+            print(f"❌ Session not found: {session_token[:8]}")
+            return jsonify({'status': 'error', 'message': 'Session not found'}), 404
             
         if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
+            print(f"❌ Access denied for user {current_user.id} to session {session_token[:8]}")
+            return jsonify({'status': 'error', 'message': 'Access denied'}), 403
         
-        # Sprawdź czy klucz istnieje
-        if not session.encrypted_session_key:
-            return jsonify({'status': 'error', 'message': 'Klucz jeszcze nie wygenerowany'}), 404
+        is_recipient = (current_user.id == session.recipient_id)
+        
+        print(f"🔍 Get key request from {'RECIPIENT' if is_recipient else 'INITIATOR'} {current_user.id}")
+        print(f"🔍 Session {session_token[:8]} - has key: {bool(session.encrypted_session_key)}")
+        
+        # === NAPRAWIONA LOGIKA: TYLKO RECIPIENT MOŻE POBRAĆ KLUCZ ===
+        if not is_recipient:
+            print(f"❌ Only recipient can get session key, user {current_user.id} is initiator")
+            return jsonify({'status': 'error', 'message': 'Only recipient can get session key'}), 403
+        
+        # Sprawdź czy klucz istnieje i nie jest "ACK"
+        if not session.encrypted_session_key or session.encrypted_session_key == 'ACK':
+            print(f"⏳ Session key not ready yet for {session_token[:8]}")
+            return jsonify({'status': 'waiting', 'message': 'Session key not ready yet'}), 200
         
         print(f"🔑 Serving encrypted session key for session {session_token[:8]} to user {current_user.id}")
+        print(f"🔑 Key length: {len(session.encrypted_session_key)}")
         
         # Zwróć zaszyfrowany klucz
         return jsonify({
@@ -499,9 +542,9 @@ def send_message():
             print("❌ Sesja wygasła")
             return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
             
-        if not session.encrypted_session_key:
-            print("❌ Brak klucza sesji")
-            return jsonify({'status': 'error', 'message': 'Brak klucza sesji'}), 400
+        if not session.encrypted_session_key or session.encrypted_session_key == 'ACK':
+            print("❌ Brak klucza sesji lub klucz nie gotowy")
+            return jsonify({'status': 'error', 'message': 'Session key not ready'}), 400
             
         if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
             print("❌ Brak dostępu do sesji")
