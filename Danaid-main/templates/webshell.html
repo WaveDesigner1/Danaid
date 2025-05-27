@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebShell Panel</title>
+    <style>
+        /* Reset podstawowy */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8f9fa;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        h1 {
+            color: #343a40;
+            font-size: 24px;
+        }
+        
+        nav a {
+            margin-left: 15px;
+            text-decoration: none;
+            color: #007bff;
+            font-weight: 500;
+        }
+        
+        nav a:hover {
+            text-decoration: underline;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .command-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        
+        .btn {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+        
+        .btn:hover {
+            background-color: #0069d9;
+        }
+        
+        .result-container {
+            margin-top: 25px;
+            display: flex;
+            flex-direction: column;
+            height: 500px;  /* Zwiększona wysokość dla lepszej widoczności */
+        }
+        
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-bottom: none;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }
+        
+        .result-header h2 {
+            font-size: 18px;
+            color: #495057;
+            margin: 0;
+        }
+        
+        .command-info {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #f1f3f5;
+            padding: 3px 7px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        
+        .result-content {
+            flex-grow: 1;
+            background-color: #212529;
+            border: 1px solid #e9ecef;
+            border-bottom-left-radius: 4px;
+            border-bottom-right-radius: 4px;
+            padding: 15px;
+            overflow: auto;
+            font-family: 'Courier New', Courier, monospace;
+            color: #f8f9fa;
+            position: relative;
+        }
+        
+        .no-result {
+            color: #adb5bd;
+            font-style: italic;
+        }
+        
+        pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .toolbar {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            z-index: 10;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        
+        .toolbar:hover {
+            opacity: 1;
+        }
+        
+        .toolbar button {
+            padding: 5px 10px;
+            background-color: #495057;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        
+        .toolbar button:hover {
+            background-color: #343a40;
+        }
+        
+        .command-history {
+            margin-top: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .history-header {
+            background-color: #f8f9fa;
+            padding: 10px 15px;
+            font-weight: 600;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .history-items {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .history-item {
+            padding: 8px 15px;
+            border-bottom: 1px solid #e9ecef;
+            cursor: pointer;
+            transition: background-color 0.15s;
+        }
+        
+        .history-item:hover {
+            background-color: #f1f3f5;
+        }
+        
+        .history-item:last-child {
+            border-bottom: none;
+        }
+        
+        footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+            color: #6c757d;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        /* Responsywność */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            nav {
+                margin-top: 10px;
+            }
+            
+            nav a {
+                margin-left: 0;
+                margin-right: 15px;
+            }
+            
+            .result-container {
+                height: 350px;  /* Mniejsza wysokość na urządzeniach mobilnych */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>WebShell Panel</h1>
+            <nav>
+                <a href="/admin_dashboard">Dashboard</a>
+                <a href="/flask_admin/diagnostics/">Diagnostyka</a>
+            </nav>
+        </header>
+        
+        <main>
+            <form method="post" action="">
+                <div class="form-group">
+                    <label for="command"><strong>Wprowadź komendę:</strong></label>
+                    <input type="text" id="command" name="command" class="command-input" value="{{ command or '' }}" placeholder="Wpisz komendę..." autocomplete="off" autofocus>
+                    <button type="submit" class="btn">Wykonaj</button>
+                </div>
+            </form>
+            
+            <!-- Kontener na wynik - zawsze widoczny -->
+            <div class="result-container">
+                <div class="result-header">
+                    <h2>Wynik wykonania</h2>
+                    {% if command %}
+                    <span class="command-info">$ {{ command }}</span>
+                    {% endif %}
+                </div>
+                <div class="result-content">
+                    <div class="toolbar">
+                        <button id="clearBtn" type="button">Wyczyść</button>
+                        <button id="copyBtn" type="button">Kopiuj</button>
+                    </div>
+                    
+                    {% if result %}
+                    <pre>{{ result }}</pre>
+                    {% else %}
+                    <div class="no-result">Brak wyników. Wprowadź komendę i kliknij "Wykonaj".</div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Historia komend (opcjonalnie) -->
+            {% if command_history and command_history|length > 0 %}
+            <div class="command-history">
+                <div class="history-header">Historia komend</div>
+                <div class="history-items">
+                    {% for cmd in command_history %}
+                    <div class="history-item" data-command="{{ cmd }}">{{ cmd }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 Panel Administracyjny | WebShell v1.1</p>
+        </footer>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Ustaw fokus na polu wejściowym
+            const commandInput = document.getElementById('command');
+            commandInput.focus();
+            
+            // Historia komend - pobieranie z LocalStorage
+            let commandHistory = JSON.parse(localStorage.getItem('webshell_history') || '[]');
+            let currentHistoryIndex = -1;
+            
+            // Dodaj obsługę klawiszy strzałek do nawigacji po historii
+            commandInput.addEventListener('keydown', function(e) {
+                // Strzałka w górę
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (commandHistory.length > 0 && currentHistoryIndex < commandHistory.length - 1) {
+                        currentHistoryIndex++;
+                        this.value = commandHistory[currentHistoryIndex];
+                    }
+                }
+                // Strzałka w dół
+                else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (currentHistoryIndex > 0) {
+                        currentHistoryIndex--;
+                        this.value = commandHistory[currentHistoryIndex];
+                    } else if (currentHistoryIndex === 0) {
+                        currentHistoryIndex = -1;
+                        this.value = '';
+                    }
+                }
+            });
+            
+            // Zapisz historię komend po wysłaniu formularza
+            document.querySelector('form').addEventListener('submit', function() {
+                const command = commandInput.value.trim();
+                if (command && (commandHistory.length === 0 || commandHistory[0] !== command)) {
+                    commandHistory.unshift(command);
+                    if (commandHistory.length > 30) { // Ogranicz historię do 30 komend
+                        commandHistory.pop();
+                    }
+                    localStorage.setItem('webshell_history', JSON.stringify(commandHistory));
+                    currentHistoryIndex = -1;
+                }
+            });
+            
+            // Obsługa kliknięcia w element historii
+            const historyItems = document.querySelectorAll('.history-item');
+            historyItems.forEach(function(item) {
+                item.addEventListener('click', function() {
+                    commandInput.value = this.getAttribute('data-command');
+                    commandInput.focus();
+                });
+            });
+            
+            // Obsługa przycisku kopiowania
+            const copyBtn = document.getElementById('copyBtn');
+            if (copyBtn) {
+                copyBtn.addEventListener('click', function() {
+                    const resultContent = document.querySelector('.result-content pre');
+                    if (resultContent) {
+                        const textToCopy = resultContent.textContent;
+                        navigator.clipboard.writeText(textToCopy)
+                            .then(() => {
+                                // Tymczasowa informacja o skopiowaniu
+                                const originalText = copyBtn.textContent;
+                                copyBtn.textContent = 'Skopiowano!';
+                                setTimeout(() => {
+                                    copyBtn.textContent = originalText;
+                                }, 2000);
+                            })
+                            .catch(err => {
+                                console.error('Błąd podczas kopiowania: ', err);
+                            });
+                    }
+                });
+            }
+            
+            // Obsługa przycisku czyszczenia
+            const clearBtn = document.getElementById('clearBtn');
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function() {
+                    const resultContent = document.querySelector('.result-content');
+                    const preElement = resultContent.querySelector('pre');
+                    if (preElement) {
+                        preElement.remove();
+                        const noResult = document.createElement('div');
+                        noResult.className = 'no-result';
+                        noResult.textContent = 'Wyniki zostały wyczyszczone.';
+                        resultContent.appendChild(noResult);
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
