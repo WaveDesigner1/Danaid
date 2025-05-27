@@ -376,6 +376,11 @@ class ChatManager {
           }
         } else {
           console.log("⚠️ No session key available");
+          console.log("⚠️ No session key available");
+          console.log("🔍 DEBUG - Session token:", sessionToken.slice(0, 8));
+          console.log("🔍 DEBUG - Crypto manager exists:", !!window.cryptoManager);
+          console.log("🔍 DEBUG - Has session key?:", window.cryptoManager?.hasSessionKey(sessionToken));
+          console.log("🔍 DEBUG - Raw session key:", window.cryptoManager?.getSessionKey(sessionToken)?.slice(0, 20));
           processedMessage.content = '[Encrypted - key not available]';
         }
       } else {
