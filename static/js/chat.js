@@ -776,34 +776,42 @@ class ChatManager {
     if (!this.currentSession) {
       throw new Error('No current session');
     }
-    
+  
     const sessionToken = this.currentSession.token;
-    
-    // Debouncing - jeśli już trwa exchange dla tej sesji, poczekaj
-    if (this.keyExchangePromises.has(sessionToken)) {
-      console.log("🔄 Key exchange already in progress, waiting...");
-      return await this.keyExchangePromises.get(sessionToken);
-    }
-    
-    // Check if we already have session key
+  
+    // Check if we already have session key locally
     if (await this._getSessionKeyOptimized(sessionToken)) {
       console.log("✅ Session key already exists");
       return;
     }
-    
-    // Start key exchange
-    const exchangePromise = this._performKeyExchange(sessionToken);
-    this.keyExchangePromises.set(sessionToken, exchangePromise);
-    
+  
+  // ⭐ DODAJ TO NA POCZĄTKU:
+  // Try to get existing key from server FIRST
     try {
-      await exchangePromise;
-      console.log("✅ Key exchange completed");
-    } finally {
-      // Clean up promise
-      this.keyExchangePromises.delete(sessionToken);
+      console.log("🔍 Checking server for existing key...");
+      const response = await fetch(`/api/session/${sessionToken}/key`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.encrypted_key) {
+        console.log("🔑 Found encrypted key on server, decrypting...");
+        
+        // Decrypt the session key with our private key
+        const decryptedKeyBase64 = await window.cryptoManager.decryptSessionKey(data.encrypted_key);
+        
+        // Store locally
+        window.cryptoManager.storeSessionKey(sessionToken, decryptedKeyBase64);
+        console.log("✅ Server key decrypted and stored locally");
+        return;
+      }
     }
+  } catch (e) {
+    console.log("⚠️ No existing key on server or decrypt failed, will generate new");
   }
-
+  
+  // Generate new key only if none exists on server
+  await this._performKeyExchange(sessionToken);
+}
+  
   async _performKeyExchange(sessionToken) {
     console.log("🔑 Generating NEW session key...");
     
