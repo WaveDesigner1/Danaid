@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Logowanie - Czat szyfrowany</title>
+    <!-- ZMIANA: Zunifikowany CSS zamiast styles.css -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/index_styles.css') }}">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <h1>Logowanie</h1>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username">Nazwa użytkownika:</label>
+                    <input type="text" id="username" name="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">Hasło:</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+                <div class="form-group">
+                    <label for="pem-file">Klucz prywatny (.pem):</label>
+                    <input type="file" id="pem-file" name="pem-file" accept=".pem" required>
+                </div>
+                <button type="button" id="login-button" class="btn btn-primary">Zaloguj się</button>
+            </form>
+            <div id="login-status" style="display: none;"></div>
+            <div class="login-link">
+                Nie masz konta? <a href="/register">Zarejestruj się</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ZAKTUALIZOWANE SKRYPTY -->
+    <!-- ZMIANA: Usunięto static_messages.js i user_script.js -->
+    <!-- ZMIANA: Nowy zunifikowany auth.js (login + register) -->
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>
