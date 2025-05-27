@@ -689,4 +689,4 @@ def polling_messages():
         return jsonify({
             'status': 'success',
             'messages': messages,
-            'last_id': max_i
+            'last_id': max_id
