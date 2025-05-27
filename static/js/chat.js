@@ -1,6 +1,6 @@
 /**
  * chat.js - KOMPLETNY Chat Manager z naprawionym KEY EXCHANGE
- * NAPRAWIONO: Echo filter, key exchange logic, real-time messaging, automatic key generation
+ * MINIMALNE ZMIANY: Naprawiony echo filter, zunifikowane user ID, dodane logi debugowania
  */
 class ChatManager {
   constructor() {
@@ -56,12 +56,17 @@ class ChatManager {
 
   // === INITIALIZATION ===
   _loadUserData() {
-    return {
-      id: sessionStorage.getItem('user_id'),
+    // ZMIANA: Zunifikowane identyfikatory użytkowników z parseInt()
+    const userData = {
+      id: parseInt(sessionStorage.getItem('user_id')) || null,  // ZAWSZE INT dla porównań
+      user_id: sessionStorage.getItem('user_id'),              // STRING ID z serwera
       username: sessionStorage.getItem('username'),
       isAdmin: sessionStorage.getItem('is_admin') === 'true',
       isLoggedIn: sessionStorage.getItem('isLoggedIn') === 'true'
     };
+    
+    console.log("👤 User data loaded:", userData);
+    return userData;
   }
 
   _initDOM() {
@@ -272,11 +277,11 @@ class ChatManager {
   async _handleNewMessage(data) {
     console.log("📨 Real-time message received:", data.message.id, "from:", data.message.sender_id);
     
-    // === POPRAWIONY ECHO FILTER ===
-    const messageSenderId = String(data.message.sender_id);
-    const currentUserId = String(this.user.id);
+    // === NAPRAWIONY ECHO FILTER - ZMIANA ===
+    const messageSenderId = parseInt(data.message.sender_id);
+    const currentUserId = this.user.id; // INT z _loadUserData()
     
-    console.log("🔍 Echo check:", messageSenderId, "vs", currentUserId);
+    console.log("🔍 Echo check:", messageSenderId, "vs", currentUserId, "(types:", typeof messageSenderId, typeof currentUserId, ")");
     
     // Sprawdź czy to nasza własna wiadomość (echo)
     if (messageSenderId === currentUserId) {
@@ -443,7 +448,7 @@ class ChatManager {
     this._renderFriendsList();
   }
 
-  // === NAPRAWIONY KEY EXCHANGE LOGIC ===
+  // === KEY EXCHANGE LOGIC ===
   async _ensureSessionKey() {
     if (!this.currentSession) {
       throw new Error('No current session');
@@ -463,7 +468,7 @@ class ChatManager {
       return;
     }
     
-    // === NOWA LOGIKA: SPRAWDŹ CZY JESTEŚ INITIATOREM ===
+    // === LOGIKA: SPRAWDŹ CZY JESTEŚ INITIATOREM ===
     const isInitiator = (parseInt(this.user.id) === this.currentSession.initiator_id);
     console.log(`🔑 Key exchange role: ${isInitiator ? 'INITIATOR' : 'RECIPIENT'}`);
     
@@ -483,48 +488,34 @@ class ChatManager {
     }
   }
 
-  // === NAPRAWIONA FUNKCJA: _performKeyGeneration ===
+  // === KEY GENERATION (INITIATOR) ===
   async _performKeyGeneration(sessionToken) {
-    console.log("🔑 INITIATOR: Checking if key was auto-generated...");
+    console.log("🔑 INITIATOR: Generating and sending session key...");
     
     try {
-      // 1. Sprawdź czy klucz już istnieje (auto-generated przez serwer)
+      // 1. Check if we already have key locally
       const sessionKeyBase64 = window.cryptoManager.getSessionKey(sessionToken);
       if (sessionKeyBase64) {
         console.log("✅ INITIATOR: Session key already exists locally");
-        return; // Klucz już istnieje, nic nie rób
+        return;
       }
       
-      // 2. Sprawdź czy serwer już wygenerował klucz
-      const checkResponse = await fetch(`/api/session/${sessionToken}/get_key`);
-      if (checkResponse.ok) {
-        const checkData = await checkResponse.json();
-        if (checkData.status === 'success' && checkData.encrypted_session_key) {
-          console.log("✅ INITIATOR: Server already has encrypted key - this shouldn't happen");
-          // Jeśli serwer ma klucz, ale nie mamy go lokalnie, może być problem
-          return;
-        }
-      }
-      
-      // 3. Serwer nie ma klucza - prawdopodobnie błąd auto-generacji
-      console.log("⚠️ INITIATOR: No key found on server, generating manually as fallback...");
-      
-      // Fallback: Wygeneruj klucz ręcznie (stary kod)
+      // 2. Generate new session key
       const sessionKey = await window.cryptoManager.generateSessionKey();
       const sessionKeyBase64New = await window.cryptoManager.exportSessionKey(sessionKey);
       
       // Store locally FIRST
       window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64New);
-      console.log("✅ Fallback session key stored locally");
+      console.log("✅ Session key stored locally");
       
-      // Get recipient's public key
+      // 3. Get recipient's public key
       const publicKey = await this._getRecipientPublicKey(this.currentSession.other_user.user_id);
       
-      // Encrypt session key with recipient's RSA public key
+      // 4. Encrypt session key with recipient's RSA public key
       const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(publicKey, sessionKey);
-      console.log("🔐 Fallback session key encrypted for recipient");
+      console.log("🔐 Session key encrypted for recipient");
       
-      // Send encrypted key to server
+      // 5. Send encrypted key to server
       const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -533,10 +524,10 @@ class ChatManager {
       
       if (!response.ok) {
         window.cryptoManager.removeSessionKey(sessionToken);
-        throw new Error(`Fallback key exchange failed: ${response.status}`);
+        throw new Error(`Key exchange failed: ${response.status}`);
       }
       
-      console.log("✅ INITIATOR: Fallback session key sent to server");
+      console.log("✅ INITIATOR: Session key sent to server");
       
     } catch (error) {
       window.cryptoManager.removeSessionKey(sessionToken);
@@ -600,13 +591,6 @@ class ChatManager {
         console.log("✅ Session key decrypted successfully, length:", sessionKeyBase64.length);
       } catch (decryptError) {
         console.error("❌ Session key decryption failed:", decryptError);
-        
-        // Try to debug the issue
-        console.log("🔍 Debug info:");
-        console.log("- Private key available:", !!window.cryptoManager.privateKey);
-        console.log("- Encrypted key type:", typeof encryptedKey);
-        console.log("- Encrypted key valid base64:", /^[A-Za-z0-9+/]+={0,2}$/.test(encryptedKey));
-        
         throw new Error(`Session key decryption failed: ${decryptError.message}`);
       }
       
@@ -977,7 +961,7 @@ class ChatManager {
         // Load messages first, then try key exchange
         await this._loadMessages(data.session.token);
         
-        // Try key exchange (non-blocking) - TUTAJ DZIEJE SIĘ MAGIA!
+        // Try key exchange (non-blocking)
         this._ensureSessionKey()
           .then(() => this._updateSessionStatus('ready'))
           .catch(() => this._updateSessionStatus('pending'));
@@ -1089,7 +1073,7 @@ class ChatManager {
     this._scrollToBottom();
   }
 
-  // === NAPRAWIONY sendMessage() ===
+  // === SENDING MESSAGES ===
   async sendMessage() {
     const content = this.elements.messageInput?.value.trim();
     if (!content || !this.currentSession) return;
@@ -1144,8 +1128,7 @@ class ChatManager {
         // Clear input
         this.elements.messageInput.value = '';
         
-        // === USUNIĘTE: OPTIMISTIC UI UPDATE ===
-        // Pozwól Socket.IO obsłużyć wszystkie wiadomości
+        // Let Socket.IO handle all messages (no optimistic UI update)
         console.log('✅ Message sent - waiting for real-time confirmation');
       } else {
         this._showNotification(data.message || 'Send failed', 'error');
