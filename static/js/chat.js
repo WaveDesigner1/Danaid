@@ -813,40 +813,45 @@ class ChatManager {
 }
   
   async _performKeyExchange(sessionToken) {
-    console.log("🔑 Generating NEW session key...");
+  console.log("🔑 Generating NEW session key...");
+  
+  try {
+    const sessionKey = await window.cryptoManager.generateSessionKey();
+    const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
     
-    try {
-      const sessionKey = await window.cryptoManager.generateSessionKey();
-      const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
-      
-      // Store locally first (CRITICAL)
-      window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
-      
-      // Get recipient's public key (with cache)
-      const publicKey = await this._getRecipientPublicKey(this.currentSession.other_user.user_id);
-      
-      // Encrypt and send session key
-      const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(publicKey, sessionKey);
-      
-      const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ encrypted_key: encryptedSessionKey })
-      });
-      
-      if (!response.ok) {
-        window.cryptoManager.removeSessionKey(sessionToken);
-        throw new Error(`Key exchange failed: ${response.status}`);
-      }
-      
-      // Clear cache for this session key
-      this.apiCache.delete(`session_key_${sessionToken}`);
-      
-    } catch (error) {
+    // Store locally first (CRITICAL)
+    window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
+    
+    // DODAJ TEN DEBUG:
+    console.log("🔍 Current user:", this.user.id, this.user.username);
+    console.log("🔍 Other user:", this.currentSession.other_user.user_id, this.currentSession.other_user.username);  
+    console.log("🔍 Encrypting session key FOR:", this.currentSession.other_user.user_id);
+    
+    // Get recipient's public key (with cache)
+    const publicKey = await this._getRecipientPublicKey(this.currentSession.other_user.user_id);
+    
+    // Encrypt and send session key
+    const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(publicKey, sessionKey);
+    
+    const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ encrypted_key: encryptedSessionKey })
+    });
+    
+    if (!response.ok) {
       window.cryptoManager.removeSessionKey(sessionToken);
-      throw new Error(`Session key setup failed: ${error.message}`);
+      throw new Error(`Key exchange failed: ${response.status}`);
     }
+    
+    // Clear cache for this session key
+    this.apiCache.delete(`session_key_${sessionToken}`);
+    
+  } catch (error) {
+    window.cryptoManager.removeSessionKey(sessionToken);
+    throw new Error(`Session key setup failed: ${error.message}`);
   }
+}
 
   // === CACHE DLA KLUCZY PUBLICZNYCH ===
   async _getRecipientPublicKey(userId) {
