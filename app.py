@@ -137,16 +137,56 @@ def create_app():
     # Inicjalizacja panelu admina
     init_admin(app)
     
-    # 🔥 INITIALIZE SOCKET.IO HANDLERS
+    # 🔥 NAPRAWIONE SOCKET.IO HANDLERS Z FALLBACK
     with app.app_context():
         try:
+            # Próbuj zaimportować handler z chat.py
             from chat import init_socketio_handler
             init_socketio_handler(socketio)
             print("✅ Socket.IO handler zainicjalizowany z chat.py")
-        except ImportError as e:
-            print(f"⚠️ Socket.IO handler import error: {e}")
         except Exception as e:
-            print(f"❌ Socket.IO handler init error: {e}")
+            print(f"⚠️ Socket.IO handler error: {e}")
+            print("🔄 Inicjalizowanie fallback Socket.IO handler...")
+            
+            # === FALLBACK SOCKET.IO HANDLER ===
+            @socketio.on('connect')
+            def fallback_connect():
+                print(f"🔌 Fallback: Client connected {request.sid}")
+                socketio.emit('connection_ack', {
+                    'message': 'Connected to server (fallback mode)',
+                    'session_id': request.sid,
+                    'timestamp': datetime.datetime.utcnow().isoformat()
+                })
+            
+            @socketio.on('disconnect') 
+            def fallback_disconnect():
+                print(f"🔌 Fallback: Client disconnected {request.sid}")
+            
+            @socketio.on('register_user')
+            def fallback_register_user(data):
+                user_id = data.get('user_id')
+                print(f"👤 Fallback: User {user_id} registered with session {request.sid}")
+                # Simple acknowledgment
+                socketio.emit('user_registered', {'status': 'registered'})
+            
+            @socketio.on('join_session')
+            def fallback_join_session(data):
+                session_token = data.get('session_token')
+                print(f"🏠 Fallback: User joined session {session_token[:8] if session_token else 'None'}...")
+                # Simple acknowledgment
+                socketio.emit('session_joined', {'status': 'joined'})
+            
+            @socketio.on('message')
+            def fallback_message(data):
+                print(f"📨 Fallback: Received message data: {data}")
+                # Echo back for testing
+                socketio.emit('message', {
+                    'type': 'fallback_echo',
+                    'original_data': data,
+                    'timestamp': datetime.datetime.utcnow().isoformat()
+                })
+            
+            print("✅ Fallback Socket.IO handler initialized")
  
     # === NAPRAWIONE MIGRACJE - URUCHOM PRZED INICJALIZACJĄ TABEL ===
     apply_migrations(app)
@@ -276,6 +316,24 @@ def create_app():
                 'timestamp': datetime.datetime.utcnow().isoformat()
             })
             
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 500
+    
+    # === DODANE: SOCKET.IO STATUS ENDPOINT ===
+    @app.route('/api/socketio/status')
+    def socketio_status():
+        """Status Socket.IO dla diagnostyki"""
+        try:
+            return jsonify({
+                'status': 'active',
+                'has_socketio': hasattr(app, 'socketio'),
+                'socketio_mode': getattr(app.socketio, 'async_mode', 'unknown') if hasattr(app, 'socketio') else None,
+                'connected_clients': len(getattr(app.socketio.server, 'manager', {}).get('rooms', {}).get('/', {})) if hasattr(app, 'socketio') else 0,
+                'timestamp': datetime.datetime.utcnow().isoformat()
+            })
         except Exception as e:
             return jsonify({
                 'status': 'error',
