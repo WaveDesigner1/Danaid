@@ -270,7 +270,7 @@ class ChatManager {
     // Brak IV = na pewno nie zaszyfrowane
     if (!message.iv) {
       console.log("🔍 No IV - plain text");
-      return false;
+      return !!(message.iv && message.content);
     }
     
     // Bardzo krótkie (mniej niż 20 znaków) = prawdopodobnie plain text
