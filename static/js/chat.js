@@ -681,6 +681,7 @@ class ChatManager {
     
     // Initialize session
     await this._initSession(friend.user_id);
+    
   }
 
   _updateSessionStatus(status) {
@@ -699,36 +700,34 @@ class ChatManager {
   }
 
   async _initSession(recipientId) {
-    try {
-      const response = await fetch('/api/session/init', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipient_id: recipientId })
-      });
+  try {
+    const response = await fetch('/api/session/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient_id: recipientId })
+    });
+    
+    const data = await response.json();
+    
+    if (data.status === 'success') {
+      this.currentSession = data.session;
       
-      const data = await response.json();
+      // ⭐ NAJPIERW KLUCZ - CZEKAJ NA NIEGO:
+      await this._ensureSessionKey();
+      this._updateSessionStatus('ready');
       
-      if (data.status === 'success') {
-        this.currentSession = data.session;
-        
-        // Load messages first, then try key exchange
-        await this._loadMessages(data.session.token);
-        
-        // Try key exchange (non-blocking)
-        this._ensureSessionKey()
-          .then(() => this._updateSessionStatus('ready'))
-          .catch(() => this._updateSessionStatus('pending'));
-        
-        console.log("✅ Session initialized:", data.session.token);
-      } else {
-        this._showNotification(data.message || 'Session error', 'error');
-      }
-    } catch (error) {
-      console.error("Session init error:", error);
-      this._showNotification('Connection error', 'error');
+      // ⭐ POTEM WIADOMOŚCI:
+      await this._loadMessages(data.session.token);
+      
+      console.log("✅ Session initialized:", data.session.token);
+    } else {
+      this._showNotification(data.message || 'Session error', 'error');
     }
+  } catch (error) {
+    console.error("Session init error:", error);
+    this._showNotification('Connection error', 'error');
   }
-
+}
   async _selectSession(session) {
     this.currentSession = session;
     await this._loadMessages(session.token);
