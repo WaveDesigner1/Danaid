@@ -234,28 +234,23 @@ class CryptoManager {
     try {
       console.log("💾 Storing session key for:", sessionToken?.substring(0, 8));
       
-      // If sessionKey is a CryptoKey object, export it first
-      let keyData;
-      if (sessionKey instanceof CryptoKey) {
-        const rawKey = await this.crypto.exportKey("raw", sessionKey);
-        keyData = this._arrayBufferToBase64(rawKey);
-      } else {
-        keyData = sessionKey; // Already base64 string
+      // 🚀 ENFORCE: sessionKey must be a CryptoKey object
+      if (!(sessionKey instanceof CryptoKey)) {
+        console.error("❌ Attempted to store non-CryptoKey object:", typeof sessionKey);
+        throw new Error("Session key must be a CryptoKey object");
       }
+      
+      // Export session key to base64 for storage
+      const rawKey = await this.crypto.exportKey("raw", sessionKey);
+      const keyData = this._arrayBufferToBase64(rawKey);
       
       const key = `session_key_${sessionToken}`;
       sessionStorage.setItem(key, keyData);
       
-      // Also store the CryptoKey object in memory for faster access
-      if (sessionKey instanceof CryptoKey) {
-        this.sessionKeys.set(sessionToken, sessionKey);
-      } else {
-        // Import the key for memory storage
-        const importedKey = await this.importSessionKey(keyData);
-        this.sessionKeys.set(sessionToken, importedKey);
-      }
+      // Store the CryptoKey object in memory for faster access
+      this.sessionKeys.set(sessionToken, sessionKey);
       
-      console.log(`🔑 Session key stored: ${sessionToken.slice(0, 8)}...`);
+      console.log(`🔑 Session key stored successfully: ${sessionToken.slice(0, 8)}...`);
       return true;
     } catch (error) {
       console.error("❌ Session key storage failed:", error);
