@@ -1,6 +1,7 @@
 """
-chat.py - Zunifikowany moduł czatu z DODANYMI BRAKUJĄCYMI API
-DODANE: friend requests endpoints
+chat.py - Zunifikowany moduł czatu (scalenie chat.py + chat_api.py)
+CZĘŚĆ 1: Podstawowe API - Users, Friends, Sessions
+Redukcja z 850 → 400 linii kodu
 """
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
@@ -12,11 +13,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 chat_bp = Blueprint('chat', __name__)
-socketio = None
-
-def init_socketio(socketio_instance):
-    global socketio
-    socketio = socketio_instance
 
 # === VIEWS ===
 @chat_bp.route('/chat')
@@ -112,68 +108,77 @@ def get_friends():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# === 🚀 DODANE BRAKUJĄCE API ENDPOINTS ===
-@chat_bp.route('/api/friend_requests/send', methods=['POST'])
+@chat_bp.route('/api/message/send', methods=['POST'])
 @login_required
-def send_friend_request():
-    """Wysyła zaproszenie do znajomych"""
+def send_message():
+    """Wysyła wiadomość"""
     try:
+        print("📨 Send message endpoint called")  # Debug
         data = request.get_json()
-        username = data.get('username')
+        print("Request data:", data)  # Debug
         
-        if not username:
-            return jsonify({'status': 'error', 'message': 'Brak nazwy użytkownika'}), 400
-            
-        # Znajdź użytkownika
-        target_user = User.query.filter_by(username=username).first()
-        if not target_user:
-            return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
-            
-        if target_user.id == current_user.id:
-            return jsonify({'status': 'error', 'message': 'Nie możesz dodać siebie'}), 400
-            
-        # Sprawdź czy już są znajomymi
-        if current_user.is_friend_with(target_user.id):
-            return jsonify({'status': 'error', 'message': 'Już jesteście znajomymi'}), 400
-            
-        # Sprawdź czy zaproszenie już istnieje
-        existing_request = FriendRequest.query.filter_by(
-            from_user_id=current_user.id,
-            to_user_id=target_user.id,
-            status='pending'
-        ).first()
+        required_fields = ['session_token', 'content', 'iv']
         
-        if existing_request:
-            return jsonify({'status': 'error', 'message': 'Zaproszenie już wysłane'}), 400
+        if not data or not all(field in data for field in required_fields):
+            print("❌ Brakujące dane:", data)
+            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
             
-        # Utwórz nowe zaproszenie
-        friend_request = FriendRequest(
-            from_user_id=current_user.id,
-            to_user_id=target_user.id,
-            status='pending'
+        session_token = data.get('session_token')
+        content = data.get('content')
+        iv = data.get('iv')
+        
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            print("❌ Nieprawidłowa sesja:", session_token)
+            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
+            
+        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
+            print("❌ Sesja wygasła")
+            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
+            
+        # 🔧 ZMIENIONE: Nie wymagamy key_acknowledged (może być False na początku)
+        if not session.encrypted_session_key:
+            print("❌ Brak klucza sesji")
+            return jsonify({'status': 'error', 'message': 'Brak klucza sesji'}), 400
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            print("❌ Brak dostępu do sesji")
+            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
+        
+        print("✅ Walidacja przeszła, zapisuję wiadomość")
+        
+        # Zapisz wiadomość
+        new_message = Message(
+            session_id=session.id,
+            sender_id=current_user.id,
+            content=content,
+            iv=iv,
+            timestamp=datetime.datetime.utcnow(),
+            read=False
         )
+        db.session.add(new_message)
         
-        db.session.add(friend_request)
+        # Odśwież sesję
+        session.last_activity = datetime.datetime.utcnow()
+        
+        # Automatycznie potwierdź klucz jeśli jeszcze nie został potwierdzony
+        if not session.key_acknowledged:
+            session.key_acknowledged = True
+            print("✅ Klucz automatycznie potwierdzony")
+            
         db.session.commit()
+        print("✅ Wiadomość zapisana:", new_message.id)
         
-        return jsonify({'status': 'success', 'message': 'Zaproszenie wysłane'})
-        
+        return jsonify({
+            'status': 'success',
+            'message': {
+                'id': new_message.id,
+                'timestamp': new_message.timestamp.isoformat()
+            }
+        })
     except Exception as e:
+        print(f"❌ Błąd wysyłania wiadomości: {e}")
         db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@chat_bp.route('/api/friend_requests/count')
-@login_required
-def get_friend_requests_count():
-    """Pobiera liczbę oczekujących zaproszeń"""
-    try:
-        count = FriendRequest.query.filter_by(
-            to_user_id=current_user.id,
-            status='pending'
-        ).count()
-        
-        return jsonify({'status': 'success', 'count': count})
-    except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @chat_bp.route('/api/friend_requests/pending')
@@ -251,109 +256,6 @@ def reject_friend_request(request_id):
         
         return jsonify({'status': 'success', 'message': 'Zaproszenie odrzucone'})
     except Exception as e:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-# === MESSAGES API ===
-@chat_bp.route('/api/message/send', methods=['POST'])
-@login_required
-def send_message():
-    """Wysyła wiadomość"""
-    try:
-        print("📨 Send message endpoint called")
-        data = request.get_json()
-        print("Request data:", data)
-        
-        required_fields = ['session_token', 'content', 'iv']
-        
-        if not data or not all(field in data for field in required_fields):
-            print("❌ Brakujące dane:", data)
-            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
-            
-        session_token = data.get('session_token')
-        content = data.get('content')
-        iv = data.get('iv')
-        
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        if not session:
-            print("❌ Nieprawidłowa sesja:", session_token)
-            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
-            
-        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
-            print("❌ Sesja wygasła")
-            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
-            
-        # 🔧 ZMIENIONE: Nie wymagamy key_acknowledged (może być False na początku)
-        if not session.encrypted_session_key:
-            print("❌ Brak klucza sesji")
-            return jsonify({'status': 'error', 'message': 'Brak klucza sesji'}), 400
-            
-        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
-            print("❌ Brak dostępu do sesji")
-            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
-        
-        print("✅ Walidacja przeszła, zapisuję wiadomość")
-        
-        # Zapisz wiadomość
-        new_message = Message(
-            session_id=session.id,
-            sender_id=current_user.id,
-            content=content,
-            iv=iv,
-            timestamp=datetime.datetime.utcnow(),
-            read=False
-        )
-        db.session.add(new_message)
-        
-        # Odśwież sesję
-        session.last_activity = datetime.datetime.utcnow()
-        
-        # Automatycznie potwierdź klucz jeśli jeszcze nie został potwierdzony
-        if not session.key_acknowledged:
-            session.key_acknowledged = True
-            print("✅ Klucz automatycznie potwierdzony")
-            
-        db.session.commit()
-        print("✅ Wiadomość zapisana:", new_message.id)
-        
-        # ✅ NAPRAWIONE Socket.IO emission
-        if socketio:  # Sprawdź czy socketio jest dostępne
-            # 🚀 FIX: Pobierz user_id zamiast database id
-            sender = User.query.get(current_user.id)
-    
-            message_data = {
-                'id': new_message.id,
-                'sender_id': sender.user_id,  # 🔥 FIXED: Use user_id instead of database id
-                'content': content,
-                'iv': iv,
-                'timestamp': new_message.timestamp.isoformat(),
-                'is_mine': False  # Dla odbiorcy będzie False
-            }
-    
-            room_name = f"session_{session_token}"
-            print(f"🚀 Emitting to room: {room_name}")
-            print(f"🔍 Sender user_id: {sender.user_id} (was database id: {current_user.id})")
-    
-            socketio.emit('message', {
-                'type': 'new_message',
-                'session_token': session.session_token,
-                'message': message_data,
-                'sender': current_user.username
-            }, room=room_name)
-    
-            print("✅ Socket.IO emission completed with proper user_id")
-        else:
-            print("⚠️ Socket.IO not available")
-        
-        return jsonify({
-            'status': 'success',
-            'message': {
-                'id': new_message.id,
-                'timestamp': new_message.timestamp.isoformat()
-            }
-        })
-    except Exception as e:
-        print(f"❌ Błąd wysyłania wiadomości: {e}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -575,6 +477,7 @@ def acknowledge_session_key(session_token):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # === MESSAGES API ===
+
 @chat_bp.route('/api/messages/<session_token>')
 @login_required
 def get_messages(session_token):
@@ -717,7 +620,8 @@ def get_user_info(user_id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# === DODANE DODATKOWE ENDPOINTY ===
+# === DODAJ TE ENDPOINTY NA KOŃCU chat.py ===
+
 @chat_bp.route('/api/messages/<session_token>/clear', methods=['DELETE'])
 @login_required
 def clear_session_messages(session_token):
@@ -810,3 +714,4 @@ def get_session_stats(session_token):
         
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
