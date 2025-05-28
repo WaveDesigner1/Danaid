@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, Response, session
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_required
-from flask_socketio import SocketIO, emit, join_room
+from flask_socketio import SocketIO
 from datetime import timedelta
 import os
 import shutil
@@ -72,8 +72,6 @@ def apply_migration(inspector, table, column, sql_statement):
                 print(f"Błąd podczas migracji: {e}")
                 db.session.rollback()
 
-
-
 # Główna funkcja tworząca aplikację
 def create_app():
     app = Flask(__name__)
@@ -107,61 +105,6 @@ def create_app():
                        logger=False, 
                        engineio_logger=False,
                        async_mode='threading')
-
-    from chat import init_socketio
-    init_socketio(socketio)
-    
-    # ✅ SOCKET.IO HANDLERS - ZACHOWANE (działają poprawnie)
-    @socketio.on('connect')
-    def handle_connect():
-        print(f"🔌 Socket connected: {request.sid}")
-
-    @socketio.on('disconnect')
-    def handle_disconnect():
-        print(f"🔌 Socket disconnected: {request.sid}")
-
-    @socketio.on('test_connection')
-    def handle_test_connection(data):
-        print(f"🧪 Test connection from {request.sid}: {data}")
-        emit('test_response', {'message': 'Backend received test'})
-
-    @socketio.on('join_session')
-    def handle_join_session(data):
-        session_token = data.get('session_token')
-        print(f"🏠 Client {request.sid} wants to join session: {session_token[:8]}...")
-    
-        if not session_token:
-            print("❌ No session token provided")
-            emit('joined_session', {
-                'status': 'error',
-                'message': 'No session token provided'
-            })
-            return
-    
-        # Find session in database
-        from models import ChatSession
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-    
-        if session:
-            # 🚀 FIXED: Use session_token for room naming (consistent with frontend)
-            room_name = f"session_{session_token}"  # Use full token, not session.id
-            join_room(room_name)
-            print(f"✅ Client {request.sid} joined room: {room_name}")
-        
-            # 🚀 FIXED: Send proper response format
-            emit('joined_session', {
-                'status': 'success',
-                'session_token': session_token,
-                'room': room_name,
-                'message': 'Successfully joined session room'
-            })
-        else:
-            print(f"❌ Session not found: {session_token}")
-            emit('joined_session', {
-                'status': 'error',
-                'message': 'Session not found',
-                'session_token': session_token
-            })
     
     # Inicjalizacja bazy danych i logowania
     db.init_app(app)
@@ -247,7 +190,7 @@ def create_app():
                 "message": str(e),
                 "error_type": type(e).__name__
             }), 500
-
+    
     # Inicjalizacja bazy danych przy pierwszym uruchomieniu
     with app.app_context():
         try:
@@ -310,8 +253,6 @@ def create_app():
             last_update_key = f'last_online_update_{current_user.id}'
             response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
         return response
-
     
-        
     # 🔄 RETURN TUPLE (app, socketio) dla nowej architektury
     return app, socketio
