@@ -78,7 +78,8 @@ def apply_migration(inspector, table, column, sql_statement):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
-    
+    from chat import init_socketio
+    init_socketio(socketio)
     # Konfiguracja bazy danych
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
