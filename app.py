@@ -107,6 +107,9 @@ def create_app():
                        logger=False, 
                        engineio_logger=False,
                        async_mode='threading')
+
+    from chat import init_socketio
+    init_socketio(socketio)
     
     # ✅ SOCKET.IO HANDLERS - ZACHOWANE (działają poprawnie)
     @socketio.on('connect')
