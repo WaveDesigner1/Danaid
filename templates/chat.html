@@ -81,20 +81,20 @@
         </div>
     </div>
 
-    <!-- POPRAWIONE SKRYPTY -->
-    <!-- Socket.IO Client Library -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- 🚀 POPRAWIONE SKRYPTY - NAPRAWIONY CDN -->
+    <!-- Socket.IO Client Library - DZIAŁAJĄCY CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
     
     <!-- Konfiguracja Socket.IO -->
     <script src="/socket-config.js"></script>
     
-    <!-- POPRAWIONE ŚCIEŻKI DO JS -->
+    <!-- 🚀 POPRAWIONE ŚCIEŻKI DO JS -->
     <script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     
     <!-- Inicjalizacja aplikacji -->
     <script>
-        console.log("=== DANAID CHAT INICJALIZACJA (ZOPTYMALIZOWANA) ===");
+        console.log("=== DANAID CHAT INICJALIZACJA (POPRAWIONA) ===");
         
         // Sprawdź czy wszystkie moduły są załadowane
         if (typeof io === 'undefined') {
@@ -111,10 +111,17 @@
             console.log("✅ CryptoManager załadowany");
         }
         
-        if (typeof window.chatManager === 'undefined') {
-            console.error("❌ ChatManager nie załadowany");
+        if (typeof window.ChatManager === 'undefined') {
+            console.error("❌ ChatManager CLASS nie załadowany");
+            alert("Błąd ładowania ChatManager. Odśwież stronę.");
         } else {
-            console.log("✅ ChatManager załadowany");
+            console.log("✅ ChatManager CLASS załadowany");
+        }
+        
+        if (typeof window.chatManager === 'undefined' || window.chatManager === null) {
+            console.warn("⚠️ ChatManager INSTANCE nie zainicjalizowany - czekaj na DOMContentLoaded");
+        } else {
+            console.log("✅ ChatManager INSTANCE gotowy");
         }
         
         // Sprawdź sesję użytkownika
@@ -135,7 +142,7 @@
             }
         }
         
-        console.log("=== DANAID CHAT ZOPTYMALIZOWANY GOTOWY ===");
+        console.log("=== DANAID CHAT TEMPLATE GOTOWY ===");
     </script>
 </body>
 </html>
