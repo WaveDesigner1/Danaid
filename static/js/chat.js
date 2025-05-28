@@ -682,7 +682,6 @@ class ChatManager {
     
     // Initialize session
     await this._initSession(friend.user_id);
-    
   }
 
   _updateSessionStatus(status) {
@@ -701,34 +700,35 @@ class ChatManager {
   }
 
   async _initSession(recipientId) {
-  try {
-    const response = await fetch('/api/session/init', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient_id: recipientId })
-    });
-    
-    const data = await response.json();
-    
-    if (data.status === 'success') {
-      this.currentSession = data.session;
+    try {
+      const response = await fetch('/api/session/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipient_id: recipientId })
+      });
       
-      // ⭐ NAJPIERW KLUCZ - CZEKAJ NA NIEGO:
-      await this._ensureSessionKey();
-      this._updateSessionStatus('ready');
+      const data = await response.json();
       
-      // ⭐ POTEM WIADOMOŚCI:
-      await this._loadMessages(data.session.token);
-      
-      console.log("✅ Session initialized:", data.session.token);
-    } else {
-      this._showNotification(data.message || 'Session error', 'error');
+      if (data.status === 'success') {
+        this.currentSession = data.session;
+        
+        // ⭐ NAJPIERW KLUCZ - CZEKAJ NA NIEGO:
+        await this._ensureSessionKey();
+        this._updateSessionStatus('ready');
+        
+        // ⭐ POTEM WIADOMOŚCI:
+        await this._loadMessages(data.session.token);
+        
+        console.log("✅ Session initialized:", data.session.token);
+      } else {
+        this._showNotification(data.message || 'Session error', 'error');
+      }
+    } catch (error) {
+      console.error("Session init error:", error);
+      this._showNotification('Connection error', 'error');
     }
-  } catch (error) {
-    console.error("Session init error:", error);
-    this._showNotification('Connection error', 'error');
   }
-}
+
   async _selectSession(session) {
     this.currentSession = session;
     await this._loadMessages(session.token);
@@ -804,7 +804,24 @@ class ChatManager {
           // Decrypt the existing session key with our private key
           const decryptedKeyBase64 = await window.cryptoManager.decryptSessionKey(data.encrypted_key);
           
-          // Store locally first (CRITICAL)
+          // Store locally
+          window.cryptoManager.storeSessionKey(sessionToken, decryptedKeyBase64);
+          console.log("✅ Existing server key decrypted and stored locally");
+          return; // ✅ Use existing key - STOP here
+        }
+      }
+    } catch (e) {
+      console.log("⚠️ No existing key found, will generate new");
+    }
+
+    // ✅ Generate new key only if none exists on server
+    console.log("🔑 Generating NEW session key...");
+    
+    try {
+      const sessionKey = await window.cryptoManager.generateSessionKey();
+      const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
+      
+      // Store locally first (CRITICAL)
       window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
       
       // Debug info
@@ -1641,20 +1658,3 @@ window.chatInterface = window.chatManager;
 
 // Debug helper for console
 window.debugChat = () => window.chatManager.debugInfo();
-          window.cryptoManager.storeSessionKey(sessionToken, decryptedKeyBase64);
-          console.log("✅ Existing server key decrypted and stored locally");
-          return; // ✅ Use existing key - STOP here
-        }
-      }
-    } catch (e) {
-      console.log("⚠️ No existing key found, will generate new");
-    }
-
-    // ✅ Generate new key only if none exists on server
-    console.log("🔑 Generating NEW session key...");
-    
-    try {
-      const sessionKey = await window.cryptoManager.generateSessionKey();
-      const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
-      
-      // Store locally
