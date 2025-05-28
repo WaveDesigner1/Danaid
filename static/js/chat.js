@@ -1,7 +1,10 @@
 /**
- * chat.js - DANAID CHAT SYSTEM v3.0 (FIXED ECHO PREVENTION)
- * Część 1/3: Inicjalizacja, podstawowe klasy i konfiguracja
- * 🔧 MAJOR FIX: Właściwa obsługa echo prevention z user_id
+ * chat.js - DANAID CHAT SYSTEM v3.0 (COMPLETE & FIXED)
+ * 🔧 MAJOR FIXES: 
+ * - Complete ChatManager class
+ * - Fixed echo prevention 
+ * - Auto-join Socket.IO rooms
+ * - Proper initialization
  */
 
 // === GLOBAL VARIABLES ===
@@ -194,7 +197,7 @@ class SocketManager {
             
             // Rejoin session rooms after reconnect
             if (this.sessionRooms.size > 0) {
-                console.log("🔄 Rejoining session room after reconnect...");
+                console.log("🔄 Rejoining session rooms after reconnect...");
                 this.sessionRooms.forEach(sessionToken => {
                     this.joinSessionRoom(sessionToken);
                 });
@@ -226,6 +229,16 @@ class SocketManager {
 
         this.socket.on('error', (error) => {
             console.error("❌ Socket.IO error:", error);
+        });
+
+        // 🚀 CRITICAL FIX: Add joined_session handler
+        this.socket.on('joined_session', (data) => {
+            console.log("🏠 Joined session response:", data);
+            if (data.status === 'success') {
+                console.log("✅ Successfully joined room:", data.room);
+            } else {
+                console.error("❌ Failed to join room:", data.message);
+            }
         });
     }
 
@@ -285,7 +298,7 @@ class SocketManager {
     }
 }
 
-// === MAIN CHAT MANAGER CLASS START ===
+// === MAIN CHAT MANAGER CLASS ===
 class ChatManager {
     constructor(username) {
         this.user = { 
@@ -364,14 +377,6 @@ class ChatManager {
             console.log("⏹️ Polling stopped");
         }
     }
-
-/**
- * chat.js - DANAID CHAT SYSTEM v3.0
- * Część 2/3: Obsługa wiadomości, sesji i NAPRAWIONY echo prevention
- * 🔧 CRITICAL FIX: Właściwe porównywanie sender_id z user_id
- * 
- * UWAGA: To jest KONTYNUACJA klasy ChatManager z Part 1
- */
 
     // === MESSAGE HANDLING WITH FIXED ECHO PREVENTION ===
     async _handleSocketMessage(data) {
@@ -613,7 +618,7 @@ class ChatManager {
             this.sessions.set(session.token, session);
             await this.db.saveSession(session);
 
-            // Join socket room
+            // 🚀 CRITICAL FIX: Auto-join socket room
             this.socketManager.joinSessionRoom(session.token);
 
             return session;
@@ -659,7 +664,7 @@ class ChatManager {
 
             this.currentSession = session;
 
-            // Join new session room
+            // 🚀 CRITICAL FIX: Auto-join new session room
             this.socketManager.joinSessionRoom(sessionToken);
 
             // Setup encryption
@@ -689,7 +694,7 @@ class ChatManager {
             let sessionKey = await cryptoManager.getSessionKey(sessionToken);
             
             if (sessionKey) {
-                console.log("🔑 Key already exists on server, using it instead of generating new");
+                console.log("🔑 Key already exists locally, using it");
                 return true;
             }
 
@@ -699,7 +704,7 @@ class ChatManager {
             if (keyResponse.ok) {
                 const keyResult = await keyResponse.json();
                 if (keyResult.status === 'success' && keyResult.encrypted_key) {
-                    console.log("🔑 Key already exists on server, using it instead of generating new");
+                    console.log("🔑 Key exists on server, decrypting...");
                     // Decrypt and store locally
                     const decryptedKey = await cryptoManager.decryptSessionKey(keyResult.encrypted_key);
                     if (decryptedKey) {
@@ -808,14 +813,6 @@ class ChatManager {
             console.error("❌ Failed to load messages from server:", error);
         }
     }
-
-/**
- * chat.js - DANAID CHAT SYSTEM v3.0
- * Część 3/3: UI, utility functions i inicjalizacja
- * 🔧 FIXED: Complete echo prevention system
- * 
- * UWAGA: To jest dalsze KONTYNUACJA klasy ChatManager z Part 2
- */
 
     // === UI MANAGEMENT ===
     async _displayMessages(messages) {
@@ -1109,7 +1106,6 @@ class ChatManager {
 
     showError(message) {
         console.error("🚨 Error:", message);
-        // Add your error display logic here
         const errorDiv = document.createElement('div');
         errorDiv.className = 'error-message';
         errorDiv.textContent = message;
@@ -1171,21 +1167,6 @@ class ChatManager {
         this._updateSessionsUI();
     }
 
-    // === PERFORMANCE MONITORING ===
-    measurePerformance(name, fn) {
-        return async (...args) => {
-            const start = performance.now();
-            const result = await fn.apply(this, args);
-            const duration = performance.now() - start;
-            
-            if (duration > 100) {
-                console.log(`Slow operation detected: ${name} took ${duration.toFixed(2)}ms`);
-            }
-            
-            return result;
-        };
-    }
-
     // === VALIDATION AND DEBUGGING ===
     validateCriticalFunctions() {
         const criticalFunctions = [
@@ -1204,31 +1185,25 @@ class ChatManager {
         return true;
     }
 
-} // === KONIEC KLASY ChatManager ===
+} // === END OF ChatManager CLASS ===
 
 // === MAIN INITIALIZATION ===
 document.addEventListener('DOMContentLoaded', async function() {
     try {
-        console.log("=== DANAID CHAT INICJALIZACJA (ZOPTYMALIZOWANA) ===");
+        console.log("=== DANAID CHAT INITIALIZATION (COMPLETE & FIXED) ===");
 
         // Check dependencies
         if (typeof io === 'undefined') {
             console.error("❌ Socket.IO not loaded");
             return;
         }
-        console.log("✅ Socket.IO client library załadowana");
+        console.log("✅ Socket.IO client library loaded");
 
         if (typeof CryptoManager === 'undefined') {
             console.error("❌ CryptoManager not loaded");
             return;
         }
-        console.log("✅ CryptoManager załadowany");
-
-        if (typeof ChatManager === 'undefined') {
-            console.error("❌ ChatManager not loaded");
-            return;
-        }
-        console.log("✅ ChatManager załadowany");
+        console.log("✅ CryptoManager loaded");
 
         // Get user info
         const username = sessionStorage.getItem('username');
@@ -1238,11 +1213,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.error("❌ User not logged in");
             return;
         }
-        console.log("✅ Użytkownik jest zalogowany");
+        console.log("✅ User logged in:", username, userId);
 
         // Initialize managers
         cryptoManager = new CryptoManager();
-
+        
         chatManager = new ChatManager(username);
         const initialized = await chatManager.init();
 
@@ -1251,10 +1226,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             return;
         }
 
-        console.log("=== DANAID CHAT ZOPTYMALIZOWANY GOTOWY ===");
+        console.log("=== DANAID CHAT READY ===");
 
         // Validate everything is working
-        chatManager.validateCriticalFunctions();
+        const validated = chatManager.validateCriticalFunctions();
+        if (!validated) {
+            console.error("❌ Critical function validation failed");
+            return;
+        }
 
         // Setup global error handling
         window.addEventListener('unhandledrejection', event => {
@@ -1301,4 +1280,3 @@ document.addEventListener('click', function(e) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { ChatManager, SocketManager, ChatDatabase };
 }
-
