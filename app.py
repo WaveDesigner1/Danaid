@@ -78,8 +78,7 @@ def apply_migration(inspector, table, column, sql_statement):
 def create_app():
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
-    from chat import init_socketio
-    init_socketio(socketio)
+    
     # Konfiguracja bazy danych
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
@@ -108,6 +107,10 @@ def create_app():
                        logger=False, 
                        engineio_logger=False,
                        async_mode='threading')
+    
+    # ✅ INICJALIZUJ SOCKETIO W CHAT.PY (po zdefiniowaniu socketio)
+    from chat import init_socketio
+    init_socketio(socketio)
     
     # ✅ SOCKET.IO HANDLERS - DODANE TUTAJ (po inicjalizacji socketio)
     @socketio.on('connect')
