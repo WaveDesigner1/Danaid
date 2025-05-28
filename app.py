@@ -212,11 +212,11 @@ def create_app():
                 'room': room_name,
                 'session_id': session.id
             })
-         else:
-             print(f"❌ Session not found: {session_token}")
-             emit('join_session_response', {
-                 'status': 'error',
-                 'message': 'Session not found'
+        else:
+            print(f"❌ Session not found: {session_token}")
+            emit('join_session_response', {
+                'status': 'error',
+                'message': 'Session not found'
             })
     # Inicjalizacja bazy danych przy pierwszym uruchomieniu
     with app.app_context():
