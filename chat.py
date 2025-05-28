@@ -121,7 +121,35 @@ def send_message():
         data = request.get_json()
         print("Request data:", data)
         
-        # ... cały istniejący kod walidacji ...
+        required_fields = ['session_token', 'content', 'iv']
+        
+        if not data or not all(field in data for field in required_fields):
+            print("❌ Brakujące dane:", data)
+            return jsonify({'status': 'error', 'message': 'Brakujące dane'}), 400
+            
+        session_token = data.get('session_token')
+        content = data.get('content')
+        iv = data.get('iv')
+        
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            print("❌ Nieprawidłowa sesja:", session_token)
+            return jsonify({'status': 'error', 'message': 'Nieprawidłowa sesja'}), 404
+            
+        if not session.is_active or session.expires_at < datetime.datetime.utcnow():
+            print("❌ Sesja wygasła")
+            return jsonify({'status': 'error', 'message': 'Sesja wygasła'}), 401
+            
+        # 🔧 ZMIENIONE: Nie wymagamy key_acknowledged (może być False na początku)
+        if not session.encrypted_session_key:
+            print("❌ Brak klucza sesji")
+            return jsonify({'status': 'error', 'message': 'Brak klucza sesji'}), 400
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            print("❌ Brak dostępu do sesji")
+            return jsonify({'status': 'error', 'message': 'Brak dostępu'}), 403
+        
+        print("✅ Walidacja przeszła, zapisuję wiadomość")
         
         # Zapisz wiadomość
         new_message = Message(
@@ -145,30 +173,30 @@ def send_message():
         db.session.commit()
         print("✅ Wiadomość zapisana:", new_message.id)
         
-        # ✅ DODAJ TO - Socket.IO emission
-        from flask_socketio import emit
-        from app import socketio  # Import socketio instance
-        
-        message_data = {
-            'id': new_message.id,
-            'sender_id': current_user.id,
-            'content': content,
-            'iv': iv,
-            'timestamp': new_message.timestamp.isoformat(),
-            'is_mine': False  # Dla odbiorcy będzie False
-        }
-        
-        room_name = f"session_{session.id}"
-        print(f"🚀 Emitting to room: {room_name}")
-        
-        socketio.emit('message', {
-            'type': 'new_message',
-            'session_token': session.session_token,
-            'message': message_data,
-            'sender': current_user.username
-        }, room=room_name)
-        
-        print("✅ Socket.IO emission completed")
+        # ✅ NAPRAWIONE Socket.IO emission
+        if socketio:  # Sprawdź czy socketio jest dostępne
+            message_data = {
+                'id': new_message.id,
+                'sender_id': current_user.id,
+                'content': content,
+                'iv': iv,
+                'timestamp': new_message.timestamp.isoformat(),
+                'is_mine': False  # Dla odbiorcy będzie False
+            }
+            
+            room_name = f"session_{session.id}"
+            print(f"🚀 Emitting to room: {room_name}")
+            
+            socketio.emit('message', {
+                'type': 'new_message',
+                'session_token': session.session_token,
+                'message': message_data,
+                'sender': current_user.username
+            }, room=room_name)
+            
+            print("✅ Socket.IO emission completed")
+        else:
+            print("⚠️ Socket.IO not available")
         
         return jsonify({
             'status': 'success',
@@ -181,6 +209,7 @@ def send_message():
         print(f"❌ Błąd wysyłania wiadomości: {e}")
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
+        
 @chat_bp.route('/api/friend_requests/pending')
 @login_required
 def get_pending_requests():
