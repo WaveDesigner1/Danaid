@@ -19,6 +19,10 @@
                     <button id="add-friend-btn" class="btn btn-primary">
                         <i class="fas fa-user-plus"></i> Dodaj
                     </button>
+                    <!-- 🚀 DODANE: Przycisk admin panelu -->
+                    <button id="admin-panel-btn" class="btn btn-warning" style="display: none;">
+                        <i class="fas fa-cogs"></i> Admin
+                    </button>
                     <button id="logout-btn" class="btn btn-danger">
                         <i class="fas fa-sign-out-alt"></i> Wyloguj
                     </button>
@@ -137,8 +141,21 @@
             // Ustaw nazwę użytkownika w interfejsie
             const usernameElement = document.getElementById('username');
             const username = sessionStorage.getItem('username');
+            const isAdmin = sessionStorage.getItem('is_admin') === 'true';
+            
             if (usernameElement && username) {
                 usernameElement.textContent = username;
+            }
+            
+            // 🚀 DODANE: Pokaż przycisk admin dla adminów
+            if (isAdmin) {
+                const adminBtn = document.getElementById('admin-panel-btn');
+                if (adminBtn) {
+                    adminBtn.style.display = 'inline-block';
+                    adminBtn.addEventListener('click', () => {
+                        window.location.href = '/admin_dashboard';
+                    });
+                }
             }
         }
         
