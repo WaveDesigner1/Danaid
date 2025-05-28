@@ -19,10 +19,6 @@
                     <button id="add-friend-btn" class="btn btn-primary">
                         <i class="fas fa-user-plus"></i> Dodaj
                     </button>
-                    <!-- 🚀 DODANE: Przycisk admin panelu -->
-                    <button id="admin-panel-btn" class="btn btn-warning" style="display: none;">
-                        <i class="fas fa-cogs"></i> Admin
-                    </button>
                     <button id="logout-btn" class="btn btn-danger">
                         <i class="fas fa-sign-out-alt"></i> Wyloguj
                     </button>
@@ -85,20 +81,20 @@
         </div>
     </div>
 
-    <!-- 🚀 POPRAWIONE SKRYPTY - NAPRAWIONY CDN -->
-    <!-- Socket.IO Client Library - DZIAŁAJĄCY CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- POPRAWIONE SKRYPTY -->
+    <!-- Socket.IO Client Library -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     
     <!-- Konfiguracja Socket.IO -->
     <script src="/socket-config.js"></script>
     
-    <!-- 🚀 POPRAWIONE ŚCIEŻKI DO JS -->
+    <!-- POPRAWIONE ŚCIEŻKI DO JS -->
     <script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     
     <!-- Inicjalizacja aplikacji -->
     <script>
-        console.log("=== DANAID CHAT INICJALIZACJA (POPRAWIONA) ===");
+        console.log("=== DANAID CHAT INICJALIZACJA (ZOPTYMALIZOWANA) ===");
         
         // Sprawdź czy wszystkie moduły są załadowane
         if (typeof io === 'undefined') {
@@ -115,17 +111,10 @@
             console.log("✅ CryptoManager załadowany");
         }
         
-        if (typeof window.ChatManager === 'undefined') {
-            console.error("❌ ChatManager CLASS nie załadowany");
-            alert("Błąd ładowania ChatManager. Odśwież stronę.");
+        if (typeof window.chatManager === 'undefined') {
+            console.error("❌ ChatManager nie załadowany");
         } else {
-            console.log("✅ ChatManager CLASS załadowany");
-        }
-        
-        if (typeof window.chatManager === 'undefined' || window.chatManager === null) {
-            console.warn("⚠️ ChatManager INSTANCE nie zainicjalizowany - czekaj na DOMContentLoaded");
-        } else {
-            console.log("✅ ChatManager INSTANCE gotowy");
+            console.log("✅ ChatManager załadowany");
         }
         
         // Sprawdź sesję użytkownika
@@ -141,25 +130,12 @@
             // Ustaw nazwę użytkownika w interfejsie
             const usernameElement = document.getElementById('username');
             const username = sessionStorage.getItem('username');
-            const isAdmin = sessionStorage.getItem('is_admin') === 'true';
-            
             if (usernameElement && username) {
                 usernameElement.textContent = username;
             }
-            
-            // 🚀 DODANE: Pokaż przycisk admin dla adminów
-            if (isAdmin) {
-                const adminBtn = document.getElementById('admin-panel-btn');
-                if (adminBtn) {
-                    adminBtn.style.display = 'inline-block';
-                    adminBtn.addEventListener('click', () => {
-                        window.location.href = '/admin_dashboard';
-                    });
-                }
-            }
         }
         
-        console.log("=== DANAID CHAT TEMPLATE GOTOWY ===");
+        console.log("=== DANAID CHAT ZOPTYMALIZOWANY GOTOWY ===");
     </script>
 </body>
 </html>
