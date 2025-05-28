@@ -184,7 +184,7 @@ def send_message():
                 'is_mine': False  # Dla odbiorcy będzie False
             }
             
-            room_name = f"session_{session.id}"
+            room_name = f"session_{session_token}"
             print(f"🚀 Emitting to room: {room_name}")
             
             socketio.emit('message', {
