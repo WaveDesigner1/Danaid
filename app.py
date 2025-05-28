@@ -72,32 +72,7 @@ def apply_migration(inspector, table, column, sql_statement):
                 print(f"Błąd podczas migracji: {e}")
                 db.session.rollback()
 
-@socketio.on('join_session')
-def handle_join_session(data):
-    session_token = data.get('session_token')
-    print(f"🏠 Client {request.sid} wants to join session: {session_token[:8]}...")
-    
-    # Znajdź sesję w bazie
-    from models import ChatSession
-    session = ChatSession.query.filter_by(session_token=session_token).first()
-    
-    if session:
-        room_name = f"session_{session.id}"
-        join_room(room_name)
-        print(f"✅ Client {request.sid} joined room: {room_name}")
-         
-        # Potwierdź klientowi
-        emit('join_session_response', {
-            'status': 'success',
-            'room': room_name,
-            'session_id': session.id
-        })
-    else:
-        print(f"❌ Session not found: {session_token}")
-        emit('join_session_response', {
-            'status': 'error',
-            'message': 'Session not found'
-        })
+
 
 # Główna funkcja tworząca aplikację
 def create_app():
@@ -217,7 +192,32 @@ def create_app():
                 "message": str(e),
                 "error_type": type(e).__name__
             }), 500
+    @socketio.on('join_session')
+    def handle_join_session(data):
+        session_token = data.get('session_token')
+        print(f"🏠 Client {request.sid} wants to join session: {session_token[:8]}...")
     
+        # Znajdź sesję w bazie
+        from models import ChatSession
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+    
+        if session:
+            room_name = f"session_{session.id}"
+            join_room(room_name)
+            print(f"✅ Client {request.sid} joined room: {room_name}")
+         
+              # Potwierdź klientowi
+            emit('join_session_response', {
+                'status': 'success',
+                'room': room_name,
+                'session_id': session.id
+            })
+         else:
+             print(f"❌ Session not found: {session_token}")
+             emit('join_session_response', {
+                 'status': 'error',
+                 'message': 'Session not found'
+            })
     # Inicjalizacja bazy danych przy pierwszym uruchomieniu
     with app.app_context():
         try:
