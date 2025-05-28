@@ -1,7 +1,6 @@
 """
-chat.py - Zunifikowany moduł czatu (scalenie chat.py + chat_api.py)
-CZĘŚĆ 1: Podstawowe API - Users, Friends, Sessions
-Redukcja z 850 → 400 linii kodu
+chat.py - Zunifikowany moduł czatu z DODANYMI BRAKUJĄCYMI API
+DODANE: friend requests endpoints
 """
 from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
@@ -18,6 +17,7 @@ socketio = None
 def init_socketio(socketio_instance):
     global socketio
     socketio = socketio_instance
+
 # === VIEWS ===
 @chat_bp.route('/chat')
 @login_required
@@ -112,6 +112,149 @@ def get_friends():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+# === 🚀 DODANE BRAKUJĄCE API ENDPOINTS ===
+@chat_bp.route('/api/friend_requests/send', methods=['POST'])
+@login_required
+def send_friend_request():
+    """Wysyła zaproszenie do znajomych"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        
+        if not username:
+            return jsonify({'status': 'error', 'message': 'Brak nazwy użytkownika'}), 400
+            
+        # Znajdź użytkownika
+        target_user = User.query.filter_by(username=username).first()
+        if not target_user:
+            return jsonify({'status': 'error', 'message': 'Użytkownik nie istnieje'}), 404
+            
+        if target_user.id == current_user.id:
+            return jsonify({'status': 'error', 'message': 'Nie możesz dodać siebie'}), 400
+            
+        # Sprawdź czy już są znajomymi
+        if current_user.is_friend_with(target_user.id):
+            return jsonify({'status': 'error', 'message': 'Już jesteście znajomymi'}), 400
+            
+        # Sprawdź czy zaproszenie już istnieje
+        existing_request = FriendRequest.query.filter_by(
+            from_user_id=current_user.id,
+            to_user_id=target_user.id,
+            status='pending'
+        ).first()
+        
+        if existing_request:
+            return jsonify({'status': 'error', 'message': 'Zaproszenie już wysłane'}), 400
+            
+        # Utwórz nowe zaproszenie
+        friend_request = FriendRequest(
+            from_user_id=current_user.id,
+            to_user_id=target_user.id,
+            status='pending'
+        )
+        
+        db.session.add(friend_request)
+        db.session.commit()
+        
+        return jsonify({'status': 'success', 'message': 'Zaproszenie wysłane'})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@chat_bp.route('/api/friend_requests/count')
+@login_required
+def get_friend_requests_count():
+    """Pobiera liczbę oczekujących zaproszeń"""
+    try:
+        count = FriendRequest.query.filter_by(
+            to_user_id=current_user.id,
+            status='pending'
+        ).count()
+        
+        return jsonify({'status': 'success', 'count': count})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@chat_bp.route('/api/friend_requests/pending')
+@login_required
+def get_pending_requests():
+    """Lista oczekujących zaproszeń"""
+    try:
+        requests = FriendRequest.query.filter_by(
+            to_user_id=current_user.id,
+            status='pending'
+        ).all()
+        
+        requests_list = []
+        for req in requests:
+            sender = User.query.get(req.from_user_id)
+            requests_list.append({
+                'id': req.id,
+                'sender_id': sender.user_id,
+                'username': sender.username,
+                'created_at': req.created_at.isoformat()
+            })
+        
+        return jsonify({'status': 'success', 'requests': requests_list})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@chat_bp.route('/api/friend_requests/<int:request_id>/accept', methods=['POST'])
+@login_required
+def accept_friend_request(request_id):
+    """Akceptuje zaproszenie"""
+    try:
+        friend_request = FriendRequest.query.filter_by(
+            id=request_id,
+            to_user_id=current_user.id,
+            status='pending'
+        ).first()
+        
+        if not friend_request:
+            return jsonify({'status': 'error', 'message': 'Zaproszenie nie znalezione'}), 404
+            
+        # Aktualizuj status
+        friend_request.status = 'accepted'
+        friend_request.updated_at = datetime.datetime.utcnow()
+        
+        # Dodaj znajomość (obie strony)
+        friend1 = Friend(user_id=current_user.id, friend_id=friend_request.from_user_id)
+        friend2 = Friend(user_id=friend_request.from_user_id, friend_id=current_user.id)
+        
+        db.session.add(friend1)
+        db.session.add(friend2)
+        db.session.commit()
+        
+        return jsonify({'status': 'success', 'message': 'Zaproszenie zaakceptowane'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@chat_bp.route('/api/friend_requests/<int:request_id>/reject', methods=['POST'])
+@login_required
+def reject_friend_request(request_id):
+    """Odrzuca zaproszenie"""
+    try:
+        friend_request = FriendRequest.query.filter_by(
+            id=request_id,
+            to_user_id=current_user.id,
+            status='pending'
+        ).first()
+        
+        if not friend_request:
+            return jsonify({'status': 'error', 'message': 'Zaproszenie nie znalezione'}), 404
+            
+        friend_request.status = 'rejected'
+        friend_request.updated_at = datetime.datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({'status': 'success', 'message': 'Zaproszenie odrzucone'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# === MESSAGES API ===
 @chat_bp.route('/api/message/send', methods=['POST'])
 @login_required
 def send_message():
@@ -211,84 +354,6 @@ def send_message():
         })
     except Exception as e:
         print(f"❌ Błąd wysyłania wiadomości: {e}")
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-        
-@chat_bp.route('/api/friend_requests/pending')
-@login_required
-def get_pending_requests():
-    """Lista oczekujących zaproszeń"""
-    try:
-        requests = FriendRequest.query.filter_by(
-            to_user_id=current_user.id,
-            status='pending'
-        ).all()
-        
-        requests_list = []
-        for req in requests:
-            sender = User.query.get(req.from_user_id)
-            requests_list.append({
-                'id': req.id,
-                'sender_id': sender.user_id,
-                'username': sender.username,
-                'created_at': req.created_at.isoformat()
-            })
-        
-        return jsonify({'status': 'success', 'requests': requests_list})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@chat_bp.route('/api/friend_requests/<int:request_id>/accept', methods=['POST'])
-@login_required
-def accept_friend_request(request_id):
-    """Akceptuje zaproszenie"""
-    try:
-        friend_request = FriendRequest.query.filter_by(
-            id=request_id,
-            to_user_id=current_user.id,
-            status='pending'
-        ).first()
-        
-        if not friend_request:
-            return jsonify({'status': 'error', 'message': 'Zaproszenie nie znalezione'}), 404
-            
-        # Aktualizuj status
-        friend_request.status = 'accepted'
-        friend_request.updated_at = datetime.datetime.utcnow()
-        
-        # Dodaj znajomość (obie strony)
-        friend1 = Friend(user_id=current_user.id, friend_id=friend_request.from_user_id)
-        friend2 = Friend(user_id=friend_request.from_user_id, friend_id=current_user.id)
-        
-        db.session.add(friend1)
-        db.session.add(friend2)
-        db.session.commit()
-        
-        return jsonify({'status': 'success', 'message': 'Zaproszenie zaakceptowane'})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@chat_bp.route('/api/friend_requests/<int:request_id>/reject', methods=['POST'])
-@login_required
-def reject_friend_request(request_id):
-    """Odrzuca zaproszenie"""
-    try:
-        friend_request = FriendRequest.query.filter_by(
-            id=request_id,
-            to_user_id=current_user.id,
-            status='pending'
-        ).first()
-        
-        if not friend_request:
-            return jsonify({'status': 'error', 'message': 'Zaproszenie nie znalezione'}), 404
-            
-        friend_request.status = 'rejected'
-        friend_request.updated_at = datetime.datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({'status': 'success', 'message': 'Zaproszenie odrzucone'})
-    except Exception as e:
         db.session.rollback()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -510,7 +575,6 @@ def acknowledge_session_key(session_token):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # === MESSAGES API ===
-
 @chat_bp.route('/api/messages/<session_token>')
 @login_required
 def get_messages(session_token):
@@ -653,8 +717,7 @@ def get_user_info(user_id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# === DODAJ TE ENDPOINTY NA KOŃCU chat.py ===
-
+# === DODANE DODATKOWE ENDPOINTY ===
 @chat_bp.route('/api/messages/<session_token>/clear', methods=['DELETE'])
 @login_required
 def clear_session_messages(session_token):
@@ -747,4 +810,3 @@ def get_session_stats(session_token):
         
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
