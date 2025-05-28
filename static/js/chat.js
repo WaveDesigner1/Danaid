@@ -263,51 +263,69 @@ class ChatManager {
   }
 
   async _handleNewMessage(data) {
-    if (data.message.sender_id == this.user.id) return;
-    
+    console.log("📨 Real-time message received:", data.type);
+    console.log("🔍 Full message data:", data);
+  
+    // 🚀 BULLETPROOF ECHO PREVENTION - Multiple checks
+    const senderId = data.message.sender_id;
+    const currentUserId = this.user.id;
+  
+    // Convert both to strings for reliable comparison
+    const senderIdStr = String(senderId);
+    const currentUserIdStr = String(currentUserId);
+  
+    console.log("🔍 DETAILED Echo check:", {
+      senderId: senderId,
+      senderIdType: typeof senderId,
+      currentUserId: currentUserId,
+      currentUserIdType: typeof currentUserId,
+      senderIdStr: senderIdStr,
+      currentUserIdStr: currentUserIdStr,
+      strictEqual: senderId === currentUserId,
+      looseEqual: senderId == currentUserId,
+      stringEqual: senderIdStr === currentUserIdStr,
+      parseIntEqual: parseInt(senderId) === parseInt(currentUserId)
+    });
+  
+  // 🚫 MULTI-LAYER ECHO PREVENTION
+  if (senderIdStr === currentUserIdStr || 
+      senderId === currentUserId ||
+      senderId == currentUserId ||
+      parseInt(senderId) === parseInt(currentUserId)) {
+    console.log("🚫 ECHO BLOCKED: Own message detected - IGNORING COMPLETELY");
+    console.log("🛑 STOPPING PROCESSING - This is sender's own message");
+    return; // CRITICAL: Stop processing entirely
+  }
+  
+  console.log("✅ Message from different user - proceeding with processing...");
+  console.log("👤 Sender:", senderId, "| Current user:", currentUserId);
+  
+  // Additional session validation
+  if (!this.currentSession) {
+    console.warn("⚠️ No current session - storing message for later");
+  }
+  
+  // Process message through unified pipeline
+  try {
     await this._processMessage(data.session_token, data.message, 'realtime');
-    
-    if (data.session_token === this.currentSession?.token) {
-      this._refreshCurrentChat();
-    } else {
-      this._updateUnreadCount(data.session_token);
-    }
-    
-    this._playNotificationSound();
+    console.log("✅ Message processed successfully");
+  } catch (error) {
+    console.error("❌ Error processing message:", error);
   }
-
-  _needsDecryption(message) {
-    if (!message.iv) {
-      console.log("🔍 No IV - plain text");
-      return false;
-    }
-    
-    if (message.content.length < 20) {
-      console.log("🔍 Very short message - probably plain text");
-      return false;
-    }
-    
-    const base64Pattern = /^[A-Za-z0-9+/]+={0,2}$/;
-    if (base64Pattern.test(message.content)) {
-      console.log("🔐 Base64 pattern detected - needs decryption");
-      return true;
-    }
-    
-    const hexPattern = /^[a-fA-F0-9]+$/;
-    if (hexPattern.test(message.content) && message.content.length > 32) {
-      console.log("🔐 Hex pattern detected - needs decryption");
-      return true;
-    }
-    
-    const hasUnusualChars = /[^\w\s\.\,\!\?\-\(\)\[\]\"\']+/.test(message.content);
-    if (hasUnusualChars && message.content.length > 30) {
-      console.log("🔐 Unusual characters detected - might be encrypted");
-      return true;
-    }
-    
-    console.log("📝 Looks like plain text");
-    return false;
+  
+  // Update UI if current session
+  if (data.session_token === this.currentSession?.token) {
+    console.log("📱 Updating current chat UI");
+    this._refreshCurrentChat();
+  } else {
+    console.log("📬 Message for different session - updating unread count");
+    this._updateUnreadCount(data.session_token);
   }
+  
+  // Play notification sound (only for messages from others)
+  this._playNotificationSound();
+  console.log("🔔 Notification played for incoming message");
+}
 
   async _processMessage(sessionToken, message, source = 'unknown') {
     try {
