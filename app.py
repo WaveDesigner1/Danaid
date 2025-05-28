@@ -260,16 +260,16 @@ def create_app():
         print(f"🏠 Client {request.sid} wants to join session: {session_token[:8]}...")
     
         # Znajdź sesję w bazie
-         from models import ChatSession
-         session = ChatSession.query.filter_by(session_token=session_token).first()
+        from models import ChatSession
+        session = ChatSession.query.filter_by(session_token=session_token).first()
     
-         if session:
-             room_name = f"session_{session.id}"
-             join_room(room_name)
-             print(f"✅ Client {request.sid} joined room: {room_name}")
+        if session:
+            room_name = f"session_{session.id}"
+            join_room(room_name)
+            print(f"✅ Client {request.sid} joined room: {room_name}")
          
-             # Potwierdź klientowi
-             emit('join_session_response', {
+            # Potwierdź klientowi
+            emit('join_session_response', {
                 'status': 'success',
                 'room': room_name,
                 'session_id': session.id
