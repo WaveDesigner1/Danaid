@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, Response, session
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_required
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, emit, join_room  # ✅ DODANE: emit, join_room
 from datetime import timedelta
 import os
 import shutil
@@ -108,6 +108,46 @@ def create_app():
                        engineio_logger=False,
                        async_mode='threading')
     
+    # ✅ SOCKET.IO HANDLERS - DODANE TUTAJ (po inicjalizacji socketio)
+    @socketio.on('connect')
+    def handle_connect():
+        print(f"🔌 Socket connected: {request.sid}")
+
+    @socketio.on('disconnect')
+    def handle_disconnect():
+        print(f"🔌 Socket disconnected: {request.sid}")
+
+    @socketio.on('test_connection')
+    def handle_test_connection(data):
+        print(f"🧪 Test connection from {request.sid}: {data}")
+        emit('test_response', {'message': 'Backend received test'})
+
+    @socketio.on('join_session')
+    def handle_join_session(data):
+        session_token = data.get('session_token')
+        print(f"🏠 Client {request.sid} wants to join session: {session_token[:8]}...")
+        
+        # Znajdź sesję w bazie
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        
+        if session:
+            room_name = f"session_{session.id}"
+            join_room(room_name)
+            print(f"✅ Client {request.sid} joined room: {room_name}")
+            
+            # Potwierdź klientowi
+            emit('join_session_response', {
+                'status': 'success',
+                'room': room_name,
+                'session_id': session.id
+            })
+        else:
+            print(f"❌ Session not found: {session_token}")
+            emit('join_session_response', {
+                'status': 'error',
+                'message': 'Session not found'
+            })
+    
     # Inicjalizacja bazy danych i logowania
     db.init_app(app)
     login_manager.init_app(app)
@@ -192,32 +232,7 @@ def create_app():
                 "message": str(e),
                 "error_type": type(e).__name__
             }), 500
-    @socketio.on('join_session')
-    def handle_join_session(data):
-        session_token = data.get('session_token')
-        print(f"🏠 Client {request.sid} wants to join session: {session_token[:8]}...")
-    
-        # Znajdź sesję w bazie
-        from models import ChatSession
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-    
-        if session:
-            room_name = f"session_{session.id}"
-            join_room(room_name)
-            print(f"✅ Client {request.sid} joined room: {room_name}")
-         
-              # Potwierdź klientowi
-            emit('join_session_response', {
-                'status': 'success',
-                'room': room_name,
-                'session_id': session.id
-            })
-        else:
-            print(f"❌ Session not found: {session_token}")
-            emit('join_session_response', {
-                'status': 'error',
-                'message': 'Session not found'
-            })
+
     # Inicjalizacja bazy danych przy pierwszym uruchomieniu
     with app.app_context():
         try:
