@@ -1,7 +1,6 @@
 /**
- * crypto.js - Zoptymalizowany moduł kryptograficzny
- * Redukcja z 600 → 300 linii (usunięcie redundancji)
- * Tylko sessionStorage - maksymalne bezpieczeństwo
+ * crypto.js - NAPRAWIONY moduł kryptograficzny
+ * 🚀 GŁÓWNE POPRAWKI: API zgodne z ChatManager, eksport globalny
  */
 class CryptoManager {
   constructor() {
@@ -108,74 +107,195 @@ class CryptoManager {
     );
   }
 
-  // === ENCRYPTION/DECRYPTION ===
-  async encryptSessionKey(publicKey, sessionKey) {
-    const rawKey = await this.crypto.exportKey("raw", sessionKey);
-    const encrypted = await this.crypto.encrypt(
-      { name: "RSA-OAEP" }, publicKey, rawKey
-    );
-    return this._arrayBufferToBase64(encrypted);
-  }
-
-  async decryptSessionKey(encryptedKey) {
-    if (!this.privateKey) throw new Error("No private key available");
-    
-    const data = this._base64ToArrayBuffer(encryptedKey);
-    const decrypted = await this.crypto.decrypt(
-      { name: "RSA-OAEP" }, this.privateKey, data
-    );
-    return this._arrayBufferToBase64(decrypted);
-  }
-
-  async encryptMessage(sessionKey, message) {
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encoded = new TextEncoder().encode(message);
-    
-    const encrypted = await this.crypto.encrypt(
-      { name: "AES-GCM", iv: iv }, sessionKey, encoded
-    );
-
-    return {
-      iv: this._arrayBufferToBase64(iv),
-      data: this._arrayBufferToBase64(encrypted)
-    };
-  }
-
-  async decryptMessage(sessionKey, encryptedMsg) {
-    const iv = this._base64ToArrayBuffer(encryptedMsg.iv);
-    const data = this._base64ToArrayBuffer(encryptedMsg.data);
-    
-    const decrypted = await this.crypto.decrypt(
-      { name: "AES-GCM", iv: iv }, sessionKey, data
-    );
-
-    return new TextDecoder().decode(decrypted);
-  }
-
-  // === SESSION KEY STORAGE ===
-  storeSessionKey(sessionToken, sessionKeyBase64) {
-    const key = `session_key_${sessionToken}`;
-    sessionStorage.setItem(key, sessionKeyBase64);
-    this.sessionKeys.set(sessionToken, sessionKeyBase64);
-    console.log(`🔑 Session key stored: ${sessionToken.slice(0, 8)}...`);
-    return true;
-  }
-
-  getSessionKey(sessionToken) {
-    // Check memory cache first
-    if (this.sessionKeys.has(sessionToken)) {
-      return this.sessionKeys.get(sessionToken);
+  // === 🚀 NAPRAWIONE: SESSION KEY ENCRYPTION/DECRYPTION ===
+  async encryptSessionKey(sessionKey, recipientPublicKeyPEM) {
+    try {
+      // Import recipient's public key
+      const publicKey = await this.importPublicKeyFromPEM(recipientPublicKeyPEM);
+      
+      // Export session key to raw format
+      const rawKey = await this.crypto.exportKey("raw", sessionKey);
+      
+      // Encrypt with recipient's public key
+      const encrypted = await this.crypto.encrypt(
+        { name: "RSA-OAEP" }, publicKey, rawKey
+      );
+      
+      return this._arrayBufferToBase64(encrypted);
+    } catch (error) {
+      console.error("❌ Session key encryption failed:", error);
+      throw error;
     }
-    
-    // Check sessionStorage
-    const key = `session_key_${sessionToken}`;
-    const sessionKey = sessionStorage.getItem(key);
-    if (sessionKey) {
-      this.sessionKeys.set(sessionToken, sessionKey);
+  }
+
+  async decryptSessionKey(encryptedKeyBase64) {
+    try {
+      if (!this.privateKey) throw new Error("No private key available");
+      
+      const data = this._base64ToArrayBuffer(encryptedKeyBase64);
+      const decrypted = await this.crypto.decrypt(
+        { name: "RSA-OAEP" }, this.privateKey, data
+      );
+      
+      // Import decrypted key as session key
+      const sessionKey = await this.crypto.importKey(
+        "raw", decrypted,
+        { name: "AES-GCM", length: 256 },
+        true, ["encrypt", "decrypt"]
+      );
+      
       return sessionKey;
+    } catch (error) {
+      console.error("❌ Session key decryption failed:", error);
+      throw error;
     }
-    
-    return null;
+  }
+
+  // === 🚀 NAPRAWIONE: MESSAGE ENCRYPTION/DECRYPTION - API ZGODNE Z CHATMANAGER ===
+  async encryptMessage(message, sessionToken) {
+    try {
+      console.log("🔐 Encrypting message for session:", sessionToken?.substring(0, 8));
+      
+      // Get session key
+      const sessionKey = await this.getSessionKey(sessionToken);
+      if (!sessionKey) {
+        throw new Error("No session key available for token: " + sessionToken);
+      }
+      
+      // 🚀 VALIDATE: Ensure sessionKey is a CryptoKey object
+      if (!(sessionKey instanceof CryptoKey)) {
+        console.error("❌ Session key is not a CryptoKey object:", typeof sessionKey);
+        throw new Error("Session key is not a valid CryptoKey object");
+      }
+      
+      console.log("✅ Valid CryptoKey obtained for encryption");
+      
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encoded = new TextEncoder().encode(message);
+      
+      const encrypted = await this.crypto.encrypt(
+        { name: "AES-GCM", iv: iv }, sessionKey, encoded
+      );
+
+      return {
+        content: this._arrayBufferToBase64(encrypted),
+        iv: this._arrayBufferToBase64(iv)
+      };
+    } catch (error) {
+      console.error("❌ Message encryption failed:", error);
+      console.error("❌ Error details:", {
+        message: error.message,
+        stack: error.stack,
+        sessionToken: sessionToken?.substring(0, 8)
+      });
+      throw error;
+    }
+  }
+
+  async decryptMessage(encryptedContent, ivBase64, sessionToken) {
+    try {
+      console.log("🔓 Decrypting message for session:", sessionToken?.substring(0, 8));
+      
+      // Get session key
+      const sessionKey = await this.getSessionKey(sessionToken);
+      if (!sessionKey) {
+        throw new Error("No session key available for token: " + sessionToken);
+      }
+      
+      // 🚀 VALIDATE: Ensure sessionKey is a CryptoKey object
+      if (!(sessionKey instanceof CryptoKey)) {
+        console.error("❌ Session key is not a CryptoKey object:", typeof sessionKey);
+        throw new Error("Session key is not a valid CryptoKey object");
+      }
+      
+      console.log("✅ Valid CryptoKey obtained for decryption");
+      
+      const iv = this._base64ToArrayBuffer(ivBase64);
+      const data = this._base64ToArrayBuffer(encryptedContent);
+      
+      const decrypted = await this.crypto.decrypt(
+        { name: "AES-GCM", iv: iv }, sessionKey, data
+      );
+
+      return new TextDecoder().decode(decrypted);
+    } catch (error) {
+      console.error("❌ Message decryption failed:", error);
+      console.error("❌ Error details:", {
+        message: error.message,
+        stack: error.stack,
+        sessionToken: sessionToken?.substring(0, 8)
+      });
+      throw error;
+    }
+  }
+
+  // === 🚀 NAPRAWIONE: SESSION KEY STORAGE ===
+  async storeSessionKey(sessionToken, sessionKey) {
+    try {
+      console.log("💾 Storing session key for:", sessionToken?.substring(0, 8));
+      
+      // If sessionKey is a CryptoKey object, export it first
+      let keyData;
+      if (sessionKey instanceof CryptoKey) {
+        const rawKey = await this.crypto.exportKey("raw", sessionKey);
+        keyData = this._arrayBufferToBase64(rawKey);
+      } else {
+        keyData = sessionKey; // Already base64 string
+      }
+      
+      const key = `session_key_${sessionToken}`;
+      sessionStorage.setItem(key, keyData);
+      
+      // Also store the CryptoKey object in memory for faster access
+      if (sessionKey instanceof CryptoKey) {
+        this.sessionKeys.set(sessionToken, sessionKey);
+      } else {
+        // Import the key for memory storage
+        const importedKey = await this.importSessionKey(keyData);
+        this.sessionKeys.set(sessionToken, importedKey);
+      }
+      
+      console.log(`🔑 Session key stored: ${sessionToken.slice(0, 8)}...`);
+      return true;
+    } catch (error) {
+      console.error("❌ Session key storage failed:", error);
+      return false;
+    }
+  }
+
+  async getSessionKey(sessionToken) {
+    try {
+      // Check memory cache first (returns CryptoKey object)
+      if (this.sessionKeys.has(sessionToken)) {
+        console.log("🎯 Session key found in memory:", sessionToken?.substring(0, 8));
+        return this.sessionKeys.get(sessionToken);
+      }
+      
+      // Check sessionStorage (returns base64 string, need to import)
+      const key = `session_key_${sessionToken}`;
+      const sessionKeyBase64 = sessionStorage.getItem(key);
+      if (sessionKeyBase64) {
+        console.log("💾 Session key found in storage, importing:", sessionToken?.substring(0, 8));
+        try {
+          const sessionKey = await this.importSessionKey(sessionKeyBase64);
+          this.sessionKeys.set(sessionToken, sessionKey);
+          console.log("✅ Session key imported successfully");
+          return sessionKey;
+        } catch (importError) {
+          console.error("❌ Failed to import session key:", importError);
+          // Clear corrupted key
+          sessionStorage.removeItem(key);
+          this.sessionKeys.delete(sessionToken);
+          return null;
+        }
+      }
+      
+      console.warn("❌ No session key found for:", sessionToken?.substring(0, 8));
+      return null;
+    } catch (error) {
+      console.error("❌ Session key retrieval failed:", error);
+      return null;
+    }
   }
 
   removeSessionKey(sessionToken) {
@@ -191,8 +311,9 @@ class CryptoManager {
     return !!this.privateKey;
   }
 
-  hasSessionKey(sessionToken) {
-    return !!this.getSessionKey(sessionToken);
+  async hasSessionKey(sessionToken) {
+    const sessionKey = await this.getSessionKey(sessionToken);
+    return !!sessionKey;
   }
 
   clearAllKeys() {
@@ -250,7 +371,8 @@ class CryptoManager {
   }
 }
 
-// Global instance with backward compatibility
+// === 🚀 KRYTYCZNE: EKSPORT GLOBALNY ===
+window.CryptoManager = CryptoManager; // Make class available globally
 window.cryptoManager = new CryptoManager();
 window.unifiedCrypto = window.cryptoManager; // Backward compatibility
 window.chatCrypto = window.cryptoManager;     // Backward compatibility
