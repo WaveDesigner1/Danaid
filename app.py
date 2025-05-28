@@ -126,30 +126,42 @@ def create_app():
         emit('test_response', {'message': 'Backend received test'})
 
     @socketio.on('join_session')
-    def handle_join_session(data):
-        session_token = data.get('session_token')
-        print(f"🏠 Client {request.sid} wants to join session: {session_token[:8]}...")
+def handle_join_session(data):
+    session_token = data.get('session_token')
+    print(f"🏠 Client {request.sid} wants to join session: {session_token[:8]}...")
+    
+    if not session_token:
+        print("❌ No session token provided")
+        emit('joined_session', {
+            'status': 'error',
+            'message': 'No session token provided'
+        })
+        return
+    
+    # Find session in database
+    from models import ChatSession
+    session = ChatSession.query.filter_by(session_token=session_token).first()
+    
+    if session:
+        # 🚀 FIXED: Use session_token for room naming (consistent with frontend)
+        room_name = f"session_{session_token}"  # Use full token, not session.id
+        join_room(room_name)
+        print(f"✅ Client {request.sid} joined room: {room_name}")
         
-        # Znajdź sesję w bazie
-        session = ChatSession.query.filter_by(session_token=session_token).first()
-        
-        if session:
-            room_name = f"session_{session.id}"
-            join_room(room_name)
-            print(f"✅ Client {request.sid} joined room: {room_name}")
-            
-            # Potwierdź klientowi
-            emit('join_session_response', {
-                'status': 'success',
-                'room': room_name,
-                'session_id': session.id
-            })
-        else:
-            print(f"❌ Session not found: {session_token}")
-            emit('join_session_response', {
-                'status': 'error',
-                'message': 'Session not found'
-            })
+        # 🚀 FIXED: Send proper response format
+        emit('joined_session', {
+            'status': 'success',
+            'session_token': session_token,
+            'room': room_name,
+            'message': 'Successfully joined session room'
+        })
+    else:
+        print(f"❌ Session not found: {session_token}")
+        emit('joined_session', {
+            'status': 'error',
+            'message': 'Session not found',
+            'session_token': session_token
+        })
     
     # Inicjalizacja bazy danych i logowania
     db.init_app(app)
