@@ -1242,7 +1242,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         // Initialize managers
         cryptoManager = new CryptoManager();
-        await cryptoManager.init();
 
         chatManager = new ChatManager(username);
         const initialized = await chatManager.init();
