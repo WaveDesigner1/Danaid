@@ -772,10 +772,9 @@ class ChatManager {
             console.error("❌ Failed to load messages from server:", error);
         }
     }
-
 /**
  * chat.js - DANAID CHAT SYSTEM v3.0
- * Część 3/3: UI functions, utilities, i główna inicjalizacja
+ * Część 3/3: UI, utility functions i inicjalizacja
  * 🔧 FIXED: Complete echo prevention system
  */
 
@@ -1179,7 +1178,8 @@ class ChatManager {
         console.log("✅ All critical functions validated - ChatManager complete");
         return true;
     }
-}
+
+} // === KONIEC KLASY ChatManager ===
 
 // === MAIN INITIALIZATION ===
 document.addEventListener('DOMContentLoaded', async function() {
@@ -1273,6 +1273,11 @@ document.addEventListener('click', function(e) {
     }
 });
 
+// === EXPORT FOR TESTING ===
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { ChatManager, SocketManager, ChatDatabase };
+}
+    
 // === EXPORT FOR TESTING ===
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { ChatManager, SocketManager, ChatDatabase };
