@@ -2,6 +2,7 @@
  * chat.js - ZOPTYMALIZOWANY Chat Manager z poprawkami deszyfrowania
  * Usunięto duplikacje, dodano cache, debouncing, unified message processing
  * Poprawiono funkcje _needsDecryption, _processMessage, dodano _debugDecryption
+ * NAPRAWIONO: _ensureSessionKey i _performKeyExchange dla key mismatch
  */
 class ChatManager {
   constructor() {
@@ -771,87 +772,75 @@ class ChatManager {
     return null;
   }
 
-  // === ZOPTYMALIZOWANA WYMIANA KLUCZY Z DEBOUNCING ===
+  // === ✅ NAPRAWIONA FUNKCJA _ensureSessionKey ===
   async _ensureSessionKey() {
     if (!this.currentSession) {
       throw new Error('No current session');
     }
-  
+
     const sessionToken = this.currentSession.token;
-  
-    // Check if we already have session key locally
+
+    // ✅ Sprawdź lokalny klucz FIRST (bezpieczniej - client-side key ownership)
     if (await this._getSessionKeyOptimized(sessionToken)) {
-      console.log("✅ Session key already exists");
+      console.log("✅ Session key already exists locally");
       return;
     }
+
+    // ✅ Tylko jeśli brak lokalnego - spróbuj key exchange (sprawdzi serwer + wygeneruje)
+    await this._performKeyExchange(sessionToken);
+  }
   
-  // ⭐ DODAJ TO NA POCZĄTKU:
-  // Try to get existing key from server FIRST
+  // === ✅ NAPRAWIONA FUNKCJA _performKeyExchange ===
+  async _performKeyExchange(sessionToken) {
+    // ✅ NAJPIERW sprawdź czy na serwerze już jest klucz od drugiej strony
     try {
-      console.log("🔍 Checking server for existing key...");
+      console.log("🔍 Checking if key already exists before generating new...");
       const response = await fetch(`/api/session/${sessionToken}/key`);
       if (response.ok) {
         const data = await response.json();
         if (data.encrypted_key) {
-        console.log("🔑 Found encrypted key on server, decrypting...");
-        
-        // Decrypt the session key with our private key
-        const decryptedKeyBase64 = await window.cryptoManager.decryptSessionKey(data.encrypted_key);
-        
-        // Store locally
-        window.cryptoManager.storeSessionKey(sessionToken, decryptedKeyBase64);
-        console.log("✅ Server key decrypted and stored locally");
-        return;
+          console.log("🔑 Key already exists on server, using it instead of generating new");
+          
+          // Decrypt the existing session key with our private key
+          const decryptedKeyBase64 = await window.cryptoManager.decryptSessionKey(data.encrypted_key);
+          
+          // Store locally first (CRITICAL)
+      window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
+      
+      // Debug info
+      console.log("🔍 Current user:", this.user.id, this.user.username);
+      console.log("🔍 Other user:", this.currentSession.other_user.user_id, this.currentSession.other_user.username);  
+      console.log("🔍 Encrypting session key FOR:", this.currentSession.other_user.user_id);
+      
+      // Get recipient's public key (with cache)
+      const publicKey = await this._getRecipientPublicKey(this.currentSession.other_user.user_id);
+      
+      // Encrypt and send session key to server
+      const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(publicKey, sessionKey);
+      
+      const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ encrypted_key: encryptedSessionKey })
+      });
+      
+      if (!response.ok) {
+        // Cleanup on failure
+        window.cryptoManager.removeSessionKey(sessionToken);
+        throw new Error(`Key exchange failed: ${response.status}`);
       }
-    }
-  } catch (e) {
-    console.log("⚠️ No existing key on server or decrypt failed, will generate new");
-  }
-  
-  // Generate new key only if none exists on server
-  await this._performKeyExchange(sessionToken);
-}
-  
-  async _performKeyExchange(sessionToken) {
-  console.log("🔑 Generating NEW session key...");
-  
-  try {
-    const sessionKey = await window.cryptoManager.generateSessionKey();
-    const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
-    
-    // Store locally first (CRITICAL)
-    window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
-    
-    // DODAJ TEN DEBUG:
-    console.log("🔍 Current user:", this.user.id, this.user.username);
-    console.log("🔍 Other user:", this.currentSession.other_user.user_id, this.currentSession.other_user.username);  
-    console.log("🔍 Encrypting session key FOR:", this.currentSession.other_user.user_id);
-    
-    // Get recipient's public key (with cache)
-    const publicKey = await this._getRecipientPublicKey(this.currentSession.other_user.user_id);
-    
-    // Encrypt and send session key
-    const encryptedSessionKey = await window.cryptoManager.encryptSessionKey(publicKey, sessionKey);
-    
-    const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ encrypted_key: encryptedSessionKey })
-    });
-    
-    if (!response.ok) {
+      
+      console.log("✅ New session key generated and sent to server");
+      
+      // Clear cache for this session key
+      this.apiCache.delete(`session_key_${sessionToken}`);
+      
+    } catch (error) {
+      // Cleanup on error
       window.cryptoManager.removeSessionKey(sessionToken);
-      throw new Error(`Key exchange failed: ${response.status}`);
+      throw new Error(`Session key setup failed: ${error.message}`);
     }
-    
-    // Clear cache for this session key
-    this.apiCache.delete(`session_key_${sessionToken}`);
-    
-  } catch (error) {
-    window.cryptoManager.removeSessionKey(sessionToken);
-    throw new Error(`Session key setup failed: ${error.message}`);
   }
-}
 
   // === CACHE DLA KLUCZY PUBLICZNYCH ===
   async _getRecipientPublicKey(userId) {
@@ -1125,7 +1114,7 @@ class ChatManager {
     }
   }
 
-  // === SPRAWDZENIE REAL-TIME STATUS ===
+  // === SPRAWDZANIE REAL-TIME STATUS ===
   checkRealTimeStatus() {
     if (this.socket && this.socket.connected) {
       return {
@@ -1652,3 +1641,20 @@ window.chatInterface = window.chatManager;
 
 // Debug helper for console
 window.debugChat = () => window.chatManager.debugInfo();
+          window.cryptoManager.storeSessionKey(sessionToken, decryptedKeyBase64);
+          console.log("✅ Existing server key decrypted and stored locally");
+          return; // ✅ Use existing key - STOP here
+        }
+      }
+    } catch (e) {
+      console.log("⚠️ No existing key found, will generate new");
+    }
+
+    // ✅ Generate new key only if none exists on server
+    console.log("🔑 Generating NEW session key...");
+    
+    try {
+      const sessionKey = await window.cryptoManager.generateSessionKey();
+      const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
+      
+      // Store locally
