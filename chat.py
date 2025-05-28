@@ -175,26 +175,30 @@ def send_message():
         
         # ✅ NAPRAWIONE Socket.IO emission
         if socketio:  # Sprawdź czy socketio jest dostępne
+            # 🚀 FIX: Pobierz user_id zamiast database id
+            sender = User.query.get(current_user.id)
+    
             message_data = {
                 'id': new_message.id,
-                'sender_id': current_user.id,
+                'sender_id': sender.user_id,  # 🔥 FIXED: Use user_id instead of database id
                 'content': content,
                 'iv': iv,
                 'timestamp': new_message.timestamp.isoformat(),
                 'is_mine': False  # Dla odbiorcy będzie False
             }
-            
+    
             room_name = f"session_{session_token}"
             print(f"🚀 Emitting to room: {room_name}")
-            
+            print(f"🔍 Sender user_id: {sender.user_id} (was database id: {current_user.id})")
+    
             socketio.emit('message', {
                 'type': 'new_message',
                 'session_token': session.session_token,
                 'message': message_data,
                 'sender': current_user.username
             }, room=room_name)
-            
-            print("✅ Socket.IO emission completed")
+    
+            print("✅ Socket.IO emission completed with proper user_id")
         else:
             print("⚠️ Socket.IO not available")
         
