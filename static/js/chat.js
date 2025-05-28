@@ -285,7 +285,7 @@ class SocketManager {
     }
 }
 
-// === MAIN CHAT MANAGER INITIALIZATION ===
+// === MAIN CHAT MANAGER CLASS START ===
 class ChatManager {
     constructor(username) {
         this.user = { 
@@ -331,7 +331,7 @@ class ChatManager {
         }
     }
 
-    // === POLLING FALLBACK (dodane do Part 1) ===
+    // === POLLING FALLBACK ===
     startPolling() {
         if (this.pollingInterval) return;
         
@@ -357,12 +357,20 @@ class ChatManager {
         }, 2000);
     }
 
-} // === KONIEC ChatManager PART 1 ===
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+            console.log("⏹️ Polling stopped");
+        }
+    }
 
 /**
  * chat.js - DANAID CHAT SYSTEM v3.0
  * Część 2/3: Obsługa wiadomości, sesji i NAPRAWIONY echo prevention
  * 🔧 CRITICAL FIX: Właściwe porównywanie sender_id z user_id
+ * 
+ * UWAGA: To jest KONTYNUACJA klasy ChatManager z Part 1
  */
 
     // === MESSAGE HANDLING WITH FIXED ECHO PREVENTION ===
@@ -801,17 +809,13 @@ class ChatManager {
         }
     }
 
-} // === KONIEC ChatManager PART 2 ===
-
 /**
  * chat.js - DANAID CHAT SYSTEM v3.0
  * Część 3/3: UI, utility functions i inicjalizacja
  * 🔧 FIXED: Complete echo prevention system
  * 
- * UWAGA: Ta część to KONTYNUACJA ChatManager class z Part 2!
+ * UWAGA: To jest dalsze KONTYNUACJA klasy ChatManager z Part 2
  */
-
-// === KONTYNUACJA ChatManager class ===
 
     // === UI MANAGEMENT ===
     async _displayMessages(messages) {
@@ -1106,6 +1110,26 @@ class ChatManager {
     showError(message) {
         console.error("🚨 Error:", message);
         // Add your error display logic here
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = message;
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ff4444;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 10000;
+        `;
+        document.body.appendChild(errorDiv);
+        
+        setTimeout(() => {
+            if (errorDiv.parentNode) {
+                errorDiv.parentNode.removeChild(errorDiv);
+            }
+        }, 5000);
     }
 
     _playNotificationSound() {
@@ -1145,17 +1169,6 @@ class ChatManager {
             }
         });
         this._updateSessionsUI();
-    }
-
-    // === POLLING FALLBACK (przeniesione do Part 1) ===
-    // startPolling() i stopPolling() są już w Part 1
-
-    stopPolling() {
-        if (this.pollingInterval) {
-            clearInterval(this.pollingInterval);
-            this.pollingInterval = null;
-            console.log("⏹️ Polling stopped");
-        }
     }
 
     // === PERFORMANCE MONITORING ===
