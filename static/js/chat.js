@@ -331,6 +331,34 @@ class ChatManager {
         }
     }
 
+    // === POLLING FALLBACK (dodane do Part 1) ===
+    startPolling() {
+        if (this.pollingInterval) return;
+        
+        console.log("🔄 Starting polling fallback");
+        this.pollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/polling/messages?last_id=${this.pollingLastId}`);
+                if (!response.ok) return;
+                
+                const result = await response.json();
+                if (result.status === 'success' && result.messages.length > 0) {
+                    console.log("📨 Polling received", result.messages.length, "messages");
+                    
+                    for (const message of result.messages) {
+                        await this._handleSocketMessage(message);
+                    }
+                    
+                    this.pollingLastId = result.last_id;
+                }
+            } catch (error) {
+                console.warn("⚠️ Polling error:", error);
+            }
+        }, 2000);
+    }
+
+} // === KONIEC ChatManager PART 1 ===
+
 /**
  * chat.js - DANAID CHAT SYSTEM v3.0
  * Część 2/3: Obsługa wiadomości, sesji i NAPRAWIONY echo prevention
@@ -772,11 +800,18 @@ class ChatManager {
             console.error("❌ Failed to load messages from server:", error);
         }
     }
+
+} // === KONIEC ChatManager PART 2 ===
+
 /**
  * chat.js - DANAID CHAT SYSTEM v3.0
  * Część 3/3: UI, utility functions i inicjalizacja
  * 🔧 FIXED: Complete echo prevention system
+ * 
+ * UWAGA: Ta część to KONTYNUACJA ChatManager class z Part 2!
  */
+
+// === KONTYNUACJA ChatManager class ===
 
     // === UI MANAGEMENT ===
     async _displayMessages(messages) {
@@ -1112,31 +1147,8 @@ class ChatManager {
         this._updateSessionsUI();
     }
 
-    // === POLLING FALLBACK ===
-    startPolling() {
-        if (this.pollingInterval) return;
-        
-        console.log("🔄 Starting polling fallback");
-        this.pollingInterval = setInterval(async () => {
-            try {
-                const response = await fetch(`/api/polling/messages?last_id=${this.pollingLastId}`);
-                if (!response.ok) return;
-                
-                const result = await response.json();
-                if (result.status === 'success' && result.messages.length > 0) {
-                    console.log("📨 Polling received", result.messages.length, "messages");
-                    
-                    for (const message of result.messages) {
-                        await this._handleSocketMessage(message);
-                    }
-                    
-                    this.pollingLastId = result.last_id;
-                }
-            } catch (error) {
-                console.warn("⚠️ Polling error:", error);
-            }
-        }, 2000);
-    }
+    // === POLLING FALLBACK (przeniesione do Part 1) ===
+    // startPolling() i stopPolling() są już w Part 1
 
     stopPolling() {
         if (this.pollingInterval) {
@@ -1277,8 +1289,4 @@ document.addEventListener('click', function(e) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { ChatManager, SocketManager, ChatDatabase };
 }
-    
-// === EXPORT FOR TESTING ===
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ChatManager, SocketManager, ChatDatabase };
-}
+
