@@ -381,6 +381,43 @@ class ChatManager {
     }
   }
 
+  _needsDecryption(message) {
+  // Simple check - if has IV and content looks encrypted
+  if (!message.iv) {
+    console.log("🔍 No IV - plain text");
+    return false;
+  }
+  
+  if (message.content.length < 20) {
+    console.log("🔍 Very short message - probably plain text");
+    return false;
+  }
+  
+  // Check if looks like base64 (typical for encrypted content)
+  const base64Pattern = /^[A-Za-z0-9+/]+={0,2}$/;
+  if (base64Pattern.test(message.content)) {
+    console.log("🔐 Base64 pattern detected - needs decryption");
+    return true;
+  }
+  
+  // Check if looks like hex (alternative format)
+  const hexPattern = /^[a-fA-F0-9]+$/;
+  if (hexPattern.test(message.content) && message.content.length > 32) {
+    console.log("🔐 Hex pattern detected - needs decryption");
+    return true;
+  }
+  
+  // Check for unusual characters (encrypted content)
+  const hasUnusualChars = /[^\w\s\.\,\!\?\-\(\)\[\]\"\']+/.test(message.content);
+  if (hasUnusualChars && message.content.length > 30) {
+    console.log("🔐 Unusual characters detected - might be encrypted");
+    return true;
+  }
+  
+  console.log("📝 Looks like plain text");
+  return false;
+}
+
   _handleFriendRequest(data) {
     this._loadPendingRequests();
     this._showNotification(`New friend request from ${data.from_user.username}`, 'info');
