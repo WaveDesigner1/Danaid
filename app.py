@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, Response, session
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_required
-from flask_socketio import SocketIO, emit, join_room  # ✅ DODANE: emit, join_room
+from flask_socketio import SocketIO, emit, join_room
 from datetime import timedelta
 import os
 import shutil
@@ -108,11 +108,7 @@ def create_app():
                        engineio_logger=False,
                        async_mode='threading')
     
-    # ✅ INICJALIZUJ SOCKETIO W CHAT.PY (po zdefiniowaniu socketio)
-    from chat import init_socketio
-    init_socketio(socketio)
-    
-    # ✅ SOCKET.IO HANDLERS - DODANE TUTAJ (po inicjalizacji socketio)
+    # ✅ SOCKET.IO HANDLERS - ZACHOWANE (działają poprawnie)
     @socketio.on('connect')
     def handle_connect():
         print(f"🔌 Socket connected: {request.sid}")
