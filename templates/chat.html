@@ -26,14 +26,17 @@
             </div>
             
             <div class="friends-section">
+                <!-- POPRAWIONE: Clickable friend requests -->
                 <div class="friend-requests" onclick="window.chatManager?._showFriendRequestsModal();">
-                    <i class="fas fa-user-plus"></i> Zaproszenia
+                    <span>
+                        <i class="fas fa-user-plus"></i> Zaproszenia
+                    </span>
                     <span id="friend-request-count" class="friend-request-count">0</span>
                 </div>
                 
                 <h4>Znajomi</h4>
                 <ul id="friend-list" class="friend-list">
-                    <!-- Lista znajomych będzie tutaj -->
+                    <!-- Lista znajomych będzie tutaj - bez ID, clickable items -->
                 </ul>
             </div>
         </div>
@@ -138,7 +141,7 @@
             }
         }
         
-        // FIXED: Dodaj obsługę wylogowania
+        // IMPROVED: Dodaj obsługę wylogowania
         document.addEventListener('DOMContentLoaded', function() {
             const logoutBtn = document.getElementById('logout-btn');
             if (logoutBtn) {
