@@ -1,3 +1,211 @@
+# chat.py - Kompletny system czatu dla Danaid Chat
+# Obsługa sesji, wiadomości, znajomych i zarządzania czatem
+
+from flask import Blueprint, request, jsonify, session
+from flask_login import login_required, current_user
+from models import User, ChatSession, Message, Friend, FriendRequest, db
+from datetime import datetime, timedelta
+from sqlalchemy import or_, and_, desc
+import secrets
+import json
+import base64
+
+# Utwórz Blueprint
+chat_bp = Blueprint('chat', __name__)
+
+# === HELPER FUNCTIONS ===
+
+def generate_session_token():
+    """Generuje bezpieczny token sesji"""
+    return secrets.token_urlsafe(32)
+
+def validate_session_access(session_obj, user_id):
+    """Sprawdza czy użytkownik ma dostęp do sesji"""
+    return session_obj.initiator_id == user_id or session_obj.recipient_id == user_id
+
+def get_other_user_in_session(session_obj, current_user_id):
+    """Zwraca drugiego użytkownika w sesji"""
+    if session_obj.initiator_id == current_user_id:
+        return User.query.get(session_obj.recipient_id)
+    else:
+        return User.query.get(session_obj.initiator_id)
+
+def format_user_for_api(user):
+    """Formatuje dane użytkownika dla API"""
+    if not user:
+        return None
+    
+    return {
+        'id': user.id,
+        'user_id': user.user_id,
+        'username': user.username,
+        'is_online': getattr(user, 'is_online', False),
+        'last_active': user.last_active.isoformat() if hasattr(user, 'last_active') and user.last_active else None
+    }
+
+def format_session_for_api(session_obj, current_user_id):
+    """Formatuje sesję dla API"""
+    other_user = get_other_user_in_session(session_obj, current_user_id)
+    
+    return {
+        'id': session_obj.id,
+        'token': session_obj.session_token,
+        'created_at': session_obj.created_at.isoformat(),
+        'last_activity': session_obj.last_activity.isoformat() if session_obj.last_activity else None,
+        'expires_at': session_obj.expires_at.isoformat(),
+        'is_active': session_obj.is_active,
+        'has_key': bool(session_obj.encrypted_session_key),
+        'key_acknowledged': session_obj.key_acknowledged,
+        'other_user': format_user_for_api(other_user)
+    }
+
+def format_message_for_api(message, current_user_id):
+    """Formatuje wiadomość dla API"""
+    return {
+        'id': message.id,
+        'sender_id': message.sender_id,
+        'content': message.content,
+        'iv': message.iv,
+        'timestamp': message.timestamp.isoformat(),
+        'read': message.read,
+        'is_mine': message.sender_id == current_user_id
+    }
+
+# === SESSION MANAGEMENT ===
+
+@chat_bp.route('/api/session/init', methods=['POST'])
+@login_required
+def init_session():
+    """Inicjalizuje nową sesję czatu lub zwraca istniejącą"""
+    try:
+        data = request.get_json()
+        if not data or 'recipient_id' not in data:
+            return jsonify({'error': 'Missing recipient_id'}), 400
+        
+        recipient_id = data['recipient_id']
+        
+        # Znajdź użytkownika odbiorcy
+        recipient = User.query.filter_by(user_id=recipient_id).first()
+        if not recipient:
+            return jsonify({'error': 'Recipient not found'}), 404
+        
+        # Sprawdź czy użytkownicy są znajomymi
+        friendship = Friend.query.filter(
+            or_(
+                and_(Friend.user_id == current_user.id, Friend.friend_id == recipient.id),
+                and_(Friend.user_id == recipient.id, Friend.friend_id == current_user.id)
+            )
+        ).first()
+        
+        if not friendship:
+            return jsonify({'error': 'Users are not friends'}), 403
+        
+        # Sprawdź czy istnieje aktywna sesja między tymi użytkownikami
+        existing_session = ChatSession.query.filter(
+            or_(
+                and_(ChatSession.initiator_id == current_user.id, ChatSession.recipient_id == recipient.id),
+                and_(ChatSession.initiator_id == recipient.id, ChatSession.recipient_id == current_user.id)
+            ),
+            ChatSession.is_active == True,
+            ChatSession.expires_at > datetime.utcnow()
+        ).first()
+        
+        if existing_session:
+            print(f"✅ Found existing session: {existing_session.session_token[:8]}... between {current_user.username} and {recipient.username}")
+            return jsonify({
+                'status': 'success',
+                'session': format_session_for_api(existing_session, current_user.id),
+                'message': 'Existing session found'
+            })
+        
+        # Utwórz nową sesję
+        session_token = generate_session_token()
+        expires_at = datetime.utcnow() + timedelta(hours=24)  # 24h expiry
+        
+        new_session = ChatSession(
+            session_token=session_token,
+            initiator_id=current_user.id,
+            recipient_id=recipient.id,
+            created_at=datetime.utcnow(),
+            last_activity=datetime.utcnow(),
+            expires_at=expires_at,
+            is_active=True,
+            encrypted_session_key=None,
+            key_acknowledged=False
+        )
+        
+        db.session.add(new_session)
+        db.session.commit()
+        
+        print(f"✅ New session created: {session_token[:8]}... between {current_user.username} and {recipient.username}")
+        
+        return jsonify({
+            'status': 'success',
+            'session': format_session_for_api(new_session, current_user.id),
+            'message': 'New session created'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Session init error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@chat_bp.route('/api/session/<session_token>/exchange_key', methods=['POST'])
+@login_required
+def exchange_session_key(session_token):
+    """Wymienia klucz sesji między użytkownikami"""
+    try:
+        data = request.get_json()
+        
+        # Find session
+        session_obj = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session_obj:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Validate access
+        if not validate_session_access(session_obj, current_user.id):
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Handle different key exchange formats
+        if 'encrypted_key' in data:
+            # Legacy format - single encrypted key
+            encrypted_key = data['encrypted_key']
+            session_obj.encrypted_session_key = encrypted_key
+            session_obj.key_acknowledged = False
+            key_generator = current_user.id
+            
+        elif 'keys' in data:
+            # New format - dual encryption with keys for both users
+            keys_data = data['keys']
+            if isinstance(keys_data, dict):
+                # Store as JSON for multiple keys
+                session_obj.encrypted_keys_json = json.dumps(keys_data)
+                session_obj.key_generator_id = current_user.id
+            else:
+                return jsonify({'error': 'Invalid keys format'}), 400
+            key_generator = current_user.id
+            
+        else:
+            return jsonify({'error': 'Missing encrypted_key or keys'}), 400
+        
+        # Update session
+        session_obj.last_activity = datetime.utcnow()
+        db.session.commit()
+        
+        print(f"✅ Session key exchanged for session {session_token[:8]}... by user {current_user.username}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Session key exchanged successfully',
+            'key_generator': key_generator,
+            'session_token': session_token
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Key exchange error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @chat_bp.route('/api/session/<session_token>/key', methods=['GET'])
 @login_required
 def get_session_key(session_token):
@@ -127,13 +335,6 @@ def send_message():
         message_data = format_message_for_api(new_message, current_user.id)
         
         print(f"✅ Message sent in session {session_token[:8]}... by {current_user.username}")
-        
-        # TODO: Send real-time notification via Socket.IO
-        # socketio.emit('message', {
-        #     'type': 'new_message',
-        #     'session_token': session_token,
-        #     'message': message_data
-        # }, room=f'session_{session_token}')
         
         return jsonify({
             'status': 'success',
@@ -305,117 +506,6 @@ def delete_chat_session(session_token):
     except Exception as e:
         db.session.rollback()
         print(f"❌ Delete session error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@chat_bp.route('/api/messages/cleanup', methods=['POST'])
-@login_required
-def cleanup_old_messages():
-    """Czyści stare wiadomości użytkownika (starsze niż 30 dni)"""
-    try:
-        # Set cutoff date (30 days ago)
-        cutoff_date = datetime.utcnow() - timedelta(days=30)
-        
-        # Find all user sessions
-        user_sessions = ChatSession.query.filter(
-            or_(
-                ChatSession.initiator_id == current_user.id,
-                ChatSession.recipient_id == current_user.id
-            )
-        ).all()
-        
-        if not user_sessions:
-            return jsonify({
-                'status': 'success',
-                'message': 'No sessions found for cleanup',
-                'messages_deleted': 0
-            })
-        
-        session_ids = [s.id for s in user_sessions]
-        
-        # Count old messages
-        old_messages_count = Message.query.filter(
-            Message.session_id.in_(session_ids),
-            Message.timestamp < cutoff_date
-        ).count()
-        
-        # Delete old messages
-        Message.query.filter(
-            Message.session_id.in_(session_ids),
-            Message.timestamp < cutoff_date
-        ).delete(synchronize_session=False)
-        
-        db.session.commit()
-        
-        print(f"✅ Cleaned up {old_messages_count} old messages for user {current_user.username}")
-        
-        return jsonify({
-            'status': 'success',
-            'message': f'{old_messages_count} old messages cleaned up',
-            'messages_deleted': old_messages_count,
-            'cutoff_date': cutoff_date.isoformat()
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        print(f"❌ Cleanup old messages error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@chat_bp.route('/api/messages/stats', methods=['GET'])
-@login_required
-def get_message_stats():
-    """Zwraca statystyki wiadomości użytkownika"""
-    try:
-        # Find user sessions
-        user_sessions = ChatSession.query.filter(
-            or_(
-                ChatSession.initiator_id == current_user.id,
-                ChatSession.recipient_id == current_user.id
-            )
-        ).all()
-        
-        if not user_sessions:
-            return jsonify({
-                'status': 'success',
-                'stats': {
-                    'total_sessions': 0,
-                    'total_messages': 0,
-                    'messages_sent': 0,
-                    'messages_received': 0,
-                    'old_messages': 0
-                }
-            })
-        
-        session_ids = [s.id for s in user_sessions]
-        cutoff_date = datetime.utcnow() - timedelta(days=30)
-        
-        # Count different types of messages
-        total_messages = Message.query.filter(Message.session_id.in_(session_ids)).count()
-        messages_sent = Message.query.filter(
-            Message.session_id.in_(session_ids),
-            Message.sender_id == current_user.id
-        ).count()
-        messages_received = total_messages - messages_sent
-        old_messages = Message.query.filter(
-            Message.session_id.in_(session_ids),
-            Message.timestamp < cutoff_date
-        ).count()
-        
-        stats = {
-            'total_sessions': len(user_sessions),
-            'total_messages': total_messages,
-            'messages_sent': messages_sent,
-            'messages_received': messages_received,
-            'old_messages': old_messages,
-            'cutoff_date': cutoff_date.isoformat()
-        }
-        
-        return jsonify({
-            'status': 'success',
-            'stats': stats
-        })
-        
-    except Exception as e:
-        print(f"❌ Get message stats error: {e}")
         return jsonify({'error': str(e)}), 500
 
 # === FRIENDS MANAGEMENT ===
@@ -780,6 +870,119 @@ def search_users():
         print(f"❌ Search users error: {e}")
         return jsonify({'error': str(e)}), 500
 
+# === CLEANUP & MAINTENANCE ===
+
+@chat_bp.route('/api/messages/cleanup', methods=['POST'])
+@login_required
+def cleanup_old_messages():
+    """Czyści stare wiadomości użytkownika (starsze niż 30 dni)"""
+    try:
+        # Set cutoff date (30 days ago)
+        cutoff_date = datetime.utcnow() - timedelta(days=30)
+        
+        # Find all user sessions
+        user_sessions = ChatSession.query.filter(
+            or_(
+                ChatSession.initiator_id == current_user.id,
+                ChatSession.recipient_id == current_user.id
+            )
+        ).all()
+        
+        if not user_sessions:
+            return jsonify({
+                'status': 'success',
+                'message': 'No sessions found for cleanup',
+                'messages_deleted': 0
+            })
+        
+        session_ids = [s.id for s in user_sessions]
+        
+        # Count old messages
+        old_messages_count = Message.query.filter(
+            Message.session_id.in_(session_ids),
+            Message.timestamp < cutoff_date
+        ).count()
+        
+        # Delete old messages
+        Message.query.filter(
+            Message.session_id.in_(session_ids),
+            Message.timestamp < cutoff_date
+        ).delete(synchronize_session=False)
+        
+        db.session.commit()
+        
+        print(f"✅ Cleaned up {old_messages_count} old messages for user {current_user.username}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'{old_messages_count} old messages cleaned up',
+            'messages_deleted': old_messages_count,
+            'cutoff_date': cutoff_date.isoformat()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Cleanup old messages error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@chat_bp.route('/api/messages/stats', methods=['GET'])
+@login_required
+def get_message_stats():
+    """Zwraca statystyki wiadomości użytkownika"""
+    try:
+        # Find user sessions
+        user_sessions = ChatSession.query.filter(
+            or_(
+                ChatSession.initiator_id == current_user.id,
+                ChatSession.recipient_id == current_user.id
+            )
+        ).all()
+        
+        if not user_sessions:
+            return jsonify({
+                'status': 'success',
+                'stats': {
+                    'total_sessions': 0,
+                    'total_messages': 0,
+                    'messages_sent': 0,
+                    'messages_received': 0,
+                    'old_messages': 0
+                }
+            })
+        
+        session_ids = [s.id for s in user_sessions]
+        cutoff_date = datetime.utcnow() - timedelta(days=30)
+        
+        # Count different types of messages
+        total_messages = Message.query.filter(Message.session_id.in_(session_ids)).count()
+        messages_sent = Message.query.filter(
+            Message.session_id.in_(session_ids),
+            Message.sender_id == current_user.id
+        ).count()
+        messages_received = total_messages - messages_sent
+        old_messages = Message.query.filter(
+            Message.session_id.in_(session_ids),
+            Message.timestamp < cutoff_date
+        ).count()
+        
+        stats = {
+            'total_sessions': len(user_sessions),
+            'total_messages': total_messages,
+            'messages_sent': messages_sent,
+            'messages_received': messages_received,
+            'old_messages': old_messages,
+            'cutoff_date': cutoff_date.isoformat()
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'stats': stats
+        })
+        
+    except Exception as e:
+        print(f"❌ Get message stats error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # === ADMIN ENDPOINTS ===
 
 @chat_bp.route('/api/admin/sessions', methods=['GET'])
@@ -792,11 +995,6 @@ def admin_get_sessions():
         
         sessions = ChatSession.query.order_by(desc(ChatSession.created_at)).limit(100).all()
         
-        sessions_data = []
-        for session in sessions:
-            initiator = User.query.get(session.initiator_id)
-            recipient = User.query.get(session.recipient_id)
-            
         sessions_data = []
         for session in sessions:
             initiator = User.query.get(session.initiator_id)
@@ -867,7 +1065,7 @@ def admin_cleanup_expired():
         print(f"❌ Admin cleanup error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# === POLLING FALLBACK (for when Socket.IO fails) ===
+# === POLLING FALLBACK ===
 
 @chat_bp.route('/api/polling/messages', methods=['GET'])
 @login_required
@@ -1059,19 +1257,6 @@ def refresh_expired_sessions():
         print(f"❌ Refresh sessions error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# === ERROR HANDLERS ===
-
-@chat_bp.errorhandler(404)
-def chat_not_found(error):
-    """Handler dla błędów 404 w chat module"""
-    return jsonify({'error': 'Chat endpoint not found'}), 404
-
-@chat_bp.errorhandler(500)
-def chat_server_error(error):
-    """Handler dla błędów 500 w chat module"""
-    db.session.rollback()
-    return jsonify({'error': 'Internal chat server error'}), 500
-
 # === HEALTH CHECK ===
 
 @chat_bp.route('/api/health', methods=['GET'])
@@ -1109,220 +1294,167 @@ def health_check():
             'timestamp': datetime.utcnow().isoformat()
         }), 500
 
-print("✅ chat.py loaded - Chat system ready")
+# === ERROR HANDLERS ===
 
-        # chat.py - Kompletny system czatu dla Danaid Chat
-# Obsługa sesji, wiadomości, znajomych i zarządzania czatem
+@chat_bp.errorhandler(404)
+def chat_not_found(error):
+    """Handler dla błędów 404 w chat module"""
+    return jsonify({'error': 'Chat endpoint not found'}), 404
 
-from flask import Blueprint, request, jsonify, session
-from flask_login import login_required, current_user
-from models import User, ChatSession, Message, Friend, FriendRequest, db
-from datetime import datetime, timedelta
-from sqlalchemy import or_, and_, desc
-import secrets
-import json
-import base64
+@chat_bp.errorhandler(500)
+def chat_server_error(error):
+    """Handler dla błędów 500 w chat module"""
+    db.session.rollback()
+    return jsonify({'error': 'Internal chat server error'}), 500
 
-# Utwórz Blueprint
-chat_bp = Blueprint('chat', __name__)
+# === OPTIONAL INTEGRATIONS ===
 
-# === HELPER FUNCTIONS ===
+def init_socketio_handlers(socketio):
+    """
+    Inicjalizuje handlery Socket.IO dla chat systemu
+    Wywołaj tę funkcję z main app jeśli używasz Socket.IO
+    """
+    from flask_socketio import join_room, leave_room
+    
+    @socketio.on('connect')
+    def handle_connect():
+        """User connected to Socket.IO"""
+        print(f"🔌 Socket.IO client connected: {request.sid}")
+        
+    @socketio.on('disconnect')
+    def handle_disconnect():
+        """User disconnected from Socket.IO"""
+        print(f"🔌 Socket.IO client disconnected: {request.sid}")
+        
+    @socketio.on('join_session')
+    def handle_join_session(data):
+        """User joins a chat session room"""
+        session_token = data.get('session_token')
+        if session_token:
+            join_room(f'session_{session_token}')
+            print(f"✅ User joined session room: {session_token[:8]}...")
+            
+    @socketio.on('leave_session')
+    def handle_leave_session(data):
+        """User leaves a chat session room"""
+        session_token = data.get('session_token')
+        if session_token:
+            leave_room(f'session_{session_token}')
+            print(f"✅ User left session room: {session_token[:8]}...")
 
-def generate_session_token():
-    """Generuje bezpieczny token sesji"""
-    return secrets.token_urlsafe(32)
+def broadcast_new_message(session_token, message_data):
+    """
+    Broadcasts new message to session participants via Socket.IO
+    Call this function after successfully saving a message
+    """
+    try:
+        from flask_socketio import emit
+        emit('message', {
+            'type': 'new_message',
+            'session_token': session_token,
+            'message': message_data
+        }, room=f'session_{session_token}')
+        print(f"📡 Message broadcasted to session {session_token[:8]}...")
+    except ImportError:
+        print("⚠️ Flask-SocketIO not available for broadcasting")
+    except Exception as e:
+        print(f"❌ Broadcasting error: {e}")
 
-def validate_session_access(session_obj, user_id):
-    """Sprawdza czy użytkownik ma dostęp do sesji"""
-    return session_obj.initiator_id == user_id or session_obj.recipient_id == user_id
+def setup_background_tasks():
+    """
+    Setup background tasks for chat maintenance
+    Call this from your task scheduler (Celery, APScheduler, etc.)
+    """
+    
+    def cleanup_expired_sessions():
+        """Background task to cleanup expired sessions"""
+        try:
+            expired_count = 0
+            expired_sessions = ChatSession.query.filter(
+                ChatSession.expires_at <= datetime.utcnow()
+            ).all()
+            
+            for session in expired_sessions:
+                Message.query.filter_by(session_id=session.id).delete()
+                db.session.delete(session)
+                expired_count += 1
+            
+            db.session.commit()
+            print(f"🧹 Background cleanup: {expired_count} expired sessions removed")
+            
+        except Exception as e:
+            print(f"❌ Background cleanup error: {e}")
+            db.session.rollback()
+    
+    return {
+        'cleanup_expired_sessions': cleanup_expired_sessions
+    }
 
-def get_other_user_in_session(session_obj, current_user_id):
-    """Zwraca drugiego użytkownika w sesji"""
-    if session_obj.initiator_id == current_user_id:
-        return User.query.get(session_obj.recipient_id)
+def validate_chat_config():
+    """
+    Validates chat system configuration
+    Call this during app startup
+    """
+    issues = []
+    
+    # Check required database tables
+    try:
+        db.session.execute('SELECT 1 FROM "user" LIMIT 1')
+        db.session.execute('SELECT 1 FROM chat_session LIMIT 1') 
+        db.session.execute('SELECT 1 FROM message LIMIT 1')
+        db.session.execute('SELECT 1 FROM friend LIMIT 1')
+        db.session.execute('SELECT 1 FROM friend_request LIMIT 1')
+    except Exception as e:
+        issues.append(f"Database table missing: {e}")
+    
+    if issues:
+        print("❌ Chat configuration issues found:")
+        for issue in issues:
+            print(f"   - {issue}")
+        return False
     else:
-        return User.query.get(session_obj.initiator_id)
+        print("✅ Chat configuration validation passed")
+        return True
 
-def format_user_for_api(user):
-    """Formatuje dane użytkownika dla API"""
-    if not user:
-        return None
-    
-    return {
-        'id': user.id,
-        'user_id': user.user_id,
-        'username': user.username,
-        'is_online': getattr(user, 'is_online', False),
-        'last_active': user.last_active.isoformat() if hasattr(user, 'last_active') and user.last_active else None
-    }
-
-def format_session_for_api(session_obj, current_user_id):
-    """Formatuje sesję dla API"""
-    other_user = get_other_user_in_session(session_obj, current_user_id)
-    
-    return {
-        'id': session_obj.id,
-        'token': session_obj.session_token,
-        'created_at': session_obj.created_at.isoformat(),
-        'last_activity': session_obj.last_activity.isoformat() if session_obj.last_activity else None,
-        'expires_at': session_obj.expires_at.isoformat(),
-        'is_active': session_obj.is_active,
-        'has_key': bool(session_obj.encrypted_session_key),
-        'key_acknowledged': session_obj.key_acknowledged,
-        'other_user': format_user_for_api(other_user)
-    }
-
-def format_message_for_api(message, current_user_id):
-    """Formatuje wiadomość dla API"""
-    return {
-        'id': message.id,
-        'sender_id': message.sender_id,
-        'content': message.content,
-        'iv': message.iv,
-        'timestamp': message.timestamp.isoformat(),
-        'read': message.read,
-        'is_mine': message.sender_id == current_user_id
-    }
-
-# === SESSION MANAGEMENT ===
-
-@chat_bp.route('/api/session/init', methods=['POST'])
-@login_required
-def init_session():
-    """Inicjalizuje nową sesję czatu lub zwraca istniejącą"""
+def get_chat_metrics():
+    """
+    Returns chat system metrics for monitoring
+    """
     try:
-        data = request.get_json()
-        if not data or 'recipient_id' not in data:
-            return jsonify({'error': 'Missing recipient_id'}), 400
-        
-        recipient_id = data['recipient_id']
-        
-        # Znajdź użytkownika odbiorcy
-        recipient = User.query.filter_by(user_id=recipient_id).first()
-        if not recipient:
-            return jsonify({'error': 'Recipient not found'}), 404
-        
-        # Sprawdź czy użytkownicy są znajomymi
-        friendship = Friend.query.filter(
-            or_(
-                and_(Friend.user_id == current_user.id, Friend.friend_id == recipient.id),
-                and_(Friend.user_id == recipient.id, Friend.friend_id == current_user.id)
-            )
-        ).first()
-        
-        if not friendship:
-            return jsonify({'error': 'Users are not friends'}), 403
-        
-        # Sprawdź czy istnieje aktywna sesja między tymi użytkownikami
-        existing_session = ChatSession.query.filter(
-            or_(
-                and_(ChatSession.initiator_id == current_user.id, ChatSession.recipient_id == recipient.id),
-                and_(ChatSession.initiator_id == recipient.id, ChatSession.recipient_id == current_user.id)
-            ),
-            ChatSession.is_active == True,
-            ChatSession.expires_at > datetime.utcnow()
-        ).first()
-        
-        if existing_session:
-            print(f"✅ Found existing session: {existing_session.session_token[:8]}... between {current_user.username} and {recipient.username}")
-            return jsonify({
-                'status': 'success',
-                'session': format_session_for_api(existing_session, current_user.id),
-                'message': 'Existing session found'
-            })
-        
-        # Utwórz nową sesję
-        session_token = generate_session_token()
-        expires_at = datetime.utcnow() + timedelta(hours=24)  # 24h expiry
-        
-        new_session = ChatSession(
-            session_token=session_token,
-            initiator_id=current_user.id,
-            recipient_id=recipient.id,
-            created_at=datetime.utcnow(),
-            last_activity=datetime.utcnow(),
-            expires_at=expires_at,
-            is_active=True,
-            encrypted_session_key=None,
-            key_acknowledged=False
-        )
-        
-        db.session.add(new_session)
-        db.session.commit()
-        
-        print(f"✅ New session created: {session_token[:8]}... between {current_user.username} and {recipient.username}")
-        
-        return jsonify({
-            'status': 'success',
-            'session': format_session_for_api(new_session, current_user.id),
-            'message': 'New session created'
-        })
-        
+        return {
+            'timestamp': datetime.utcnow().isoformat(),
+            'users': {
+                'total': User.query.count(),
+                'online': User.query.filter_by(is_online=True).count() if hasattr(User, 'is_online') else 0,
+            },
+            'sessions': {
+                'total': ChatSession.query.count(),
+                'active': ChatSession.query.filter(
+                    ChatSession.is_active == True,
+                    ChatSession.expires_at > datetime.utcnow()
+                ).count(),
+            },
+            'messages': {
+                'total': Message.query.count(),
+                'today': Message.query.filter(
+                    Message.timestamp >= datetime.utcnow().replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                ).count()
+            },
+            'friends': {
+                'total_friendships': Friend.query.count(),
+                'pending_requests': FriendRequest.query.filter_by(status='pending').count()
+            }
+        }
     except Exception as e:
-        db.session.rollback()
-        print(f"❌ Session init error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return {'error': str(e)}
 
-@chat_bp.route('/api/session/<session_token>/exchange_key', methods=['POST'])
-@login_required
-def exchange_session_key(session_token):
-    """Wymienia klucz sesji między użytkownikami"""
-    try:
-        data = request.get_json()
-        
-        # Find session
-        session_obj = ChatSession.query.filter_by(session_token=session_token).first()
-        if not session_obj:
-            return jsonify({'error': 'Session not found'}), 404
-        
-        # Validate access
-        if not validate_session_access(session_obj, current_user.id):
-            return jsonify({'error': 'Access denied'}), 403
-        
-        # Handle different key exchange formats
-        if 'encrypted_key' in data:
-            # Legacy format - single encrypted key
-            encrypted_key = data['encrypted_key']
-            session_obj.encrypted_session_key = encrypted_key
-            session_obj.key_acknowledged = False
-            key_generator = current_user.id
-            
-        elif 'keys' in data:
-            # New format - dual encryption with keys for both users
-            keys_data = data['keys']
-            if isinstance(keys_data, dict):
-                # Store as JSON for multiple keys
-                session_obj.encrypted_keys_json = json.dumps(keys_data)
-                session_obj.key_generator_id = current_user.id
-            else:
-                return jsonify({'error': 'Invalid keys format'}), 400
-            key_generator = current_user.id
-            
-        else:
-            return jsonify({'error': 'Missing encrypted_key or keys'}), 400
-        
-        # Update session
-        session_obj.last_activity = datetime.utcnow()
-        db.session.commit()
-        
-        print(f"✅ Session key exchanged for session {session_token[:8]}... by user {current_user.username}")
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Session key exchanged successfully',
-            'key_generator': key_generator,
-            'session_token': session_token
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        print(f"❌ Key exchange error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@chat_bp.route('/api/session/<session_token>/key', methods=['GET'])
-@login_required
-def get_session_key(session_token):
-    """Pobiera zaszyfrowany klucz sesji"""
-    try:
-        session_obj = ChatSession.query.filter_by(session_token=session_token).first()
-        if
+print("✅ chat.py loaded - Chat system ready")
+print("📊 Available endpoints:")
+print("   Session: /api/session/init, /api/session/<token>/exchange_key")
+print("   Messages: /api/message/send, /api/messages/<token>")
+print("   Friends: /api/friends, /api/friends/add")
+print("   Cleanup: /api/messages/cleanup, /api/messages/stats")
+print("   Debug: /api/debug/session/<token>, /api/health")
+print("🔧 Optional integrations: Socket.IO, Background Tasks, Monitoring")
