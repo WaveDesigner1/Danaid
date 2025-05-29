@@ -10,7 +10,7 @@ body {
     height: 100vh;
 }
 
-/* POPRAWIONY: Ciemniejszy container dla formularza */
+/* POPRAWIONY: Jeden główny container dla formularza */
 .login-container {
     background-color: #2a2a2a; /* Ciemniejszy niż tło (#333333) */
     border-radius: 8px;
@@ -21,16 +21,7 @@ body {
     border: 1px solid #444444; /* Subtelna ramka */
 }
 
-/* POPRAWIONY: Card styling dla lepszego kontrastu */
-.login-card {
-    background-color: #2a2a2a; /* Ciemniejszy niż tło */
-    border-radius: 8px;
-    padding: 30px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    width: 400px;
-    max-width: 90%;
-    border: 1px solid #444444;
-}
+/* USUNIĘTY: Duplikujący się login-card - używamy tylko login-container */
 
 h1 {
     text-align: center;
@@ -144,8 +135,7 @@ small {
 
 /* Responsywność */
 @media (max-width: 480px) {
-    .login-container,
-    .login-card {
+    .login-container {
         width: 95%;
         padding: 20px;
     }
