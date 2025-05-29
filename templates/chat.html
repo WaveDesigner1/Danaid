@@ -104,18 +104,21 @@
             console.log("✅ Socket.IO client library załadowana");
         }
         
-        if (typeof window.cryptoManager === 'undefined') {
-            console.error("❌ CryptoManager nie załadowany");
-            alert("Błąd ładowania modułu kryptograficznego. Odśwież stronę.");
-        } else {
-            console.log("✅ CryptoManager załadowany");
-        }
-
-        if (typeof window.chatManager === 'undefined') {
-            console.error("❌ ChatManager nie załadowany");
-        } else {
-            console.log("✅ ChatManager załadowany");
-        }
+        / Sprawdź moduły po krótkim opóźnieniu (daj czas na załadowanie)
+        setTimeout(() => {
+            if (typeof window.cryptoManager === 'undefined') {
+                console.error("❌ CryptoManager nie załadowany po timeout");
+                alert("Błąd ładowania modułu kryptograficznego. Odśwież stronę.");
+            } else {
+                console.log("✅ CryptoManager załadowany (po timeout)");
+            }
+    
+            if (typeof window.chatManager === 'undefined') {
+                console.log("ℹ️ ChatManager zostanie załadowany przez chat.js");
+            } else {
+                console.log("✅ ChatManager załadowany");
+            }
+        }, 500);
         
         // Sprawdź sesję użytkownika
         const isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true' || 
