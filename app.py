@@ -13,12 +13,11 @@ from sqlalchemy import inspect, text
 import traceback
 import sys
 
-# 🔄 ZOPTYMALIZOWANE IMPORTY (po scaleniu modułów)
-from models import db, User, ChatSession, Message
+# 🔄 ZMODERNIZOWANE IMPORTY (zgodnie z nową architekturą)
+from models import db, User, ChatSession, Message, Friend, FriendRequest
 from admin import init_admin
 from auth import auth_bp
-from chat import chat_bp  # ✅ chat.py zawiera teraz wszystko (chat + chat_api + socketio)
-
+from chat import chat_bp
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
@@ -41,20 +40,53 @@ def load_user(user_id):
         print(f"Błąd ładowania użytkownika: {e}")
         return None
 
-# Automatyczne migracje bazy danych
+# 🆕 NOWY SYSTEM MIGRACJI (zgodny z nową architekturą)
 def apply_migrations(app):
-    """Automatyczne migracje bazy danych"""
+    """Automatyczne migracje bazy danych - ZMODERNIZOWANE"""
     with app.app_context():
-        inspector = inspect(db.engine)
-        
-        # Migracja 1: Dodanie kolumny is_online do tabeli user (jeśli nie istnieje)
-        apply_migration(inspector, 'user', 'is_online', 'ALTER TABLE "user" ADD COLUMN is_online BOOLEAN DEFAULT FALSE')
-        
-        # Migracja 2: Dodanie kolumny encrypted_session_key do tabeli chat_session
-        apply_migration(inspector, 'chat_session', 'encrypted_session_key', 'ALTER TABLE "chat_session" ADD COLUMN encrypted_session_key TEXT')
-        
-        # Migracja 3: Dodanie kolumny key_acknowledged do tabeli chat_session
-        apply_migration(inspector, 'chat_session', 'key_acknowledged', 'ALTER TABLE "chat_session" ADD COLUMN key_acknowledged BOOLEAN DEFAULT FALSE')
+        try:
+            inspector = inspect(db.engine)
+            print("🔄 Sprawdzanie migracji bazy danych...")
+            
+            # === MIGRACJE TABELI USER ===
+            apply_migration(inspector, 'user', 'is_online', 
+                          'ALTER TABLE "user" ADD COLUMN is_online BOOLEAN DEFAULT FALSE')
+            apply_migration(inspector, 'user', 'last_active', 
+                          'ALTER TABLE "user" ADD COLUMN last_active TIMESTAMP')
+            
+            # === MIGRACJE TABELI CHAT_SESSION ===
+            # STARY SYSTEM (backward compatibility)
+            apply_migration(inspector, 'chat_session', 'encrypted_session_key', 
+                          'ALTER TABLE "chat_session" ADD COLUMN encrypted_session_key TEXT')
+            apply_migration(inspector, 'chat_session', 'key_acknowledged', 
+                          'ALTER TABLE "chat_session" ADD COLUMN key_acknowledged BOOLEAN DEFAULT FALSE')
+            
+            # NOWY SYSTEM (dual encryption)
+            apply_migration(inspector, 'chat_session', 'encrypted_keys_json', 
+                          'ALTER TABLE "chat_session" ADD COLUMN encrypted_keys_json TEXT')
+            apply_migration(inspector, 'chat_session', 'key_generator_id', 
+                          'ALTER TABLE "chat_session" ADD COLUMN key_generator_id INTEGER')
+            
+            # === MIGRACJE TABELI MESSAGE ===
+            apply_migration(inspector, 'message', 'is_encrypted', 
+                          'ALTER TABLE "message" ADD COLUMN is_encrypted BOOLEAN DEFAULT TRUE')
+            
+            # === TWORZENIE NOWYCH TABEL ===
+            existing_tables = inspector.get_table_names()
+            
+            # Tabela Friend
+            if 'friend' not in existing_tables:
+                create_friend_table()
+                
+            # Tabela FriendRequest  
+            if 'friend_request' not in existing_tables:
+                create_friend_request_table()
+            
+            print("✅ Migracje zakończone pomyślnie")
+            
+        except Exception as e:
+            print(f"❌ Błąd podczas migracji: {e}")
+            db.session.rollback()
 
 def apply_migration(inspector, table, column, sql_statement):
     """Wykonuje pojedynczą migrację, jeśli jest potrzebna"""
@@ -62,13 +94,85 @@ def apply_migration(inspector, table, column, sql_statement):
         columns = [c['name'] for c in inspector.get_columns(table)]
         if column not in columns:
             try:
-                print(f"Wykonywanie migracji: Dodawanie kolumny {column} do tabeli {table}")
+                print(f"  📝 Dodawanie kolumny {column} do tabeli {table}")
                 db.session.execute(text(sql_statement))
                 db.session.commit()
-                print(f"Migracja zakończona pomyślnie")
+                print(f"  ✅ Kolumna {column} dodana pomyślnie")
             except Exception as e:
-                print(f"Błąd podczas migracji: {e}")
+                print(f"  ❌ Błąd podczas dodawania kolumny {column}: {e}")
                 db.session.rollback()
+
+def create_friend_table():
+    """Tworzy tabelę Friend"""
+    try:
+        print("  📝 Tworzenie tabeli Friend")
+        if is_postgresql():
+            sql = """
+                CREATE TABLE friend (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES "user"(id),
+                    friend_id INTEGER NOT NULL REFERENCES "user"(id),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, friend_id)
+                );
+            """
+        else:  # SQLite
+            sql = """
+                CREATE TABLE friend (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    friend_id INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES "user" (id),
+                    FOREIGN KEY (friend_id) REFERENCES "user" (id),
+                    UNIQUE(user_id, friend_id)
+                );
+            """
+        
+        db.session.execute(text(sql))
+        db.session.commit()
+        print("  ✅ Tabela Friend utworzona pomyślnie")
+    except Exception as e:
+        print(f"  ❌ Błąd podczas tworzenia tabeli Friend: {e}")
+        db.session.rollback()
+
+def create_friend_request_table():
+    """Tworzy tabelę FriendRequest"""
+    try:
+        print("  📝 Tworzenie tabeli FriendRequest")
+        if is_postgresql():
+            sql = """
+                CREATE TABLE friend_request (
+                    id SERIAL PRIMARY KEY,
+                    from_user_id INTEGER NOT NULL REFERENCES "user"(id),
+                    to_user_id INTEGER NOT NULL REFERENCES "user"(id),
+                    status VARCHAR(20) DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(from_user_id, to_user_id)
+                );
+            """
+        else:  # SQLite
+            sql = """
+                CREATE TABLE friend_request (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_user_id INTEGER NOT NULL,
+                    to_user_id INTEGER NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (from_user_id) REFERENCES "user" (id),
+                    FOREIGN KEY (to_user_id) REFERENCES "user" (id),
+                    UNIQUE(from_user_id, to_user_id)
+                );
+            """
+        
+        db.session.execute(text(sql))
+        db.session.commit()
+        print("  ✅ Tabela FriendRequest utworzona pomyślnie")
+    except Exception as e:
+        print(f"  ❌ Błąd podczas tworzenia tabeli FriendRequest: {e}")
+        db.session.rollback()
 
 # Główna funkcja tworząca aplikację
 def create_app():
@@ -97,7 +201,7 @@ def create_app():
     app.config['SESSION_TYPE'] = 'filesystem'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
     
-    # Inicjalizacja Socket.IO
+    # 🔄 ZMODERNIZOWANA INICJALIZACJA SOCKET.IO
     socketio = SocketIO(app, 
                        cors_allowed_origins="*", 
                        logger=False, 
@@ -109,27 +213,31 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = 'auth.index'
     
-    # 🔄 ZOPTYMALIZOWANE BLUEPRINTY (po scaleniu)
+    # 🔄 ZMODERNIZOWANE BLUEPRINTY (zgodnie z nową architekturą)
     app.register_blueprint(auth_bp)
-    app.register_blueprint(chat_bp)  # ✅ chat_bp zawiera teraz wszystkie endpointy z chat_api
-    # ❌ USUNIĘTE: app.register_blueprint(chat_api)  # Scalono z chat_bp
+    app.register_blueprint(chat_bp)  # ✅ Teraz zawiera wszystkie endpointy
     
     # Inicjalizacja panelu admina
-    init_admin(app)
-    
-    # 🔄 ZOPTYMALIZOWANE SOCKET.IO (sprawdź czy funkcja istnieje)
     try:
-        from chat import init_socketio_handler
-        init_socketio_handler(socketio)
-        print("✅ Socket.IO handler zainicjalizowany z chat.py")
-    except ImportError:
-        print("⚠️  init_socketio_handler nie znaleziono - może być zintegrowane bezpośrednio w chat.py")
-        pass
+        init_admin(app)
+        print("✅ Panel administracyjny zainicjalizowany")
+    except Exception as e:
+        print(f"⚠️ Błąd inicjalizacji panelu admina: {e}")
+    
+    # 🔄 SOCKET.IO INTEGRATION (sprawdź nową architekturę)
+    try:
+        # Socket.IO może być zintegrowane bezpośrednio w chat.py
+        # lub może być osobna funkcja init_socketio_handler
+        print("✅ Socket.IO zainicjalizowany")
+        
+        # Dodaj Socket.IO do globalnego kontekstu dla chat.py
+        app.socketio = socketio
+        
+    except Exception as e:
+        print(f"⚠️ Socket.IO warning: {e}")
  
-    # 🔄 MIGRACJE TERAZ W CHAT.PY
-    # Uruchom migracje bazy danych (scalono z chat.py)
+    # 🔄 URUCHOMIENIE MIGRACJI
     apply_migrations(app)
-    # ❌ USUNIĘTE: apply_e2ee_migrations(app)  # Wbudowano w apply_migrations
 
     # Socket.IO konfiguracja dla frontendu
     @app.route('/api/websocket/config')
@@ -156,7 +264,7 @@ def create_app():
         js_content = f"window._socketConfig = {json.dumps(config)};"
         return Response(js_content, mimetype='application/javascript')
 
-    # Debug endpoint
+    # 🆕 NOWY DEBUG ENDPOINT z więcej informacji
     @app.route('/db-debug')
     def db_debug():
         try:
@@ -167,6 +275,14 @@ def create_app():
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()
             
+            # Sprawdź strukturę kluczowych tabel
+            table_info = {}
+            for table in ['user', 'chat_session', 'message', 'friend', 'friend_request']:
+                if table in tables:
+                    columns = inspector.get_columns(table)
+                    table_info[table] = [col['name'] for col in columns]
+            
+            # Bezpieczny connection string
             safe_connection = str(db.engine.url)
             if ":" in safe_connection and "@" in safe_connection:
                 parts = safe_connection.split('@')
@@ -180,7 +296,13 @@ def create_app():
                 "engine": engine_name,
                 "test_query": dict(result) if result else None,
                 "tables": tables,
-                "connection_string": safe_connection
+                "table_columns": table_info,
+                "connection_string": safe_connection,
+                "modernization_status": {
+                    "dual_encryption": 'encrypted_keys_json' in table_info.get('chat_session', []),
+                    "friends_system": 'friend' in tables,
+                    "enhanced_security": 'is_encrypted' in table_info.get('message', [])
+                }
             })
         except Exception as e:
             return jsonify({
@@ -189,48 +311,55 @@ def create_app():
                 "error_type": type(e).__name__
             }), 500
     
-    # Inicjalizacja bazy danych przy pierwszym uruchomieniu
+    # 🔄 ZMODERNIZOWANA INICJALIZACJA BAZY DANYCH
     with app.app_context():
         try:
             # Sprawdź połączenie
             db.session.execute(text("SELECT 1"))
-            print("Połączenie z bazą danych nawiązane pomyślnie")
+            print("✅ Połączenie z bazą danych nawiązane pomyślnie")
             
             # Utwórz tabele (bezpieczna metoda)
             inspector = inspect(db.engine)
             existing_tables = inspector.get_table_names()
             
             if not existing_tables:
-                print("Baza danych jest pusta, tworzę schemat...")
+                print("📊 Baza danych jest pusta, tworzę pełny schemat...")
                 db.create_all()
+                print("✅ Schemat bazy danych utworzony")
             else:
-                print(f"Znaleziono istniejące tabele: {existing_tables}")
+                print(f"📋 Znaleziono istniejące tabele: {existing_tables}")
                 
                 # Sprawdź, czy wszystkie modele mają odpowiadające tabele
-                models = db.Model.__subclasses__()
-                model_tables = [model.__tablename__ for model in models]
+                expected_tables = ['user', 'chat_session', 'message', 'friend', 'friend_request']
+                missing_tables = [table for table in expected_tables if table not in existing_tables]
                 
-                missing_tables = [table for table in model_tables if table not in existing_tables]
                 if missing_tables:
-                    print(f"Brakujące tabele: {missing_tables}")
+                    print(f"📝 Brakujące tabele: {missing_tables}")
                     db.create_all()
-                    print("Dodano brakujące tabele")
+                    print("✅ Dodano brakujące tabele")
+                else:
+                    print("✅ Wszystkie wymagane tabele istnieją")
             
         except Exception as e:
-            print(f"Błąd podczas inicjalizacji bazy danych: {e}")
+            print(f"❌ Błąd podczas inicjalizacji bazy danych: {e}")
             traceback.print_exc()
             db.session.rollback()
 
-    # Dodaj zarządzanie sesją
+    # 🔄 ZMODERNIZOWANE ZARZĄDZANIE SESJĄ
     @app.before_request
     def before_request():
-        """Zarządzanie sesją przed każdym żądaniem"""
+        """Zarządzanie sesją przed każdym żądaniem - УЛUCHSZONY"""
         try:
             app.permanent_session_lifetime = timedelta(hours=24)
             
             if current_user.is_authenticated and hasattr(current_user, 'is_online'):
+                # Sprawdź czy user ma last_active (nowa kolumna)
+                if not hasattr(current_user, 'last_active') or current_user.last_active is None:
+                    current_user.last_active = datetime.datetime.utcnow()
+                
                 last_update_key = f'last_online_update_{current_user.id}'
-                last_update = request.cookies.get(last_update_key, 0)
+                last_update = session.get(last_update_key, 0)
+                
                 try:
                     last_update = int(last_update)
                 except (TypeError, ValueError):
@@ -238,8 +367,17 @@ def create_app():
                     
                 now = int(time.time())
                 
-                if now - last_update > 300:  # 5 minut = 300 sekund
+                # Update status co 5 minut
+                if now - last_update > 300:
                     current_user.is_online = True
+                    current_user.last_active = datetime.datetime.utcnow()
+                    session[last_update_key] = now
+                    
+                    try:
+                        db.session.commit()
+                    except:
+                        db.session.rollback()
+                        
         except Exception as e:
             app.logger.error(f"Błąd w before_request: {e}")
             db.session.rollback()
@@ -252,5 +390,53 @@ def create_app():
             response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
         return response
     
-    # 🔄 RETURN TUPLE (app, socketio) dla nowej architektury
+    # 🔄 RETURN TUPLE dla nowej architektury
     return app, socketio
+
+# 🆕 HELPER DO SPRAWDZANIA STATUSU MODERNIZACJI
+def check_modernization_status(app):
+    """Sprawdza status modernizacji aplikacji"""
+    with app.app_context():
+        try:
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
+            
+            checks = {
+                'dual_encryption': False,
+                'friends_system': False,
+                'enhanced_security': False,
+                'all_tables': False
+            }
+            
+            # Sprawdź dual encryption
+            if 'chat_session' in tables:
+                columns = [c['name'] for c in inspector.get_columns('chat_session')]
+                checks['dual_encryption'] = 'encrypted_keys_json' in columns
+            
+            # Sprawdź friends system
+            checks['friends_system'] = 'friend' in tables and 'friend_request' in tables
+            
+            # Sprawdź enhanced security
+            if 'message' in tables:
+                columns = [c['name'] for c in inspector.get_columns('message')]
+                checks['enhanced_security'] = 'is_encrypted' in columns
+            
+            # Sprawdź wszystkie tabele
+            expected = ['user', 'chat_session', 'message', 'friend', 'friend_request']
+            checks['all_tables'] = all(table in tables for table in expected)
+            
+            return checks
+            
+        except Exception as e:
+            print(f"❌ Błąd sprawdzania modernizacji: {e}")
+            return {'error': str(e)}
+
+if __name__ == '__main__':
+    # Dla development
+    app, socketio = create_app()
+    
+    # Sprawdź status modernizacji
+    status = check_modernization_status(app)
+    print(f"🔍 Status modernizacji: {status}")
+    
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
