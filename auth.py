@@ -254,3 +254,14 @@ def check_auth():
         'is_online': current_user.is_online,
         'last_active': current_user.last_active.isoformat() if current_user.last_active else None
     })
+
+@auth_bp.route('/api/check_auth')
+@login_required
+def check_auth():
+    """Sprawdza status autoryzacji"""
+    return jsonify({
+        'authenticated': True,
+        'user_id': current_user.user_id,
+        'username': current_user.username,
+        'is_admin': current_user.is_admin
+    })
