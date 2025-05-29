@@ -1,3 +1,4 @@
+# ✅ FIXED VERSION - app.py with Socket.IO integration
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, Response, session
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_required
@@ -17,7 +18,7 @@ import sys
 from models import db, User, ChatSession, Message, Friend, FriendRequest
 from admin import init_admin
 from auth import auth_bp
-from chat import chat_bp
+from chat import chat_bp, init_socketio_handler  # ✅ ADDED Socket.IO import
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
@@ -201,7 +202,7 @@ def create_app():
     app.config['SESSION_TYPE'] = 'filesystem'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
     
-    # 🔄 ZMODERNIZOWANA INICJALIZACJA SOCKET.IO
+    # ✅ FIXED: ZMODERNIZOWANA INICJALIZACJA SOCKET.IO
     socketio = SocketIO(app, 
                        cors_allowed_origins="*", 
                        logger=False, 
@@ -224,17 +225,17 @@ def create_app():
     except Exception as e:
         print(f"⚠️ Błąd inicjalizacji panelu admina: {e}")
     
-    # 🔄 SOCKET.IO INTEGRATION (sprawdź nową architekturę)
+    # ✅ FIXED: SOCKET.IO INTEGRATION - Teraz prawidłowo zintegrowane
     try:
-        # Socket.IO może być zintegrowane bezpośrednio w chat.py
-        # lub może być osobna funkcja init_socketio_handler
-        print("✅ Socket.IO zainicjalizowany")
+        # Zainicjalizuj Socket.IO handlery z chat.py
+        socketio = init_socketio_handler(socketio)
+        print("✅ Socket.IO handlers zainicjalizowane")
         
-        # Dodaj Socket.IO do globalnego kontekstu dla chat.py
+        # Dodaj Socket.IO do globalnego kontekstu dla dostępu z innych modułów
         app.socketio = socketio
         
     except Exception as e:
-        print(f"⚠️ Socket.IO warning: {e}")
+        print(f"⚠️ Socket.IO initialization warning: {e}")
  
     # 🔄 URUCHOMIENIE MIGRACJI
     apply_migrations(app)
@@ -301,7 +302,8 @@ def create_app():
                 "modernization_status": {
                     "dual_encryption": 'encrypted_keys_json' in table_info.get('chat_session', []),
                     "friends_system": 'friend' in tables,
-                    "enhanced_security": 'is_encrypted' in table_info.get('message', [])
+                    "enhanced_security": 'is_encrypted' in table_info.get('message', []),
+                    "socket_io_integrated": hasattr(app, 'socketio')  # ✅ ADDED
                 }
             })
         except Exception as e:
@@ -405,7 +407,8 @@ def check_modernization_status(app):
                 'dual_encryption': False,
                 'friends_system': False,
                 'enhanced_security': False,
-                'all_tables': False
+                'all_tables': False,
+                'socket_io_integrated': False  # ✅ ADDED
             }
             
             # Sprawdź dual encryption
@@ -424,6 +427,9 @@ def check_modernization_status(app):
             # Sprawdź wszystkie tabele
             expected = ['user', 'chat_session', 'message', 'friend', 'friend_request']
             checks['all_tables'] = all(table in tables for table in expected)
+            
+            # ✅ Sprawdź Socket.IO integration
+            checks['socket_io_integrated'] = hasattr(app, 'socketio')
             
             return checks
             
