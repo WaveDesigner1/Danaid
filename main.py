@@ -43,10 +43,10 @@ def startup_diagnostics():
     
     # Sprawdź frontend po consolidacji
     frontend_files = [
-        'static/chat.js',    # 🔄 ZUNIFIKOWANY (ChatInterface + SessionManager + SocketIO)
-        'static/crypto.js',  # 🔄 ZOPTYMALIZOWANY (UnifiedCrypto → crypto)
-        'static/auth.js',    # 🔄 SCALONY (user_script + register_send)
-        'static/app.css'     # 🔄 ZUNIFIKOWANY (3x CSS → 1x CSS)
+        'static/js/chat.js',    # 🔄 ZUNIFIKOWANY (ChatInterface + SessionManager + SocketIO)
+        'static/js/crypto.js',  # 🔄 ZOPTYMALIZOWANY (UnifiedCrypto → crypto)
+        'static/js/auth.js',    # 🔄 SCALONY (user_script + register_send)
+        'static/css/app.css'     # 🔄 ZUNIFIKOWANY (3x CSS → 1x CSS)
     ]
     
     print("\n🎨 Frontend consolidation status:")
