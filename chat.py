@@ -1307,12 +1307,12 @@ def chat_server_error(error):
     db.session.rollback()
     return jsonify({'error': 'Internal chat server error'}), 500
 
-# === OPTIONAL INTEGRATIONS ===
+# === SOCKET.IO INTEGRATION ===
 
 def init_socketio_handlers(socketio):
     """
     Inicjalizuje handlery Socket.IO dla chat systemu
-    Wywołaj tę funkcję z main app jeśli używasz Socket.IO
+    POPRAWIONA NAZWA FUNKCJI: handlers (z 's')
     """
     from flask_socketio import join_room, leave_room
     
@@ -1341,6 +1341,26 @@ def init_socketio_handlers(socketio):
         if session_token:
             leave_room(f'session_{session_token}')
             print(f"✅ User left session room: {session_token[:8]}...")
+            
+    @socketio.on('typing_start')
+    def handle_typing_start(data):
+        """User started typing"""
+        session_token = data.get('session_token')
+        if session_token:
+            socketio.emit('typing_indicator', {
+                'type': 'typing_start',
+                'user': current_user.username if current_user.is_authenticated else 'Anonymous'
+            }, room=f'session_{session_token}', include_self=False)
+            
+    @socketio.on('typing_stop')
+    def handle_typing_stop(data):
+        """User stopped typing"""
+        session_token = data.get('session_token')
+        if session_token:
+            socketio.emit('typing_indicator', {
+                'type': 'typing_stop',
+                'user': current_user.username if current_user.is_authenticated else 'Anonymous'
+            }, room=f'session_{session_token}', include_self=False)
 
 def broadcast_new_message(session_token, message_data):
     """
