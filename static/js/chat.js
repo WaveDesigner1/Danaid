@@ -1,4 +1,4 @@
-// Full chat.js with dual encryption modifications
+// Full chat.js with dual encryption modifications - FIXED VERSION
 class ChatManager {
     constructor() {
         this.socket = null;
@@ -11,7 +11,7 @@ class ChatManager {
         this.pollingInterval = null;
         
         // Processing queues and caches
-        this.processingMessages = new Set(); // FIXED: Use Set instead of array
+        this.processingMessages = new Set();
         this.apiCache = new Map();
         this.messageHistory = new Map();
         this.unreadCounts = new Map();
@@ -470,7 +470,7 @@ class ChatManager {
     }
 
     // =================
-    // FRIENDS MANAGEMENT - PRESERVED FROM ORIGINAL
+    // FRIENDS MANAGEMENT - FIXED AND EXTENDED
     // =================
     
     async _loadFriends() {
@@ -533,13 +533,140 @@ class ChatManager {
         }
     }
 
+    // NEW: Friend requests modal management
+    _showFriendRequestsModal() {
+        console.log("🔔 Showing friend requests modal");
+        
+        // Sprawdź czy modal już istnieje
+        let modal = document.getElementById('friend-requests-modal');
+        
+        if (!modal) {
+            // Utwórz modal
+            modal = document.createElement('div');
+            modal.id = 'friend-requests-modal';
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Zaproszenia do znajomych</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="friend-requests-list">
+                            Ładowanie...
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Event listenery
+            modal.querySelector('.modal-close').addEventListener('click', () => {
+                modal.style.display = 'none';
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+        
+        // Pokaż modal
+        modal.style.display = 'block';
+        
+        // Załaduj zaproszenia
+        this._loadFriendRequestsInModal();
+    }
+
+    async _loadFriendRequestsInModal() {
+        try {
+            const response = await fetch('/api/friend_requests/pending');
+            const data = await response.json();
+            
+            const container = document.getElementById('friend-requests-list');
+            
+            if (data.status === 'success' && data.requests.length > 0) {
+                container.innerHTML = data.requests.map(req => `
+                    <div class="friend-request-item">
+                        <div class="request-info">
+                            <strong>${this._escapeHtml(req.username)}</strong>
+                            <small>ID: ${req.sender_id}</small>
+                        </div>
+                        <div class="request-actions">
+                            <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})">
+                                Akceptuj
+                            </button>
+                            <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})">
+                                Odrzuć
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<p style="text-align: center;">Brak zaproszeń</p>';
+            }
+            
+            // Aktualizuj licznik
+            const countElement = document.getElementById('friend-request-count');
+            if (countElement) {
+                countElement.textContent = data.requests ? data.requests.length : 0;
+            }
+            
+        } catch (error) {
+            console.error("❌ Failed to load friend requests:", error);
+            document.getElementById('friend-requests-list').innerHTML = 
+                '<p style="color: red;">Błąd ładowania zaproszeń</p>';
+        }
+    }
+
+    async acceptFriendRequest(requestId) {
+        try {
+            const response = await fetch(`/api/friend_requests/${requestId}/accept`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                this._showNotification('Zaproszenie zaakceptowane', 'success');
+                this._loadFriendRequestsInModal();
+                this._loadFriends();
+            }
+        } catch (error) {
+            this._showNotification('Błąd akceptacji zaproszenia', 'error');
+        }
+    }
+
+    async rejectFriendRequest(requestId) {
+        try {
+            const response = await fetch(`/api/friend_requests/${requestId}/reject`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                this._showNotification('Zaproszenie odrzucone', 'success');
+                this._loadFriendRequestsInModal();
+            }
+        } catch (error) {
+            this._showNotification('Błąd odrzucenia zaproszenia', 'error');
+        }
+    }
+
     async _loadFriendRequests() {
         try {
-            const response = await fetch('/api/friends/requests');
+            const response = await fetch('/api/friend_requests/pending');
             const data = await response.json();
             
             if (data.status === 'success') {
                 this._renderFriendRequests(data.requests);
+                
+                // Update counter
+                const countElement = document.getElementById('friend-request-count');
+                if (countElement) {
+                    countElement.textContent = data.requests ? data.requests.length : 0;
+                }
             }
         } catch (error) {
             console.error("❌ Failed to load friend requests:", error);
@@ -548,10 +675,8 @@ class ChatManager {
 
     async respondToFriendRequest(requestId, action) {
         try {
-            const response = await fetch(`/api/friends/requests/${requestId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action })
+            const response = await fetch(`/api/friend_requests/${requestId}/${action}`, {
+                method: 'POST'
             });
 
             const data = await response.json();
@@ -677,19 +802,19 @@ class ChatManager {
     }
 
     // =================
-    // UI MANAGEMENT - PRESERVED
+    // UI MANAGEMENT - FIXED
     // =================
     
     _initElements() {
         this.elements = {
             messageInput: document.getElementById('message-input'),
             sendButton: document.getElementById('send-button'),
-            messagesContainer: document.getElementById('messages-container'),
-            friendsList: document.getElementById('friends-list'),
+            messagesContainer: document.getElementById('messages'), // ✅ FIXED
+            friendsList: document.getElementById('friend-list'),     // ✅ FIXED
             sessionsList: document.getElementById('sessions-list'),
             friendRequests: document.getElementById('friend-requests'),
             addFriendBtn: document.getElementById('add-friend-btn'),
-            addFriendInput: document.getElementById('add-friend-input'),
+            addFriendInput: document.getElementById('friend-username-input'), // ✅ FIXED
             chatHeader: document.getElementById('chat-header'),
             typingIndicator: document.getElementById('typing-indicator'),
             connectionStatus: document.getElementById('connection-status')
@@ -706,13 +831,9 @@ class ChatManager {
             }
         });
 
-        // Add friend
+        // Add friend modal
         this.elements.addFriendBtn?.addEventListener('click', () => {
-            const userInput = this.elements.addFriendInput?.value.trim();
-            if (userInput) {
-                this.addFriend(userInput);
-                this.elements.addFriendInput.value = '';
-            }
+            this._showAddFriendModal();
         });
 
         // Typing indicator
@@ -730,6 +851,42 @@ class ChatManager {
                 this.socket.disconnect();
             }
         });
+    }
+
+    // NEW: Add friend modal
+    _showAddFriendModal() {
+        const modal = document.getElementById('add-friend-modal');
+        if (modal) {
+            modal.style.display = 'block';
+            
+            // Setup modal event listeners if not already set
+            if (!modal.dataset.listenersSet) {
+                const closeBtn = modal.querySelector('.modal-close');
+                const sendBtn = document.getElementById('send-friend-request-btn');
+                const input = document.getElementById('friend-username-input');
+                
+                closeBtn?.addEventListener('click', () => {
+                    modal.style.display = 'none';
+                });
+                
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.style.display = 'none';
+                    }
+                });
+                
+                sendBtn?.addEventListener('click', async () => {
+                    const username = input?.value.trim();
+                    if (username) {
+                        await this.addFriend(username);
+                        input.value = '';
+                        modal.style.display = 'none';
+                    }
+                });
+                
+                modal.dataset.listenersSet = 'true';
+            }
+        }
     }
 
     _addMessageToUI(message) {
@@ -755,7 +912,7 @@ class ChatManager {
         if (!this.elements.friendsList) return;
         
         this.elements.friendsList.innerHTML = this.friends.map(friend => `
-            <div class="friend-item" data-user-id="${friend.user_id}">
+            <li class="friend-item" data-user-id="${friend.user_id}">
                 <div class="friend-info">
                     <span class="friend-name">${this._escapeHtml(friend.username)}</span>
                     <span class="friend-id">${friend.user_id}</span>
@@ -767,7 +924,7 @@ class ChatManager {
                     <button class="chat-btn" data-user-id="${friend.user_id}">💬</button>
                     <button class="remove-friend-btn" data-friend-id="${friend.id}">❌</button>
                 </div>
-            </div>
+            </li>
         `).join('');
         
         // Add event listeners
@@ -995,6 +1152,11 @@ class ChatManager {
         setInterval(() => {
             this._loadFriends();
         }, 60000); // Every minute
+        
+        // Load friend requests periodically
+        setInterval(() => {
+            this._loadFriendRequests();
+        }, 120000); // Every 2 minutes
     }
 
     _cleanupOldMessages() {
