@@ -771,3 +771,125 @@ def get_session_stats(session_token):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# === DODAJ NA KONIEC chat.py ===
+
+from flask_socketio import emit, join_room, leave_room
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Socket.IO events handler
+def init_socketio_handler(socketio):
+    """Inicjalizuje Socket.IO event handlers dla czatu"""
+    
+    @socketio.on('connect')
+    def on_connect():
+        if current_user.is_authenticated:
+            # Dołącz użytkownika do jego pokoju
+            join_room(f"user_{current_user.id}")
+            logger.info(f"User {current_user.username} connected via Socket.IO")
+            
+            # Powiadom o statusie online
+            emit('user_status', {
+                'user_id': current_user.user_id,
+                'status': 'online'
+            }, broadcast=True)
+    
+    @socketio.on('disconnect')
+    def on_disconnect():
+        if current_user.is_authenticated:
+            # Opuść pokój użytkownika
+            leave_room(f"user_{current_user.id}")
+            logger.info(f"User {current_user.username} disconnected from Socket.IO")
+            
+            # Powiadom o statusie offline (z opóźnieniem)
+            emit('user_status', {
+                'user_id': current_user.user_id,
+                'status': 'offline'
+            }, broadcast=True)
+    
+    @socketio.on('join_session')
+    def on_join_session(data):
+        """Dołącza użytkownika do pokoju sesji czatu"""
+        if not current_user.is_authenticated:
+            return
+            
+        session_token = data.get('session_token')
+        if not session_token:
+            return
+            
+        # Sprawdź czy użytkownik ma dostęp do sesji
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            return
+            
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return
+            
+        # Dołącz do pokoju sesji
+        join_room(f"session_{session_token}")
+        logger.info(f"User {current_user.username} joined session {session_token}")
+        
+        emit('session_joined', {
+            'session_token': session_token,
+            'status': 'success'
+        })
+    
+    @socketio.on('leave_session')
+    def on_leave_session(data):
+        """Opuszcza pokój sesji czatu"""
+        if not current_user.is_authenticated:
+            return
+            
+        session_token = data.get('session_token')
+        if session_token:
+            leave_room(f"session_{session_token}")
+            logger.info(f"User {current_user.username} left session {session_token}")
+    
+    @socketio.on('typing_start')
+    def on_typing_start(data):
+        """Powiadamia o rozpoczęciu pisania"""
+        if not current_user.is_authenticated:
+            return
+            
+        session_token = data.get('session_token')
+        if session_token:
+            emit('typing_status', {
+                'user_id': current_user.user_id,
+                'username': current_user.username,
+                'typing': True
+            }, room=f"session_{session_token}", include_self=False)
+    
+    @socketio.on('typing_stop')
+    def on_typing_stop(data):
+        """Powiadamia o zakończeniu pisania"""
+        if not current_user.is_authenticated:
+            return
+            
+        session_token = data.get('session_token')
+        if session_token:
+            emit('typing_status', {
+                'user_id': current_user.user_id,
+                'username': current_user.username,
+                'typing': False
+            }, room=f"session_{session_token}", include_self=False)
+    
+    print("✅ Socket.IO handlers zainicjalizowane w chat.py")
+    return socketio
+
+# Helper function do wysyłania powiadomień przez Socket.IO
+def emit_message_notification(session_token, message_data, recipient_id):
+    """Wysyła powiadomienie o nowej wiadomości przez Socket.IO"""
+    try:
+        from flask import current_app
+        if hasattr(current_app, 'socketio'):
+            current_app.socketio.emit('message', {
+                'type': 'new_message',
+                'session_token': session_token,
+                'message': message_data
+            }, room=f"user_{recipient_id}")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to emit Socket.IO message: {e}")
+    return False
