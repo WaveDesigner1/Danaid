@@ -1,93 +1,162 @@
- body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #333333;
-            color: #FFFFFF;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        
-        .container {
-            background-color: #444444;
-            border-radius: 8px;
-            padding: 30px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            width: 400px;
-            max-width: 90%;
-        }
-        
-        h1 {
-            text-align: center;
-            color: #FF9800;
-            margin-bottom: 25px;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 500;
-        }
-        
-        input[type="text"],
-        input[type="password"],
-        input[type="file"] {
-            width: 100%;
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px solid #555555;
-            background-color: #3a3a3a;
-            color: #FFFFFF;
-            font-size: 16px;
-            box-sizing: border-box;
-        }
-        
-        input[type="file"] {
-            padding: 8px;
-        }
-        
-        button {
-            background-color: #FF9800;
-            color: #333333;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            width: 100%;
-            transition: background-color 0.3s, transform 0.2s;
-        }
-        
-        button:hover {
-            background-color: #F57C00;
-            transform: translateY(-2px);
-        }
-        
-        #login-status {
-            margin-top: 20px;
-            padding: 10px;
-            border-radius: 4px;
-            background-color: #3a3a3a;
-            text-align: center;
-        }
-        
-        .register-link {
-            text-align: center;
-            margin-top: 15px;
-        }
-        
-        .register-link a {
-            color: #FF9800;
-            text-decoration: none;
-        }
-        
-        .register-link a:hover {
-            text-decoration: underline;
-        }
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #333333;
+    color: #FFFFFF;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+/* POPRAWIONY: Ciemniejszy container dla formularza */
+.login-container {
+    background-color: #2a2a2a; /* Ciemniejszy niż tło (#333333) */
+    border-radius: 8px;
+    padding: 30px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    width: 400px;
+    max-width: 90%;
+    border: 1px solid #444444; /* Subtelna ramka */
+}
+
+/* POPRAWIONY: Card styling dla lepszego kontrastu */
+.login-card {
+    background-color: #2a2a2a; /* Ciemniejszy niż tło */
+    border-radius: 8px;
+    padding: 30px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    width: 400px;
+    max-width: 90%;
+    border: 1px solid #444444;
+}
+
+h1 {
+    text-align: center;
+    color: #FF9800;
+    margin-bottom: 25px;
+    font-size: 1.8em;
+    font-weight: 600;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #FFFFFF;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="file"] {
+    width: 100%;
+    padding: 12px;
+    border-radius: 4px;
+    border: 1px solid #555555;
+    background-color: #3a3a3a;
+    color: #FFFFFF;
+    font-size: 16px;
+    box-sizing: border-box;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="file"]:focus {
+    outline: none;
+    border-color: #FF9800;
+    box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.2);
+}
+
+input[type="file"] {
+    padding: 10px;
+}
+
+button {
+    background-color: #FF9800;
+    color: #333333;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    width: 100%;
+    transition: background-color 0.3s, transform 0.2s;
+}
+
+button:hover {
+    background-color: #F57C00;
+    transform: translateY(-2px);
+}
+
+button:disabled {
+    background-color: #666666;
+    cursor: not-allowed;
+    transform: none;
+}
+
+#login-status,
+#status {
+    margin-top: 20px;
+    padding: 10px;
+    border-radius: 4px;
+    background-color: #3a3a3a;
+    text-align: center;
+    border: 1px solid #555555;
+}
+
+.login-link,
+.register-link {
+    text-align: center;
+    margin-top: 15px;
+    color: #CCCCCC;
+}
+
+.login-link a,
+.register-link a {
+    color: #FF9800;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.login-link a:hover,
+.register-link a:hover {
+    text-decoration: underline;
+}
+
+/* Dodatkowe style dla lepszego wyglądu */
+small {
+    color: #CCCCCC;
+    font-size: 0.85em;
+    line-height: 1.4;
+}
+
+.form-group small {
+    margin-top: 5px;
+    display: block;
+}
+
+/* Responsywność */
+@media (max-width: 480px) {
+    .login-container,
+    .login-card {
+        width: 95%;
+        padding: 20px;
+    }
+    
+    h1 {
+        font-size: 1.5em;
+    }
+    
+    input[type="text"],
+    input[type="password"],
+    input[type="file"] {
+        font-size: 16px; /* Zapobiega zoom na iOS */
+    }
+}
