@@ -563,6 +563,154 @@ class ChatManager {
         const base64Pattern = /^[A-Za-z0-9+/]+=*$/;
         return base64Pattern.test(message.content.replace(/\s/g, ''));
     }
+    
+    // ✅ NAPRAWIONE: deleteMessage WEWNĄTRZ KLASY
+    async deleteMessage(messageId, messageElement) {
+        if (!confirm('Czy na pewno chcesz usunąć tę wiadomość?')) {
+            return;
+        }
+        try {
+            const response = await fetch(`/api/message/${messageId}/delete`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            const data = await response.json();
+            if (response.ok && data.status === 'success') {
+                // Usuń z UI
+                if (messageElement) {
+                    messageElement.style.transition = 'opacity 0.3s ease';
+                    messageElement.style.opacity = '0';
+                    setTimeout(() => {
+                        messageElement.remove();
+                    }, 300);
+                }
+                // Usuń z lokalnego cache
+                if (this.currentSession) {
+                    const sessionMessages = this.messages.get(this.currentSession.token) || [];
+                    const filteredMessages = sessionMessages.filter(msg => msg.id !== messageId);
+                    this.messages.set(this.currentSession.token, filteredMessages);
+                }
+                this._showNotification('Wiadomość została usunięta', 'success', 3000);
+                console.log(`✅ Message ${messageId} deleted successfully`);
+            } else {
+                throw new Error(data.error || 'Failed to delete message');
+            }
+        } catch (error) {
+            console.error('❌ Delete message error:', error);
+            this._showNotification('Nie udało się usunąć wiadomości: ' + error.message, 'error');
+        }
+    }
+
+    // ✅ SESSION CLEANUP METHODS
+    async clearSessionMessages() {
+        if (!this.currentSession) {
+            this._showNotification('Brak aktywnej sesji', 'warning');
+            return;
+        }
+
+        if (!confirm('Czy na pewno chcesz wyczyścić wszystkie wiadomości?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/session/${this.currentSession.token}/clear`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            if (response.ok && data.status === 'success') {
+                // Clear UI
+                if (this.elements.messagesContainer) {
+                    this.elements.messagesContainer.innerHTML = '';
+                }
+                
+                // Clear local cache
+                this.messages.delete(this.currentSession.token);
+                
+                this._showNotification(`Wyczyszczono ${data.messages_deleted} wiadomości`, 'success');
+                console.log(`✅ Session ${this.currentSession.token.slice(0, 8)}... cleared`);
+            } else {
+                throw new Error(data.error || 'Failed to clear session');
+            }
+        } catch (error) {
+            console.error('❌ Clear session error:', error);
+            this._showNotification('Nie udało się wyczyścić wiadomości: ' + error.message, 'error');
+        }
+    }
+
+    async deleteSession() {
+        if (!this.currentSession) {
+            this._showNotification('Brak aktywnej sesji', 'warning');
+            return;
+        }
+
+        if (!confirm('Czy na pewno chcesz usunąć całą rozmowę? Ta operacja jest nieodwracalna.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/session/${this.currentSession.token}/delete`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            if (response.ok && data.status === 'success') {
+                // Clear UI
+                if (this.elements.messagesContainer) {
+                    this.elements.messagesContainer.innerHTML = '<div class="welcome-message">Wybierz znajomego, aby rozpocząć rozmowę</div>';
+                }
+                
+                // Clear session data
+                this.messages.delete(this.currentSession.token);
+                this.removeSessionKey(this.currentSession.token);
+                this.currentSession = null;
+                this.currentChatPartner = null;
+                
+                // Update UI
+                this._updateChatUI();
+                await this._loadSessions();
+                
+                this._showNotification(`Usunięto rozmowę (${data.messages_deleted} wiadomości)`, 'success');
+                console.log('✅ Session deleted successfully');
+            } else {
+                throw new Error(data.error || 'Failed to delete session');
+            }
+        } catch (error) {
+            console.error('❌ Delete session error:', error);
+            this._showNotification('Nie udało się usunąć rozmowy: ' + error.message, 'error');
+        }
+    }
+
+    async cleanupOldMessages() {
+        try {
+            const response = await fetch('/api/messages/cleanup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            if (response.ok && data.status === 'success') {
+                this._showNotification(`Wyczyszczono ${data.messages_deleted} starych wiadomości`, 'success');
+                console.log(`✅ Cleaned up ${data.messages_deleted} old messages`);
+            } else {
+                throw new Error(data.error || 'Cleanup failed');
+            }
+        } catch (error) {
+            console.error('❌ Cleanup error:', error);
+            this._showNotification('Nie udało się wyczyścić starych wiadomości: ' + error.message, 'error');
+        }
+    }
 
     // =================
     // ✅ IMPROVED SOCKET.IO HANDLING
@@ -1046,6 +1194,21 @@ class ChatManager {
             this.lastActivity = Date.now();
         });
 
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+Delete = clear session
+            if (e.ctrlKey && e.key === 'Delete' && !e.shiftKey) {
+                e.preventDefault();
+                this.clearSessionMessages();
+            }
+            
+            // Ctrl+Shift+Delete = delete session
+            if (e.ctrlKey && e.shiftKey && e.key === 'Delete') {
+                e.preventDefault();
+                this.deleteSession();
+            }
+        });
+
         window.addEventListener('beforeunload', () => {
             if (this.socket) {
                 this.socket.disconnect();
@@ -1103,6 +1266,18 @@ class ChatManager {
             <div class="message-time">${timeStr}</div>
             ${(message.is_mine || message.sender_id == this.user.id) ? '<div class="message-status">✓</div>' : ''}
         `;
+        
+        // Add message actions for own messages
+        if (message.is_mine || message.sender_id == this.user.id) {
+            const actionsEl = document.createElement('div');
+            actionsEl.className = 'message-actions';
+            actionsEl.innerHTML = `
+                <button class="delete-message-btn" onclick="window.chatManager.deleteMessage(${message.id}, this.closest('.message'))" title="Usuń wiadomość">
+                    ×
+                </button>
+            `;
+            messageEl.appendChild(actionsEl);
+        }
         
         this.elements.messagesContainer.appendChild(messageEl);
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
@@ -1477,7 +1652,12 @@ class ChatManager {
         
         console.log('🧹 ChatManager cleaned up');
     }
-}
+
+}  // ✅ KONIEC KLASY ChatManager
+
+// =================
+// GLOBAL INITIALIZATION
+// =================
 
 // Global initialization
 let chatManager = null;
@@ -1518,49 +1698,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('Failed to initialize chat application: ' + error.message);
     }
 });
-    async deleteMessage(messageId, messageElement) {
-        if (!confirm('Czy na pewno chcesz usunąć tę wiadomość?')) {
-            return;
-        }
-        try {
-            const response = await fetch(`/api/message/${messageId}/delete`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            });
-            const data = await response.json();
-            if (response.ok && data.status === 'success') {
-                // Usuń z UI
-                if (messageElement) {
-                    messageElement.style.transition = 'opacity 0.3s ease';
-                    messageElement.style.opacity = '0';
-                    setTimeout(() => {
-                        messageElement.remove();
-                    }, 300);
-                }
-                // Usuń z lokalnego cache
-                if (this.currentSession) {
-                    const sessionMessages = this.messages.get(this.currentSession.token) || [];
-                    const filteredMessages = sessionMessages.filter(msg => msg.id !== messageId);
-                    this.messages.set(this.currentSession.token, filteredMessages);
-                }
-                this._showNotification('Wiadomość została usunięta', 'success', 3000);
-                console.log(`✅ Message ${messageId} deleted successfully`);
-            } else {
-                throw new Error(data.error || 'Failed to delete message');
-            }
-        } catch (error) {
-            console.error('❌ Delete message error:', error);
-            this._showNotification('Nie udało się usunąć wiadomości: ' + error.message, 'error');
-        }
-    }
-}
 
-// Window event listener POZA klasą (nie wewnątrz!)
+// =================
+// WINDOW EVENT LISTENERS (POZA KLASĄ)
+// =================
+
+// Window event listener POZA klasą (to jest poprawne!)
 window.addEventListener('beforeunload', () => {
     if (chatManager) {
         chatManager.cleanup();
     }
 });
+
+console.log("✅ chat.js loaded successfully");
