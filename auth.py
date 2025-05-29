@@ -478,7 +478,7 @@ def api_logout():
         return jsonify({
             'status': 'success',  # Zawsze success, żeby frontend mógł przekierować
             'message': 'Logged out',
-            'redirect': url_for('auth.index')
+            'redirect': url_for('/')
         })
 
 # === SESSION MANAGEMENT ===
