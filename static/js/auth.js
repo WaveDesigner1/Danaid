@@ -416,7 +416,7 @@ class DanaidAuthSystem {
                 sessionStorage.setItem('user_id', response.user_id);
                 sessionStorage.setItem('username', username);
                 sessionStorage.setItem('is_admin', response.is_admin);
-                
+                sessionStorage.setItem('isLoggedIn', 'true');
                 this.userPrivateKey = privateKey;
                 
                 // Przekieruj do chatu
