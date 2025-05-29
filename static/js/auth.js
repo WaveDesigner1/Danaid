@@ -359,7 +359,7 @@ class AuthManager {
                 return;
             }
 
-            const submitButton = form.querySelector('button[type="submit"]');
+            const submitButton = document.getElementById('login-button');
             const originalText = submitButton.textContent;
 
             try {
