@@ -1,6 +1,6 @@
 """
-chat.py - Zunifikowany moduł czatu z Socket.IO
-Obsługuje dual encryption + backward compatibility
+chat.py - Zunifikowany moduł czatu z Socket.IO + FIXED ENDPOINTS
+Obsługuje dual encryption + backward compatibility + missing endpoints
 """
 import json
 import secrets
@@ -365,11 +365,96 @@ def get_friends():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ✅ ADDED: Missing add friend endpoint
+@chat_bp.route('/api/friends/add', methods=['POST'])
+@login_required
+def add_friend():
+    """Dodaje znajomego przez wysłanie zaproszenia"""
+    try:
+        data = request.get_json()
+        user_identifier = data.get('user_identifier')
+        
+        if not user_identifier:
+            return jsonify({'error': 'User identifier is required'}), 400
+        
+        # Znajdź użytkownika po nazwie lub ID
+        target_user = User.query.filter(
+            or_(
+                User.username == user_identifier,
+                User.user_id == user_identifier
+            )
+        ).first()
+        
+        if not target_user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        if target_user.id == current_user.id:
+            return jsonify({'error': 'Cannot add yourself as friend'}), 400
+        
+        # Sprawdź czy już są znajomymi
+        existing_friendship = Friend.query.filter(
+            or_(
+                (Friend.user_id == current_user.id) & (Friend.friend_id == target_user.id),
+                (Friend.user_id == target_user.id) & (Friend.friend_id == current_user.id)
+            )
+        ).first()
+        
+        if existing_friendship:
+            return jsonify({'error': 'Already friends'}), 409
+        
+        # Sprawdź czy zaproszenie już istnieje
+        existing_request = FriendRequest.query.filter(
+            or_(
+                (FriendRequest.from_user_id == current_user.id) & (FriendRequest.to_user_id == target_user.id),
+                (FriendRequest.from_user_id == target_user.id) & (FriendRequest.to_user_id == current_user.id)
+            ),
+            FriendRequest.status == 'pending'
+        ).first()
+        
+        if existing_request:
+            return jsonify({'error': 'Friend request already exists'}), 409
+        
+        # Utwórz nowe zaproszenie
+        friend_request = FriendRequest(
+            from_user_id=current_user.id,
+            to_user_id=target_user.id,
+            status='pending'
+        )
+        
+        db.session.add(friend_request)
+        db.session.commit()
+        
+        # Wyślij powiadomienie Socket.IO jeśli możliwe
+        try:
+            emit_friend_request_notification(target_user.id, {
+                'type': 'friend_request',
+                'from_user_id': current_user.user_id,
+                'from_username': current_user.username,
+                'message': f'{current_user.username} sent you a friend request'
+            })
+        except Exception as e:
+            logger.error(f"Failed to send friend request notification: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Friend request sent successfully',
+            'request_id': friend_request.id
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Add friend error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @chat_bp.route('/api/friend_requests/pending')
 @login_required
 def get_pending_requests():
     try:
-        requests = FriendRequest.query.filter_by(to_user_id=current_user.id, status='pending').all()
+        requests = FriendRequest.query.filter_by(
+            to_user_id=current_user.id, 
+            status='pending'
+        ).all()
+        
         return jsonify({
             'status': 'success',
             'requests': [{
@@ -387,7 +472,9 @@ def get_pending_requests():
 def accept_friend_request(request_id):
     try:
         friend_request = FriendRequest.query.filter_by(
-            id=request_id, to_user_id=current_user.id, status='pending'
+            id=request_id, 
+            to_user_id=current_user.id, 
+            status='pending'
         ).first()
         
         if not friend_request:
@@ -411,7 +498,9 @@ def accept_friend_request(request_id):
 def reject_friend_request(request_id):
     try:
         friend_request = FriendRequest.query.filter_by(
-            id=request_id, to_user_id=current_user.id, status='pending'
+            id=request_id, 
+            to_user_id=current_user.id, 
+            status='pending'
         ).first()
         
         if not friend_request:
@@ -422,6 +511,31 @@ def reject_friend_request(request_id):
         db.session.commit()
         
         return jsonify({'status': 'success', 'message': 'Friend request rejected'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# ✅ ADDED: Remove friend endpoint
+@chat_bp.route('/api/friends/<int:friend_id>', methods=['DELETE'])
+@login_required
+def remove_friend(friend_id):
+    try:
+        # Znajdź znajomego
+        friend_user = User.query.get(friend_id)
+        if not friend_user:
+            return jsonify({'error': 'Friend not found'}), 404
+        
+        # Usuń znajomość (obie strony)
+        Friend.query.filter(
+            or_(
+                (Friend.user_id == current_user.id) & (Friend.friend_id == friend_user.id),
+                (Friend.user_id == friend_user.id) & (Friend.friend_id == current_user.id)
+            )
+        ).delete()
+        
+        db.session.commit()
+        
+        return jsonify({'status': 'success', 'message': 'Friend removed successfully'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -471,21 +585,36 @@ def polling_messages():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# === SOCKET.IO INTEGRATION ===
+# === ✅ FIXED SOCKET.IO INTEGRATION ===
 def init_socketio_handler(socketio):
-    """Inicjalizuje Socket.IO event handlers"""
+    """Inicjalizuje Socket.IO event handlers - FIXED VERSION"""
     
     @socketio.on('connect')
     def on_connect():
         if current_user.is_authenticated:
             join_room(f"user_{current_user.id}")
-            emit('user_status', {'user_id': current_user.user_id, 'status': 'online'}, broadcast=True)
+            emit('user_status', {
+                'user_id': current_user.user_id, 
+                'status': 'online'
+            }, broadcast=True)
+            logger.info(f"User {current_user.username} connected to Socket.IO")
     
     @socketio.on('disconnect')
     def on_disconnect():
         if current_user.is_authenticated:
             leave_room(f"user_{current_user.id}")
-            emit('user_status', {'user_id': current_user.user_id, 'status': 'offline'}, broadcast=True)
+            emit('user_status', {
+                'user_id': current_user.user_id, 
+                'status': 'offline'
+            }, broadcast=True)
+            logger.info(f"User {current_user.username} disconnected from Socket.IO")
+    
+    @socketio.on('register_user')
+    def on_register_user(data):
+        if current_user.is_authenticated:
+            user_id = data.get('user_id')
+            join_room(f"user_{current_user.id}")
+            logger.info(f"User {current_user.username} registered for Socket.IO events")
     
     @socketio.on('join_session')
     def on_join_session(data):
@@ -526,7 +655,7 @@ def init_socketio_handler(socketio):
                 'typing': False
             }, room=f"session_{data['session_token']}", include_self=False)
     
-    print("✅ Socket.IO handlers zainicjalizowane")
+    logger.info("✅ Socket.IO handlers initialized successfully")
     return socketio
 
 def emit_message_notification(session_token, message_data, recipient_id):
@@ -539,7 +668,20 @@ def emit_message_notification(session_token, message_data, recipient_id):
                 'session_token': session_token,
                 'message': message_data
             }, room=f"user_{recipient_id}")
+            logger.info(f"Message notification sent to user {recipient_id}")
             return True
     except Exception as e:
         logger.error(f"Socket.IO emit failed: {e}")
+    return False
+
+def emit_friend_request_notification(recipient_id, notification_data):
+    """Wysyła powiadomienie Socket.IO o nowym zaproszeniu"""
+    try:
+        from flask import current_app
+        if hasattr(current_app, 'socketio'):
+            current_app.socketio.emit('message', notification_data, room=f"user_{recipient_id}")
+            logger.info(f"Friend request notification sent to user {recipient_id}")
+            return True
+    except Exception as e:
+        logger.error(f"Socket.IO friend request notification failed: {e}")
     return False
