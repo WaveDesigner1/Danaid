@@ -4,9 +4,85 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Danaid - Bezpieczny Czat</title>
-    <!-- POPRAWIONE ŚCIEŻKI CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        /* Dodatkowe style dla message actions */
+        .message-actions {
+            position: absolute;
+            top: -10px;
+            right: 5px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            padding: 2px;
+            box-shadow: var(--shadow-light);
+            display: none;
+            z-index: 10;
+        }
+        
+        .delete-message-btn {
+            background: var(--danger);
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 4px 6px;
+            cursor: pointer;
+            font-size: 10px;
+            transition: all 0.2s;
+        }
+        
+        .delete-message-btn:hover {
+            background: #d32f2f;
+            transform: scale(1.1);
+        }
+        
+        .message {
+            position: relative;
+        }
+        
+        .chat-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .cleanup-shortcut {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--primary);
+            color: var(--bg-dark);
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 18px;
+            cursor: pointer;
+            box-shadow: var(--shadow);
+            transition: all 0.3s;
+            z-index: 100;
+        }
+        
+        .cleanup-shortcut:hover {
+            transform: scale(1.1);
+            background: var(--primary-dark);
+        }
+        
+        .stats-display {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            margin-top: 10px;
+            padding: 10px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+        }
+    </style>
 </head>
 <body class="chat-app">
     <!-- Główny kontener -->
@@ -19,14 +95,17 @@
                     <button id="add-friend-btn" class="btn btn-primary">
                         <i class="fas fa-user-plus"></i> Dodaj
                     </button>
-                    <button id="logout-btn" class="btn btn-danger">
-                        <i class="fas fa-sign-out-alt"></i> Wyloguj
+                    <button id="settings-btn" class="btn btn-secondary" onclick="showCleanupModal()">
+                        <i class="fas fa-cog"></i>
                     </button>
+                    <!-- NAPRAWIONY PRZYCISK LOGOUT -->
+                    <a href="/logout" class="btn btn-danger" id="logout-link">
+                        <i class="fas fa-sign-out-alt"></i> Wyloguj
+                    </a>
                 </div>
             </div>
             
             <div class="friends-section">
-                <!-- POPRAWIONE: Clickable friend requests -->
                 <div class="friend-requests" onclick="window.chatManager?._showFriendRequestsModal();">
                     <span>
                         <i class="fas fa-user-plus"></i> Zaproszenia
@@ -36,30 +115,56 @@
                 
                 <h4>Znajomi</h4>
                 <ul id="friend-list" class="friend-list">
-                    <!-- Lista znajomych będzie tutaj - bez ID, clickable items -->
+                    <!-- Lista znajomych będzie tutaj -->
                 </ul>
+                
+                <!-- Sekcja aktywnych sesji -->
+                <h4 style="margin-top: 20px;">Aktywne rozmowy</h4>
+                <div id="sessions-list" class="sessions-list">
+                    <!-- Lista aktywnych sesji -->
+                </div>
             </div>
         </div>
 
         <!-- Obszar czatu -->
         <div class="chat-content">
-            <!-- Nagłówek czatu -->
+            <!-- Nagłówek czatu z przyciskami zarządzania -->
             <div id="chat-header" class="chat-header">
-                <h2>Wybierz rozmowę</h2>
+                <div class="chat-title">
+                    <h2>Wybierz rozmowę</h2>
+                </div>
+                <!-- Przyciski zarządzania rozmową -->
+                <div class="chat-controls" style="display: none;" id="chat-controls">
+                    <button onclick="clearCurrentSession()" class="btn btn-secondary" title="Wyczyść wiadomości">
+                        <i class="fas fa-broom"></i>
+                    </button>
+                    <button onclick="deleteCurrentSession()" class="btn btn-danger" title="Usuń rozmowę">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <button onclick="showSessionStats()" class="btn btn-primary" title="Statystyki">
+                        <i class="fas fa-chart-bar"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- Obszar wiadomości -->
             <div id="messages" class="messages-container">
-                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                <div class="welcome-message" style="text-align: center; padding: 40px; color: var(--text-muted);">
                     <i class="fas fa-comments" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i>
                     <p>Wybierz znajomego, aby rozpocząć rozmowę</p>
+                    <small style="display: block; margin-top: 10px;">
+                        <strong>Skróty klawiszowe:</strong><br>
+                        Ctrl+Delete = wyczyść rozmowę<br>
+                        Ctrl+Shift+Delete = usuń rozmowę<br>
+                        Ctrl+M = zarządzanie wiadomościami
+                    </small>
                 </div>
             </div>
 
             <!-- Pole wprowadzania wiadomości -->
             <div class="message-input-container">
-                <textarea id="message-input" class="message-input" placeholder="Napisz wiadomość..." rows="1"></textarea>
-                <button id="send-button" class="send-button">
+                <textarea id="message-input" class="message-input" placeholder="Napisz wiadomość..." rows="1" disabled></textarea>
+                <button id="send-button" class="send-button" disabled>
                     <i class="fas fa-paper-plane"></i>
                 </button>
             </div>
@@ -75,8 +180,9 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label for="friend-username-input">Nazwa użytkownika:</label>
-                    <input type="text" id="friend-username-input" placeholder="Wpisz nazwę użytkownika" />
+                    <label for="friend-username-input">Nazwa użytkownika lub ID:</label>
+                    <input type="text" id="friend-username-input" placeholder="Wpisz nazwę użytkownika lub 6-cyfrowe ID" />
+                    <small>Możesz wpisać nazwę użytkownika (np. "jan123") lub 6-cyfrowe ID (np. "123456")</small>
                 </div>
                 <button id="send-friend-request-btn" class="btn btn-primary">Wyślij zaproszenie</button>
                 <div id="friend-request-status" style="display: none; margin-top: 10px;"></div>
@@ -84,99 +190,360 @@
         </div>
     </div>
 
-    <!-- POPRAWIONE SKRYPTY -->
+    <!-- Modal zaproszeń do znajomych -->
+    <div id="friend-requests-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Zaproszenia do znajomych</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="friend-requests-list">
+                    <p style="text-align: center;">Ładowanie...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal zarządzania wiadomościami -->
+    <div id="cleanup-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Zarządzanie wiadomościami</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Statystyki -->
+                <div id="message-stats" class="stats-display" style="display: none;">
+                    <h4>Statystyki wiadomości</h4>
+                    <div id="stats-content"></div>
+                </div>
+                
+                <!-- Aktywna rozmowa -->
+                <div style="margin-bottom: 20px;">
+                    <h4>Aktywna rozmowa</h4>
+                    <button onclick="clearCurrentSession()" class="btn btn-secondary" style="width: 100%; margin-bottom: 10px;">
+                        <i class="fas fa-broom"></i> Wyczyść wszystkie wiadomości
+                    </button>
+                    <button onclick="deleteCurrentSession()" class="btn btn-danger" style="width: 100%; margin-bottom: 10px;">
+                        <i class="fas fa-trash"></i> Usuń całą rozmowę
+                    </button>
+                    <button onclick="loadMessageStats()" class="btn btn-primary" style="width: 100%;">
+                        <i class="fas fa-chart-bar"></i> Pokaż statystyki
+                    </button>
+                </div>
+                
+                <div style="border-top: 1px solid var(--border); padding-top: 20px;">
+                    <h4>Wszystkie rozmowy</h4>
+                    <button onclick="cleanupOldMessages()" class="btn btn-warning" style="width: 100%; margin-bottom: 10px;">
+                        <i class="fas fa-calendar-times"></i> Wyczyść stare wiadomości (>30 dni)
+                    </button>
+                    <button onclick="refreshData()" class="btn btn-info" style="width: 100%;">
+                        <i class="fas fa-sync"></i> Odśwież dane
+                    </button>
+                </div>
+                
+                <div style="margin-top: 20px; padding: 10px; background: var(--bg-tertiary); border-radius: 4px;">
+                    <small style="color: var(--text-muted);">
+                        <strong>Skróty klawiszowe:</strong><br>
+                        Ctrl + Delete = Wyczyść rozmowę<br>
+                        Ctrl + Shift + Delete = Usuń rozmowę<br>
+                        Ctrl + M = To menu<br>
+                        Esc = Zamknij menu
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating action button -->
+    <button class="cleanup-shortcut" onclick="showCleanupModal()" title="Zarządzanie (Ctrl+M)">
+        <i class="fas fa-cog"></i>
+    </button>
+
     <!-- Socket.IO Client Library -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     
-    <!-- Konfiguracja Socket.IO -->
-    <script src="/socket-config.js"></script>
-    
-    <!-- POPRAWIONE ŚCIEŻKI DO JS -->
+    <!-- SKRYPTY APLIKACJI -->
     <script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     
-    <!-- Inicjalizacja aplikacji -->
+    <!-- Inicjalizacja i utility functions -->
     <script>
-        console.log("=== DANAID CHAT INICJALIZACJA (ZOPTYMALIZOWANA) ===");
+        console.log("=== DANAID CHAT INITIALIZATION ===");
         
-        // Sprawdź czy wszystkie moduły są załadowane
-        if (typeof io === 'undefined') {
-            console.error("❌ Socket.IO client library nie załadowana");
-            alert("Błąd ładowania Socket.IO. Odśwież stronę.");
-        } else {
-            console.log("✅ Socket.IO client library załadowana");
-        }
+        // === GLOBAL FUNCTIONS FOR HTML BUTTONS ===
         
-        // Sprawdź moduły po krótkim opóźnieniu (daj czas na załadowanie)
-        setTimeout(() => {
-            if (typeof window.cryptoManager === 'undefined') {
-                console.error("❌ CryptoManager nie załadowany po timeout");
-                alert("Błąd ładowania modułu kryptograficznego. Odśwież stronę.");
+        function clearCurrentSession() {
+            if (window.chatManager && window.chatManager.currentSession) {
+                window.chatManager.clearSessionMessages();
             } else {
-                console.log("✅ CryptoManager załadowany (po timeout)");
-            }
-    
-            if (typeof window.chatManager === 'undefined') {
-                console.log("ℹ️ ChatManager zostanie załadowany przez chat.js");
-            } else {
-                console.log("✅ ChatManager załadowany");
-            }
-        }, 500);
-        
-        // Sprawdź sesję użytkownika
-        const isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true' || 
-                          localStorage.getItem('isLoggedIn') === 'true';
-        
-        if (!isLoggedIn) {
-            console.warn("⚠️ Użytkownik nie jest zalogowany");
-            window.location.href = '/';
-        } else {
-            console.log("✅ Użytkownik jest zalogowany");
-            
-            // Ustaw nazwę użytkownika w interfejsie
-            const usernameElement = document.getElementById('username');
-            const username = sessionStorage.getItem('username');
-            if (usernameElement && username) {
-                usernameElement.textContent = username;
+                alert('Brak aktywnej rozmowy do wyczyszczenia');
             }
         }
-        
-        // IMPROVED: Dodaj obsługę wylogowania
-        document.addEventListener('DOMContentLoaded', function() {
-            const logoutBtn = document.getElementById('logout-btn');
-            if (logoutBtn) {
-                logoutBtn.addEventListener('click', function() {
-                    console.log("🚪 Logout clicked");
+
+        function deleteCurrentSession() {
+            if (window.chatManager && window.chatManager.currentSession) {
+                window.chatManager.deleteSession();
+            } else {
+                alert('Brak aktywnej rozmowy do usunięcia');
+            }
+        }
+
+        function cleanupOldMessages() {
+            if (window.chatManager) {
+                window.chatManager.cleanupOldMessages();
+            }
+        }
+
+        function refreshData() {
+            if (window.chatManager) {
+                window.chatManager.refresh();
+            }
+        }
+
+        function showCleanupModal() {
+            const modal = document.getElementById('cleanup-modal');
+            if (modal) {
+                modal.style.display = 'block';
+            }
+        }
+
+        function showSessionStats() {
+            showCleanupModal();
+            setTimeout(() => {
+                loadMessageStats();
+            }, 100);
+        }
+
+        async function loadMessageStats() {
+            try {
+                const response = await fetch('/api/messages/stats');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    const stats = data.stats;
+                    const statsContainer = document.getElementById('message-stats');
+                    const statsContent = document.getElementById('stats-content');
+                    
+                    statsContent.innerHTML = `
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div><strong>Sesje:</strong> ${stats.total_sessions}</div>
+                            <div><strong>Wszystkie wiadomości:</strong> ${stats.total_messages}</div>
+                            <div><strong>Wysłane:</strong> ${stats.messages_sent}</div>
+                            <div><strong>Odebrane:</strong> ${stats.messages_received}</div>
+                            <div><strong>Stare (>30dni):</strong> ${stats.old_messages}</div>
+                            <div><strong>Do wyczyszczenia:</strong> ${stats.old_messages > 0 ? stats.old_messages : 'Brak'}</div>
+                        </div>
+                    `;
+                    
+                    statsContainer.style.display = 'block';
+                } else {
+                    alert('Nie udało się załadować statystyk');
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                alert('Błąd ładowania statystyk');
+            }
+        }
+
+        // === AUTHENTICATION CHECK ===
+        async function checkAuthentication() {
+            try {
+                const response = await fetch('/api/check_auth');
+                if (!response.ok) {
+                    throw new Error('Not authenticated');
+                }
+                const data = await response.json();
+                
+                if (data.authenticated) {
+                    console.log("✅ User authenticated:", data.username);
+                    
+                    // Set user data in session storage
+                    sessionStorage.setItem('isLoggedIn', 'true');
+                    sessionStorage.setItem('username', data.username);
+                    sessionStorage.setItem('user_id', data.user_id);
+                    
+                    // Update UI
+                    const usernameElement = document.getElementById('username');
+                    if (usernameElement) {
+                        usernameElement.textContent = data.username;
+                    }
+                    
+                    return true;
+                } else {
+                    throw new Error('Not authenticated');
+                }
+            } catch (error) {
+                console.warn("⚠️ Authentication failed:", error.message);
+                window.location.href = '/';
+                return false;
+            }
+        }
+
+        // === LOGOUT HANDLING ===
+        function setupLogout() {
+            const logoutLink = document.getElementById('logout-link');
+            if (logoutLink) {
+                logoutLink.addEventListener('click', function(e) {
+                    e.preventDefault();
                     
                     if (confirm('Czy na pewno chcesz się wylogować?')) {
-                        // Użyj auth systemu do wylogowania
-                        if (window.danaidAuth && typeof window.danaidAuth.logout === 'function') {
-                            window.danaidAuth.logout();
-                        } else {
-                            // Fallback - ręczne wylogowanie
-                            console.log("🔄 Using fallback logout");
-                            
-                            // Wyczyść dane lokalne
-                            sessionStorage.clear();
-                            localStorage.clear();
-                            
-                            // Wyślij request wylogowania
-                            fetch('/api/logout', {
-                                method: 'POST',
-                                credentials: 'same-origin'
-                            }).then(() => {
-                                window.location.href = '/';
-                            }).catch(() => {
-                                // Mimo błędu, przekieruj
-                                window.location.href = '/';
-                            });
+                        console.log("🔓 Logout initiated");
+                        
+                        // Cleanup local data
+                        sessionStorage.clear();
+                        localStorage.clear();
+                        
+                        // Cleanup chat manager
+                        if (window.chatManager && typeof window.chatManager.cleanup === 'function') {
+                            try {
+                                window.chatManager.cleanup();
+                                console.log("✅ ChatManager cleaned up");
+                            } catch (err) {
+                                console.log("⚠️ ChatManager cleanup failed:", err);
+                            }
                         }
+                        
+                        // Redirect to logout
+                        window.location.href = '/logout';
                     }
                 });
             }
+        }
+
+        // === MODAL MANAGEMENT ===
+        function setupModals() {
+            const modals = ['add-friend-modal', 'friend-requests-modal', 'cleanup-modal'];
+            
+            modals.forEach(modalId => {
+                const modal = document.getElementById(modalId);
+                if (modal) {
+                    // Close button
+                    const closeBtn = modal.querySelector('.modal-close');
+                    if (closeBtn) {
+                        closeBtn.addEventListener('click', () => {
+                            modal.style.display = 'none';
+                        });
+                    }
+                    
+                    // Click outside to close
+                    modal.addEventListener('click', (e) => {
+                        if (e.target === modal) {
+                            modal.style.display = 'none';
+                        }
+                    });
+                }
+            });
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+                // Ctrl+M = cleanup modal
+                if (e.ctrlKey && e.key === 'm') {
+                    e.preventDefault();
+                    showCleanupModal();
+                }
+                
+                // Escape = close modals
+                if (e.key === 'Escape') {
+                    modals.forEach(modalId => {
+                        const modal = document.getElementById(modalId);
+                        if (modal && modal.style.display === 'block') {
+                            modal.style.display = 'none';
+                        }
+                    });
+                }
+            });
+        }
+
+        // === UI UPDATES ===
+        function updateChatUI() {
+            const chatControls = document.getElementById('chat-controls');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            
+            if (window.chatManager && window.chatManager.currentSession) {
+                // Show controls when session is active
+                if (chatControls) {
+                    chatControls.style.display = 'flex';
+                }
+                
+                // Enable input
+                if (messageInput) {
+                    messageInput.disabled = false;
+                    messageInput.placeholder = 'Napisz wiadomość...';
+                }
+                if (sendButton) {
+                    sendButton.disabled = false;
+                }
+            } else {
+                // Hide controls when no session
+                if (chatControls) {
+                    chatControls.style.display = 'none';
+                }
+                
+                // Disable input
+                if (messageInput) {
+                    messageInput.disabled = true;
+                    messageInput.placeholder = 'Wybierz rozmowę aby pisać...';
+                }
+                if (sendButton) {
+                    sendButton.disabled = true;
+                }
+            }
+        }
+
+        // === INITIALIZATION ===
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log("🚀 DOM loaded, initializing...");
+            
+            // Check authentication first
+            const isAuthenticated = await checkAuthentication();
+            if (!isAuthenticated) {
+                return; // Will redirect to login
+            }
+            
+            // Setup UI components
+            setupLogout();
+            setupModals();
+            
+            // Check required libraries
+            if (typeof io === 'undefined') {
+                console.error("❌ Socket.IO not loaded");
+                alert("Błąd ładowania Socket.IO. Odśwież stronę.");
+                return;
+            }
+            
+            console.log("✅ All libraries loaded successfully");
+            
+            // Update UI periodically
+            setInterval(updateChatUI, 1000);
+            
+            console.log("✅ Chat application ready");
         });
-        
-        console.log("=== DANAID CHAT ZOPTYMALIZOWANY GOTOWY ===");
+
+        // === ERROR HANDLING ===
+        window.addEventListener('error', function(e) {
+            console.error('Global error:', e.error);
+        });
+
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('Unhandled promise rejection:', e.reason);
+        });
+
+        // === ONLINE/OFFLINE DETECTION ===
+        window.addEventListener('online', function() {
+            console.log('🌐 Connection restored');
+            if (window.chatManager && window.chatManager.socket) {
+                window.chatManager.socket.connect();
+            }
+        });
+
+        window.addEventListener('offline', function() {
+            console.log('🔌 Connection lost');
+        });
+
+        console.log("=== DANAID CHAT READY ===");
     </script>
 </body>
 </html>
