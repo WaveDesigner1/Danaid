@@ -1,4 +1,4 @@
-// Full chat.js with dual encryption modifications - FIXED VERSION
+// Optimized chat.js with integrated crypto functions
 class ChatManager {
     constructor() {
         this.socket = null;
@@ -24,6 +24,11 @@ class ChatManager {
         // Performance optimization
         this.messageLoadBatch = 50;
         this.maxCachedMessages = 1000;
+        
+        // ✅ INTEGRATED CRYPTO STORAGE
+        this.sessionKeys = new Map(); // sessionToken -> AES key
+        this.userPrivateKey = null;
+        this.userPublicKey = null;
     }
 
     async init() {
@@ -32,6 +37,9 @@ class ChatManager {
             
             this.user = await this._getCurrentUser();
             console.log("✅ User loaded:", this.user.username);
+            
+            // ✅ LOAD CRYPTO KEYS
+            await this._loadCryptoKeys();
             
             this._initElements();
             this._setupEventListeners();
@@ -47,6 +55,221 @@ class ChatManager {
             console.error("❌ Failed to initialize ChatManager:", error);
             this._showNotification('Failed to initialize chat system', 'error');
         }
+    }
+
+    // =================
+    // ✅ INTEGRATED CRYPTO FUNCTIONS
+    // =================
+    
+    async _loadCryptoKeys() {
+        try {
+            // Load private key from sessionStorage (set during login)
+            const privateKeyPEM = sessionStorage.getItem('user_private_key_pem');
+            if (!privateKeyPEM) {
+                throw new Error('No private key found - please login again');
+            }
+            
+            console.log("🔑 Loading crypto keys...");
+            
+            // Import private key for signing (we use the same key for encryption)
+            this.userPrivateKey = await this._importPrivateKey(privateKeyPEM);
+            
+            console.log("✅ Crypto keys loaded successfully");
+        } catch (error) {
+            console.error("❌ Failed to load crypto keys:", error);
+            throw error;
+        }
+    }
+    
+    async _importPrivateKey(pemData) {
+        try {
+            const binaryData = this._pemToBinary(pemData);
+            
+            // Import for both signing and decryption
+            const privateKey = await crypto.subtle.importKey(
+                "pkcs8",
+                binaryData,
+                {
+                    name: "RSA-OAEP",
+                    hash: "SHA-256"
+                },
+                false,
+                ["decrypt"]
+            );
+            
+            return privateKey;
+        } catch (error) {
+            console.error("❌ Private key import failed:", error);
+            throw new Error('Invalid private key format');
+        }
+    }
+    
+    _pemToBinary(pem) {
+        const lines = pem.split('\n');
+        const base64 = lines.slice(1, -1).join('').replace(/\s/g, '');
+        return this._base64ToArrayBuffer(base64);
+    }
+    
+    _base64ToArrayBuffer(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+    
+    _arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+    
+    // ✅ AES SESSION KEY MANAGEMENT
+    async generateSessionKey() {
+        const key = await crypto.subtle.generateKey(
+            {
+                name: "AES-GCM",
+                length: 256
+            },
+            true,
+            ["encrypt", "decrypt"]
+        );
+        return key;
+    }
+    
+    async exportSessionKey(key) {
+        const exported = await crypto.subtle.exportKey("raw", key);
+        return this._arrayBufferToBase64(exported);
+    }
+    
+    async importSessionKey(keyBase64) {
+        const keyBuffer = this._base64ToArrayBuffer(keyBase64);
+        const key = await crypto.subtle.importKey(
+            "raw",
+            keyBuffer,
+            {
+                name: "AES-GCM",
+                length: 256
+            },
+            false,
+            ["encrypt", "decrypt"]
+        );
+        return key;
+    }
+    
+    storeSessionKey(sessionToken, keyBase64) {
+        this.sessionKeys.set(sessionToken, keyBase64);
+        console.log(`💾 Session key stored for ${sessionToken.slice(0, 8)}...`);
+    }
+    
+    getSessionKey(sessionToken) {
+        return this.sessionKeys.get(sessionToken);
+    }
+    
+    removeSessionKey(sessionToken) {
+        this.sessionKeys.delete(sessionToken);
+    }
+    
+    // ✅ MESSAGE ENCRYPTION/DECRYPTION
+    async encryptMessage(sessionKey, message) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(message);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        
+        const encrypted = await crypto.subtle.encrypt(
+            {
+                name: "AES-GCM",
+                iv: iv
+            },
+            sessionKey,
+            data
+        );
+        
+        return {
+            data: this._arrayBufferToBase64(encrypted),
+            iv: this._arrayBufferToBase64(iv)
+        };
+    }
+    
+    async decryptMessage(sessionKey, encryptedData) {
+        const data = this._base64ToArrayBuffer(encryptedData.data);
+        const iv = this._base64ToArrayBuffer(encryptedData.iv);
+        
+        const decrypted = await crypto.subtle.decrypt(
+            {
+                name: "AES-GCM",
+                iv: iv
+            },
+            sessionKey,
+            data
+        );
+        
+        const decoder = new TextDecoder();
+        return decoder.decode(decrypted);
+    }
+    
+    // ✅ SESSION KEY ENCRYPTION FOR MULTIPLE USERS
+    async encryptSessionKeyForMultipleUsers(recipients, sessionKey) {
+        const sessionKeyBase64 = await this.exportSessionKey(sessionKey);
+        const sessionKeyBuffer = this._base64ToArrayBuffer(sessionKeyBase64);
+        const encryptedKeys = {};
+        
+        for (const [userId, publicKeyPEM] of Object.entries(recipients)) {
+            try {
+                // Import public key
+                const publicKey = await this._importPublicKey(publicKeyPEM);
+                
+                // Encrypt session key
+                const encrypted = await crypto.subtle.encrypt(
+                    {
+                        name: "RSA-OAEP"
+                    },
+                    publicKey,
+                    sessionKeyBuffer
+                );
+                
+                encryptedKeys[userId] = this._arrayBufferToBase64(encrypted);
+            } catch (error) {
+                console.error(`❌ Failed to encrypt session key for user ${userId}:`, error);
+            }
+        }
+        
+        return encryptedKeys;
+    }
+    
+    async _importPublicKey(pemData) {
+        const binaryData = this._pemToBinary(pemData);
+        
+        const publicKey = await crypto.subtle.importKey(
+            "spki",
+            binaryData,
+            {
+                name: "RSA-OAEP",
+                hash: "SHA-256"
+            },
+            false,
+            ["encrypt"]
+        );
+        
+        return publicKey;
+    }
+    
+    async decryptSessionKey(encryptedKeyBase64) {
+        const encryptedKey = this._base64ToArrayBuffer(encryptedKeyBase64);
+        
+        const decrypted = await crypto.subtle.decrypt(
+            {
+                name: "RSA-OAEP"
+            },
+            this.userPrivateKey,
+            encryptedKey
+        );
+        
+        return this._arrayBufferToBase64(decrypted);
     }
 
     // =================
@@ -73,7 +296,7 @@ class ChatManager {
             
             console.log("✅ Session initialized:", data.session.token.slice(0, 8) + "...");
             
-            // DUAL ENCRYPTION: Ensure session key exists
+            // ✅ DUAL ENCRYPTION: Ensure session key exists
             await this._ensureSessionKey();
             
             // Load message history
@@ -89,7 +312,6 @@ class ChatManager {
         }
     }
 
-    // MODIFIED: Enhanced session key management with dual encryption
     async _ensureSessionKey() {
         if (!this.currentSession) {
             throw new Error('No current session');
@@ -113,8 +335,8 @@ class ChatManager {
                     console.log("🔍 Found existing session key on server, decrypting...");
                     
                     // Decrypt existing key with our private key
-                    const decryptedKey = await window.cryptoManager.decryptSessionKey(data.encrypted_key);
-                    window.cryptoManager.storeSessionKey(sessionToken, decryptedKey);
+                    const decryptedKey = await this.decryptSessionKey(data.encrypted_key);
+                    this.storeSessionKey(sessionToken, decryptedKey);
                     console.log("✅ Existing session key decrypted and stored");
                     return;
                 }
@@ -123,20 +345,19 @@ class ChatManager {
             console.log("⚠️ No existing key or decryption failed, will generate new");
         }
 
-        // DUAL ENCRYPTION: Generate new session key for both users
+        // ✅ DUAL ENCRYPTION: Generate new session key for both users
         console.log("🔧 Generating new session key with dual encryption...");
         await this._generateDualEncryptedSessionKey(sessionToken);
     }
 
-    // NEW: Dual encryption key generation
     async _generateDualEncryptedSessionKey(sessionToken) {
         try {
             // 1. Generate AES session key
-            const sessionKey = await window.cryptoManager.generateSessionKey();
-            const sessionKeyBase64 = await window.cryptoManager.exportSessionKey(sessionKey);
+            const sessionKey = await this.generateSessionKey();
+            const sessionKeyBase64 = await this.exportSessionKey(sessionKey);
             
             // 2. Store locally for immediate use
-            window.cryptoManager.storeSessionKey(sessionToken, sessionKeyBase64);
+            this.storeSessionKey(sessionToken, sessionKeyBase64);
             console.log("💾 Session key stored locally");
             
             // 3. Get public keys for both participants
@@ -150,7 +371,7 @@ class ChatManager {
             console.log(`🔑 Got public keys for users: ${currentUserId}, ${otherUserId}`);
             
             // 4. Encrypt session key for both users
-            const encryptedKeys = await window.cryptoManager.encryptSessionKeyForMultipleUsers(
+            const encryptedKeys = await this.encryptSessionKeyForMultipleUsers(
                 recipients,
                 sessionKey
             );
@@ -180,14 +401,14 @@ class ChatManager {
             
         } catch (error) {
             // Cleanup on error
-            window.cryptoManager.removeSessionKey(sessionToken);
+            this.removeSessionKey(sessionToken);
             console.error("❌ Dual encrypted key generation failed:", error);
             throw new Error(`Session key setup failed: ${error.message}`);
         }
     }
 
     // =================
-    // MESSAGE HANDLING
+    // ✅ FIXED MESSAGE HANDLING
     // =================
     
     async sendMessage() {
@@ -204,14 +425,14 @@ class ChatManager {
             // Ensure session key exists (with dual encryption)
             await this._ensureSessionKey();
 
-            // Get session key for encryption
+            // ✅ Get session key for encryption
             const sessionKey = await this._getSessionKeyOptimized(this.currentSession.token);
             if (!sessionKey) {
                 throw new Error('No session key available after ensuring');
             }
 
-            // Encrypt message
-            const encrypted = await window.cryptoManager.encryptMessage(sessionKey, content);
+            // ✅ Encrypt message
+            const encrypted = await this.encryptMessage(sessionKey, content);
             console.log('🔐 Message encrypted');
 
             // Send to server
@@ -267,11 +488,9 @@ class ChatManager {
         }
     }
 
-    // MODIFIED: Improved message processing with proper cleanup
     async _processMessage(sessionToken, message, source = 'unknown') {
         const messageKey = `${sessionToken}-${message.id || message.timestamp}`;
         
-        // FIXED: Use Set for better performance and cleanup
         if (this.processingMessages.has(messageKey)) {
             console.log("Message already processing, skipping");
             return;
@@ -282,7 +501,7 @@ class ChatManager {
         try {
             let processedMessage = { ...message };
             
-            // IMPROVED: Better encryption detection
+            // ✅ IMPROVED: Better encryption detection
             const needsDecryption = this._shouldDecryptMessage(message);
             
             if (needsDecryption) {
@@ -290,7 +509,7 @@ class ChatManager {
                 
                 if (sessionKey) {
                     try {
-                        const decryptedContent = await window.cryptoManager.decryptMessage(sessionKey, {
+                        const decryptedContent = await this.decryptMessage(sessionKey, {
                             data: message.content,
                             iv: message.iv
                         });
@@ -322,12 +541,10 @@ class ChatManager {
                 content: `[Processing error: ${error.message}]`
             });
         } finally {
-            // FIXED: Always cleanup, even on error
             this.processingMessages.delete(messageKey);
         }
     }
 
-    // IMPROVED: Better encryption detection
     _shouldDecryptMessage(message) {
         // If no IV, definitely not encrypted
         if (!message.iv) return false;
@@ -348,7 +565,7 @@ class ChatManager {
     }
 
     // =================
-    // SOCKET.IO HANDLING - IMPROVED
+    // ✅ IMPROVED SOCKET.IO HANDLING
     // =================
     
     async _initSocket() {
@@ -373,7 +590,6 @@ class ChatManager {
         }
     }
 
-    // IMPROVED: Better Socket.IO event handling
     _setupSocketEvents() {
         this.socket.on('connect', () => {
             console.log("✅ Socket.IO connected");
@@ -392,7 +608,6 @@ class ChatManager {
                 await this._handleSocketMessage(data);
             } catch (error) {
                 console.error("❌ Socket message handling error:", error);
-                // Don't let one bad message break the socket
             }
         });
 
@@ -403,11 +618,8 @@ class ChatManager {
 
         this.socket.on('disconnect', (reason) => {
             console.log(`🔌 Socket.IO disconnected: ${reason}`);
-            
-            // Always enable polling fallback on disconnect
             this._enablePollingFallback();
             
-            // Auto-reconnect for server-initiated disconnects
             if (reason === 'io server disconnect') {
                 setTimeout(() => {
                     if (!this.socket.connected) {
@@ -418,7 +630,6 @@ class ChatManager {
         });
     }
 
-    // IMPROVED: Better message handling
     async _handleSocketMessage(data) {
         switch (data.type) {
             case 'new_message':
@@ -435,7 +646,6 @@ class ChatManager {
         }
     }
 
-    // IMPROVED: Enhanced new message handling
     async _handleNewMessage(data) {
         // Skip own messages
         if (data.message.sender_id == this.user.id) return;
@@ -463,14 +673,13 @@ class ChatManager {
         }
     }
 
-    // NEW: Session access validation
     _hasSessionAccess(sessionToken) {
         const session = this.sessions.find(s => s.token === sessionToken);
         return !!session;
     }
 
     // =================
-    // FRIENDS MANAGEMENT - FIXED AND EXTENDED
+    // ✅ FIXED FRIENDS MANAGEMENT
     // =================
     
     async _loadFriends() {
@@ -489,6 +698,7 @@ class ChatManager {
         }
     }
 
+    // ✅ FIXED: Updated API endpoint call
     async addFriend(userIdOrUsername) {
         try {
             const response = await fetch('/api/friends/add', {
@@ -501,13 +711,13 @@ class ChatManager {
 
             if (data.status === 'success') {
                 this._showNotification('Friend request sent successfully', 'success');
-                await this._loadFriends(); // Refresh friends list
+                await this._loadFriends();
             } else {
                 this._showNotification(data.message || 'Failed to send friend request', 'error');
             }
         } catch (error) {
             console.error('❌ Add friend error:', error);
-            this._showNotification('Failed to send friend request', 'error');
+            this._showNotification('Failed to send friend request: ' + error.message, 'error');
         }
     }
 
@@ -533,15 +743,12 @@ class ChatManager {
         }
     }
 
-    // NEW: Friend requests modal management
     _showFriendRequestsModal() {
         console.log("🔔 Showing friend requests modal");
         
-        // Sprawdź czy modal już istnieje
         let modal = document.getElementById('friend-requests-modal');
         
         if (!modal) {
-            // Utwórz modal
             modal = document.createElement('div');
             modal.id = 'friend-requests-modal';
             modal.className = 'modal';
@@ -561,7 +768,6 @@ class ChatManager {
             
             document.body.appendChild(modal);
             
-            // Event listenery
             modal.querySelector('.modal-close').addEventListener('click', () => {
                 modal.style.display = 'none';
             });
@@ -573,10 +779,7 @@ class ChatManager {
             });
         }
         
-        // Pokaż modal
         modal.style.display = 'block';
-        
-        // Załaduj zaproszenia
         this._loadFriendRequestsInModal();
     }
 
@@ -608,7 +811,6 @@ class ChatManager {
                 container.innerHTML = '<p style="text-align: center;">Brak zaproszeń</p>';
             }
             
-            // Aktualizuj licznik
             const countElement = document.getElementById('friend-request-count');
             if (countElement) {
                 countElement.textContent = data.requests ? data.requests.length : 0;
@@ -662,7 +864,6 @@ class ChatManager {
             if (data.status === 'success') {
                 this._renderFriendRequests(data.requests);
                 
-                // Update counter
                 const countElement = document.getElementById('friend-request-count');
                 if (countElement) {
                     countElement.textContent = data.requests ? data.requests.length : 0;
@@ -673,31 +874,8 @@ class ChatManager {
         }
     }
 
-    async respondToFriendRequest(requestId, action) {
-        try {
-            const response = await fetch(`/api/friend_requests/${requestId}/${action}`, {
-                method: 'POST'
-            });
-
-            const data = await response.json();
-
-            if (data.status === 'success') {
-                this._showNotification(`Friend request ${action}ed`, 'success');
-                await this._loadFriendRequests();
-                if (action === 'accept') {
-                    await this._loadFriends();
-                }
-            } else {
-                this._showNotification(data.message || `Failed to ${action} friend request`, 'error');
-            }
-        } catch (error) {
-            console.error(`❌ ${action} friend request error:`, error);
-            this._showNotification(`Failed to ${action} friend request`, 'error');
-        }
-    }
-
     // =================
-    // SESSION MANAGEMENT - PRESERVED
+    // SESSION MANAGEMENT
     // =================
     
     async _loadSessions() {
@@ -724,11 +902,11 @@ class ChatManager {
     }
 
     // =================
-    // POLLING FALLBACK - PRESERVED
+    // POLLING FALLBACK
     // =================
     
     _enablePollingFallback() {
-        if (this.pollingInterval) return; // Already polling
+        if (this.pollingInterval) return;
         
         console.log("🔄 Enabling polling fallback");
         
@@ -751,11 +929,11 @@ class ChatManager {
             } catch (error) {
                 console.error("❌ Polling error:", error);
             }
-        }, 3000); // Poll every 3 seconds
+        }, 3000);
     }
 
     // =================
-    // MESSAGE LOADING AND CACHING - PRESERVED
+    // MESSAGE LOADING AND CACHING
     // =================
     
     async _loadMessages(sessionToken, limit = 50, offset = 0) {
@@ -764,7 +942,6 @@ class ChatManager {
             const data = await response.json();
             
             if (data.status === 'success') {
-                // Process messages in batch
                 for (const message of data.messages) {
                     await this._processMessage(sessionToken, message, 'history');
                 }
@@ -784,37 +961,34 @@ class ChatManager {
         
         const sessionMessages = this.messages.get(sessionToken);
         
-        // Avoid duplicates
         const existingIndex = sessionMessages.findIndex(m => m.id === message.id);
         if (existingIndex >= 0) {
-            sessionMessages[existingIndex] = message; // Update existing
+            sessionMessages[existingIndex] = message;
         } else {
             sessionMessages.push(message);
             
-            // Keep only recent messages in memory
             if (sessionMessages.length > this.maxCachedMessages) {
                 sessionMessages.splice(0, sessionMessages.length - this.maxCachedMessages);
             }
         }
         
-        // Sort by timestamp
         sessionMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     }
 
     // =================
-    // UI MANAGEMENT - FIXED
+    // ✅ FIXED UI MANAGEMENT
     // =================
     
     _initElements() {
         this.elements = {
             messageInput: document.getElementById('message-input'),
             sendButton: document.getElementById('send-button'),
-            messagesContainer: document.getElementById('messages'), // ✅ FIXED
-            friendsList: document.getElementById('friend-list'),     // ✅ FIXED
+            messagesContainer: document.getElementById('messages'),
+            friendsList: document.getElementById('friend-list'),
             sessionsList: document.getElementById('sessions-list'),
             friendRequests: document.getElementById('friend-requests'),
             addFriendBtn: document.getElementById('add-friend-btn'),
-            addFriendInput: document.getElementById('friend-username-input'), // ✅ FIXED
+            addFriendInput: document.getElementById('friend-username-input'),
             chatHeader: document.getElementById('chat-header'),
             typingIndicator: document.getElementById('typing-indicator'),
             connectionStatus: document.getElementById('connection-status')
@@ -841,7 +1015,6 @@ class ChatManager {
             this._handleTyping();
         });
 
-        // Window focus/blur for activity tracking
         window.addEventListener('focus', () => {
             this.lastActivity = Date.now();
         });
@@ -853,13 +1026,11 @@ class ChatManager {
         });
     }
 
-    // NEW: Add friend modal
     _showAddFriendModal() {
         const modal = document.getElementById('add-friend-modal');
         if (modal) {
             modal.style.display = 'block';
             
-            // Setup modal event listeners if not already set
             if (!modal.dataset.listenersSet) {
                 const closeBtn = modal.querySelector('.modal-close');
                 const sendBtn = document.getElementById('send-friend-request-btn');
@@ -927,7 +1098,6 @@ class ChatManager {
             </li>
         `).join('');
         
-        // Add event listeners
         this.elements.friendsList.querySelectorAll('.chat-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -958,18 +1128,17 @@ class ChatManager {
             </div>
         `).join('');
         
-        // Add event listeners
         this.elements.friendRequests.querySelectorAll('.accept-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const requestId = btn.dataset.requestId;
-                this.respondToFriendRequest(requestId, 'accept');
+                this.acceptFriendRequest(requestId);
             });
         });
         
         this.elements.friendRequests.querySelectorAll('.decline-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const requestId = btn.dataset.requestId;
-                this.respondToFriendRequest(requestId, 'decline');
+                this.rejectFriendRequest(requestId);
             });
         });
     }
@@ -999,23 +1168,18 @@ class ChatManager {
         
         document.body.appendChild(notification);
         
-        // Auto-remove
         const removeNotification = () => {
             if (notification.parentNode) {
                 notification.remove();
             }
         };
         
-        // Close button
         notification.querySelector('.notification-close').addEventListener('click', removeNotification);
-        
-        // Auto-remove after duration
         setTimeout(removeNotification, duration);
     }
 
     _playNotificationSound() {
         try {
-            // Simple notification beep
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
@@ -1033,13 +1197,12 @@ class ChatManager {
             oscillator.start(audioContext.currentTime);
             oscillator.stop(audioContext.currentTime + 0.5);
         } catch (error) {
-            // Fallback - no sound
             console.log("Could not play notification sound");
         }
     }
 
     // =================
-    // UTILITY FUNCTIONS - PRESERVED
+    // UTILITY FUNCTIONS
     // =================
 
     async _getCurrentUser() {
@@ -1055,7 +1218,7 @@ class ChatManager {
         
         if (this.apiCache.has(cacheKey)) {
             const cached = this.apiCache.get(cacheKey);
-            if (Date.now() - cached.timestamp < 3600000) { // 1 hour cache
+            if (Date.now() - cached.timestamp < 3600000) {
                 return cached.key;
             }
         }
@@ -1067,7 +1230,6 @@ class ChatManager {
         
         const keyData = await response.json();
         
-        // Cache result
         this.apiCache.set(cacheKey, {
             key: keyData.public_key,
             timestamp: Date.now()
@@ -1077,10 +1239,9 @@ class ChatManager {
     }
 
     async _getSessionKeyOptimized(sessionToken) {
-        // Check memory first
-        const sessionKey = window.cryptoManager.getSessionKey(sessionToken);
+        const sessionKey = this.getSessionKey(sessionToken);
         if (sessionKey) {
-            return await window.cryptoManager.importSessionKey(sessionKey);
+            return await this.importSessionKey(sessionKey);
         }
         return null;
     }
@@ -1096,7 +1257,6 @@ class ChatManager {
     _handleTyping() {
         if (!this.isTyping) {
             this.isTyping = true;
-            // Send typing indicator to other user
             if (this.socket && this.currentSession) {
                 this.socket.emit('typing_start', {
                     session_token: this.currentSession.token
@@ -1104,12 +1264,10 @@ class ChatManager {
             }
         }
         
-        // Clear existing timeout
         if (this.typingTimeout) {
             clearTimeout(this.typingTimeout);
         }
         
-        // Set new timeout
         this.typingTimeout = setTimeout(() => {
             this.isTyping = false;
             if (this.socket && this.currentSession) {
@@ -1124,7 +1282,6 @@ class ChatManager {
         const currentCount = this.unreadCounts.get(sessionToken) || 0;
         this.unreadCounts.set(sessionToken, currentCount + 1);
         
-        // Update UI badge
         const sessionElement = document.querySelector(`[data-session-token="${sessionToken}"]`);
         if (sessionElement) {
             let badge = sessionElement.querySelector('.unread-badge');
@@ -1138,29 +1295,25 @@ class ChatManager {
     }
 
     _startPeriodicTasks() {
-        // Update last activity
         setInterval(() => {
             this.lastActivity = Date.now();
-        }, 30000); // Every 30 seconds
+        }, 30000);
         
-        // Clean up old cached messages
         setInterval(() => {
             this._cleanupOldMessages();
-        }, 300000); // Every 5 minutes
+        }, 300000);
         
-        // Refresh friends list periodically
         setInterval(() => {
             this._loadFriends();
-        }, 60000); // Every minute
+        }, 60000);
         
-        // Load friend requests periodically
         setInterval(() => {
             this._loadFriendRequests();
-        }, 120000); // Every 2 minutes
+        }, 120000);
     }
 
     _cleanupOldMessages() {
-        const cutoffTime = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
+        const cutoffTime = Date.now() - (24 * 60 * 60 * 1000);
         
         for (const [sessionToken, messages] of this.messages.entries()) {
             const filteredMessages = messages.filter(msg => 
@@ -1177,14 +1330,12 @@ class ChatManager {
     _handleStatusChange(data) {
         const { user_id, is_online } = data;
         
-        // Update friend status
         const friend = this.friends.find(f => f.user_id === user_id);
         if (friend) {
             friend.is_online = is_online;
             this._renderFriendsList();
         }
         
-        // Update chat header if it's current chat partner
         if (this.currentChatPartner && this.currentChatPartner.user_id === user_id) {
             this._updateChatUI();
         }
@@ -1215,7 +1366,6 @@ class ChatManager {
             `;
         }).join('');
         
-        // Add click handlers
         this.elements.sessionsList.querySelectorAll('.session-item').forEach(item => {
             item.addEventListener('click', () => {
                 const sessionToken = item.dataset.sessionToken;
@@ -1225,7 +1375,6 @@ class ChatManager {
                         session.recipient : session.initiator;
                     this._selectFriend(otherUser.user_id);
                     
-                    // Clear unread count
                     this.unreadCounts.delete(sessionToken);
                     this._renderSessionsList();
                 }
@@ -1263,7 +1412,6 @@ class ChatManager {
         return this.socket && this.socket.connected;
     }
 
-    // Force refresh of all data
     async refresh() {
         try {
             await this._loadFriends();
@@ -1276,7 +1424,6 @@ class ChatManager {
         }
     }
 
-    // Manual cleanup
     cleanup() {
         if (this.socket) {
             this.socket.disconnect();
@@ -1290,11 +1437,11 @@ class ChatManager {
             clearTimeout(this.typingTimeout);
         }
         
-        // Clear caches
         this.apiCache.clear();
         this.messages.clear();
         this.unreadCounts.clear();
         this.processingMessages.clear();
+        this.sessionKeys.clear();
         
         console.log('🧹 ChatManager cleaned up');
     }
@@ -1305,31 +1452,32 @@ let chatManager = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        // Check if user is authenticated and has crypto keys
+        // Check if user is authenticated
         const auth = await fetch('/api/check_auth');
         if (!auth.ok) {
             window.location.href = '/';
             return;
         }
         
-        // Initialize crypto manager
-        if (!window.cryptoManager) {
-            window.cryptoManager = new CryptoManager();
-        }
-        
-        const hasKeys = await window.cryptoManager.loadKeys();
-        if (!hasKeys) {
-            alert('Please login with your private key file');
-            window.location.href = '/';
-            return;
-        }
-        
-        // Initialize chat manager
+        // ✅ Initialize with integrated crypto
         chatManager = new ChatManager();
         await chatManager.init();
         
         // Make globally available
         window.chatManager = chatManager;
+        
+        // ✅ BACKWARD COMPATIBILITY: Set up crypto manager reference
+        window.cryptoManager = {
+            loadKeys: () => Promise.resolve(true),
+            hasPrivateKey: () => true,
+            clearAllKeys: () => chatManager.cleanup(),
+            // Delegate crypto functions to ChatManager
+            encryptMessage: (key, msg) => chatManager.encryptMessage(key, msg),
+            decryptMessage: (key, data) => chatManager.decryptMessage(key, data),
+            generateSessionKey: () => chatManager.generateSessionKey(),
+            storeSessionKey: (token, key) => chatManager.storeSessionKey(token, key),
+            getSessionKey: (token) => chatManager.getSessionKey(token)
+        };
         
         console.log('✅ Chat application initialized successfully');
         
@@ -1339,7 +1487,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// Cleanup on page unload
 window.addEventListener('beforeunload', () => {
     if (chatManager) {
         chatManager.cleanup();
