@@ -570,4 +570,28 @@ def internal_error(error):
     db.session.rollback()
     return jsonify({'error': 'Internal server error'}), 500
 
+# === VIEWS (HTML PAGES) - WYMAGANE DLA ROUTING'U ===
+
+@auth_bp.route('/')
+def index():
+    """Strona główna - login (index.html)"""
+    if current_user.is_authenticated:
+        next_page = request.args.get('next')
+        if next_page:
+            return redirect(next_page)
+        return redirect(url_for('chat.chat'))
+    return render_template('index.html')
+
+@auth_bp.route('/register')
+def register_page():
+    """Strona rejestracji"""
+    if current_user.is_authenticated:
+        return redirect(url_for('chat.chat'))
+    return render_template('register.html')
+
+@auth_bp.route('/login')
+def login_page():
+    """Redirect do strony głównej"""
+    return redirect(url_for('auth.index'))
+
 print("✅ Danaid Auth Backend loaded - E2EE Authentication API Ready - Railway Compatible")
