@@ -577,7 +577,7 @@ class ChatManager {
     
     async _loadSessions() {
         try {
-            const response = await fetch('/api/sessions');
+            const response = await fetch('/api/sessions/active');
             const data = await response.json();
             
             if (data.status === 'success') {
