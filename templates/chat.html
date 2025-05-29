@@ -104,7 +104,7 @@
             console.log("✅ Socket.IO client library załadowana");
         }
         
-        / Sprawdź moduły po krótkim opóźnieniu (daj czas na załadowanie)
+        // Sprawdź moduły po krótkim opóźnieniu (daj czas na załadowanie)
         setTimeout(() => {
             if (typeof window.cryptoManager === 'undefined') {
                 console.error("❌ CryptoManager nie załadowany po timeout");
