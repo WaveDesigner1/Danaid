@@ -427,7 +427,7 @@ def logout_page():
         print("✅ Session cleared completely")
         
         # PROSTY REDIRECT - bez dodatkowych nagłówków
-        return redirect(url_for('auth.index'))
+        return redirect(url_for('/'))
         
     except Exception as e:
         print(f"❌ Logout error: {e}")
@@ -470,7 +470,7 @@ def api_logout():
         return jsonify({
             'status': 'success',
             'message': 'Logged out successfully',
-            'redirect': url_for('auth.index')
+            'redirect': url_for('/')
         })
         
     except Exception as e:
