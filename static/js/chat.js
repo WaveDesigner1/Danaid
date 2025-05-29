@@ -1518,8 +1518,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('Failed to initialize chat application: ' + error.message);
     }
 });
-
-async deleteMessage(messageId, messageElement) {
+    async deleteMessage(messageId, messageElement) {
         if (!confirm('Czy na pewno chcesz usunąć tę wiadomość?')) {
             return;
         }
@@ -1557,8 +1556,6 @@ async deleteMessage(messageId, messageElement) {
             this._showNotification('Nie udało się usunąć wiadomości: ' + error.message, 'error');
         }
     }
-    
-    // ... inne metody klasy ...
 }
 
 // Window event listener POZA klasą (nie wewnątrz!)
