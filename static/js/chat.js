@@ -1,4 +1,4 @@
-// Optimized chat.js with integrated crypto functions
+// Optimized chat.js with integrated crypto functions and improved UI
 class ChatManager {
     constructor() {
         this.socket = null;
@@ -408,7 +408,7 @@ class ChatManager {
     }
 
     // =================
-    // ✅ FIXED MESSAGE HANDLING
+    // ✅ IMPROVED MESSAGE HANDLING
     // =================
     
     async sendMessage() {
@@ -679,7 +679,7 @@ class ChatManager {
     }
 
     // =================
-    // ✅ FIXED FRIENDS MANAGEMENT
+    // ✅ IMPROVED FRIENDS MANAGEMENT
     // =================
     
     async _loadFriends() {
@@ -698,7 +698,7 @@ class ChatManager {
         }
     }
 
-    // ✅ FIXED: Updated API endpoint call
+    // ✅ IMPROVED: Updated API endpoint call
     async addFriend(userIdOrUsername) {
         try {
             const response = await fetch('/api/friends/add', {
@@ -867,6 +867,11 @@ class ChatManager {
                 const countElement = document.getElementById('friend-request-count');
                 if (countElement) {
                     countElement.textContent = data.requests ? data.requests.length : 0;
+                    if (data.requests && data.requests.length > 0) {
+                        countElement.style.display = 'inline';
+                    } else {
+                        countElement.style.display = 'none';
+                    }
                 }
             }
         } catch (error) {
@@ -893,11 +898,30 @@ class ChatManager {
         }
     }
 
+    // ✅ IMPROVED: Direct friend click starts chat session
     async _selectFriend(userId) {
         const friend = this.friends.find(f => f.user_id === userId);
         if (friend) {
             this.currentChatPartner = friend;
+            
+            // Mark as active in UI
+            this._markFriendAsActive(userId);
+            
+            // Initialize session
             await this._initSession(userId);
+        }
+    }
+
+    _markFriendAsActive(userId) {
+        // Remove active class from all friends
+        document.querySelectorAll('.friend-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        
+        // Add active class to selected friend
+        const friendElement = document.querySelector(`[data-user-id="${userId}"]`);
+        if (friendElement) {
+            friendElement.classList.add('active');
         }
     }
 
@@ -942,6 +966,9 @@ class ChatManager {
             const data = await response.json();
             
             if (data.status === 'success') {
+                // Clear existing messages for this session first
+                this.elements.messagesContainer.innerHTML = '';
+                
                 for (const message of data.messages) {
                     await this._processMessage(sessionToken, message, 'history');
                 }
@@ -976,7 +1003,7 @@ class ChatManager {
     }
 
     // =================
-    // ✅ FIXED UI MANAGEMENT
+    // ✅ IMPROVED UI MANAGEMENT
     // =================
     
     _initElements() {
@@ -1060,11 +1087,13 @@ class ChatManager {
         }
     }
 
+    // ✅ IMPROVED: Better message display with proper colors
     _addMessageToUI(message) {
         if (!this.elements.messagesContainer) return;
         
         const messageEl = document.createElement('div');
-        messageEl.className = `message ${message.is_mine ? 'mine' : 'theirs'}`;
+        // Use consistent class names for styling
+        messageEl.className = `message ${message.is_mine || message.sender_id == this.user.id ? 'mine' : 'theirs'}`;
         messageEl.dataset.messageId = message.id;
 
         const timeStr = new Date(message.timestamp).toLocaleTimeString();
@@ -1072,75 +1101,76 @@ class ChatManager {
         messageEl.innerHTML = `
             <div class="message-content">${this._escapeHtml(message.content)}</div>
             <div class="message-time">${timeStr}</div>
-            ${message.is_mine ? '<div class="message-status">✓</div>' : ''}
+            ${(message.is_mine || message.sender_id == this.user.id) ? '<div class="message-status">✓</div>' : ''}
         `;
         
         this.elements.messagesContainer.appendChild(messageEl);
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
     }
 
+    // ✅ IMPROVED: Friend list without IDs, clickable items
     _renderFriendsList() {
         if (!this.elements.friendsList) return;
         
-        this.elements.friendsList.innerHTML = this.friends.map(friend => `
-            <li class="friend-item" data-user-id="${friend.user_id}">
-                <div class="friend-info">
-                    <span class="friend-name">${this._escapeHtml(friend.username)}</span>
-                    <span class="friend-id">${friend.user_id}</span>
-                </div>
-                <div class="friend-actions">
-                    <span class="friend-status ${friend.is_online ? 'online' : 'offline'}">
-                        ${friend.is_online ? '🟢' : '⚪'}
-                    </span>
-                    <button class="chat-btn" data-user-id="${friend.user_id}">💬</button>
-                    <button class="remove-friend-btn" data-friend-id="${friend.id}">❌</button>
-                </div>
-            </li>
-        `).join('');
+        this.elements.friendsList.innerHTML = this.friends.map(friend => {
+            // Generate avatar initial from username
+            const initial = friend.username.charAt(0).toUpperCase();
+            
+            return `
+                <li class="friend-item" data-user-id="${friend.user_id}">
+                    <div class="friend-avatar">
+                        ${initial}
+                        <div class="status-indicator ${friend.is_online ? 'online' : 'offline'}"></div>
+                    </div>
+                    <div class="friend-info">
+                        <div class="friend-name">${this._escapeHtml(friend.username)}</div>
+                        <div class="friend-status ${friend.is_online ? 'online' : 'offline'}">
+                            ${friend.is_online ? 'Online' : 'Offline'}
+                        </div>
+                    </div>
+                    ${this.unreadCounts.get(friend.user_id) ? 
+                        `<span class="unread-count">${this.unreadCounts.get(friend.user_id)}</span>` : 
+                        ''
+                    }
+                </li>
+            `;
+        }).join('');
         
-        this.elements.friendsList.querySelectorAll('.chat-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const userId = btn.dataset.userId;
+        // ✅ IMPROVED: Add click listeners to entire friend items
+        this.elements.friendsList.querySelectorAll('.friend-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const userId = item.dataset.userId;
                 this._selectFriend(userId);
-            });
-        });
-        
-        this.elements.friendsList.querySelectorAll('.remove-friend-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const friendId = btn.dataset.friendId;
-                this.removeFriend(friendId);
             });
         });
     }
 
     _renderFriendRequests(requests) {
-        if (!this.elements.friendRequests) return;
+        // This method is used by the modal system
+        const container = document.getElementById('friend-requests-list');
+        if (!container) return;
         
-        this.elements.friendRequests.innerHTML = requests.map(req => `
-            <div class="friend-request-item">
-                <span class="request-from">${this._escapeHtml(req.from_username)}</span>
-                <div class="request-actions">
-                    <button class="accept-btn" data-request-id="${req.id}">✅ Accept</button>
-                    <button class="decline-btn" data-request-id="${req.id}">❌ Decline</button>
+        if (requests && requests.length > 0) {
+            container.innerHTML = requests.map(req => `
+                <div class="friend-request-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #555;">
+                    <div>
+                        <strong>${this._escapeHtml(req.username)}</strong>
+                        <small style="display: block; color: #999;">ID: ${req.sender_id}</small>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
+                            Akceptuj
+                        </button>
+                        <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
+                            Odrzuć
+                        </button>
+                    </div>
                 </div>
-            </div>
-        `).join('');
-        
-        this.elements.friendRequests.querySelectorAll('.accept-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const requestId = btn.dataset.requestId;
-                this.acceptFriendRequest(requestId);
-            });
-        });
-        
-        this.elements.friendRequests.querySelectorAll('.decline-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const requestId = btn.dataset.requestId;
-                this.rejectFriendRequest(requestId);
-            });
-        });
+            `).join('');
+        } else {
+            container.innerHTML = '<p style="text-align: center; color: #999;">Brak zaproszeń</p>';
+        }
     }
 
     _updateChatUI() {
@@ -1149,10 +1179,12 @@ class ChatManager {
             this.elements.chatHeader.innerHTML = `
                 <div class="chat-partner-info">
                     <span class="partner-name">${this._escapeHtml(otherUser.username)}</span>
-                    <span class="partner-id">${otherUser.user_id}</span>
+                    <span class="partner-status ${otherUser.is_online ? 'online' : 'offline'}">
+                        ${otherUser.is_online ? '🟢 Online' : '⚪ Offline'}
+                    </span>
                 </div>
                 <div class="session-info">
-                    <span class="session-status">🔐 Encrypted</span>
+                    <span class="session-status ready">🔐 Encrypted</span>
                 </div>
             `;
         }
@@ -1160,10 +1192,10 @@ class ChatManager {
 
     _showNotification(message, type = 'info', duration = 5000) {
         const notification = document.createElement('div');
-        notification.className = `notification ${type}`;
+        notification.className = `notification notification-${type}`;
         notification.innerHTML = `
             <span class="notification-message">${this._escapeHtml(message)}</span>
-            <button class="notification-close">×</button>
+            <button class="notification-close" style="background: none; border: none; color: inherit; margin-left: 10px; cursor: pointer;">×</button>
         `;
         
         document.body.appendChild(notification);
