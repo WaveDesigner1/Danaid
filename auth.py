@@ -379,7 +379,7 @@ def logout_redirect():
     logout_user()
     session.clear()
     
-    response = redirect(url_for('auth.index'))
+    response = redirect(url_for('/'))
     
     # Wyczyść wszystkie ciasteczka związane z sesją
     response.delete_cookie('session')
