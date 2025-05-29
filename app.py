@@ -18,9 +18,7 @@ from models import db, User, ChatSession, Message
 from admin import init_admin
 from auth import auth_bp
 from chat import chat_bp  # ✅ chat.py zawiera teraz wszystko (chat + chat_api + socketio)
-# ❌ USUNIĘTE: from chat_api import chat_api  # Scalono z chat.py
-# ❌ USUNIĘTE: from database_migrations import apply_e2ee_migrations  # Wbudowano w chat.py
-# 🔧 WARUNKOWO: init_socketio_handler może być w chat.py lub zintegrowane bezpośrednio
+
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
