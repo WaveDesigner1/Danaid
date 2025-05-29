@@ -1,7 +1,7 @@
 """
-auth.py - Danaid Chat Authentication Backend
+auth.py - Danaid Chat Authentication Backend v3
 Dostosowany do istniejących ścieżek bazy danych Railway
-Kompatybilny z istniejącymi formularzami HTML
+Kompatybilny z istniejącymi formularzami HTML + routing
 """
 import json
 import secrets
@@ -33,6 +33,30 @@ auth_bp = Blueprint('auth', __name__)
 # Wymagania dla hasła
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_PATTERN = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]')
+
+# === VIEWS (HTML PAGES) - WYMAGANE DLA ROUTING'U ===
+
+@auth_bp.route('/')
+def index():
+    """Strona główna - login (index.html)"""
+    if current_user.is_authenticated:
+        next_page = request.args.get('next')
+        if next_page:
+            return redirect(next_page)
+        return redirect(url_for('chat.chat'))
+    return render_template('index.html')
+
+@auth_bp.route('/register')
+def register_page():
+    """Strona rejestracji"""
+    if current_user.is_authenticated:
+        return redirect(url_for('chat.chat'))
+    return render_template('register.html')
+
+@auth_bp.route('/login')
+def login_page():
+    """Redirect do strony głównej"""
+    return redirect(url_for('auth.index'))
 
 # === UTILITY FUNCTIONS ===
 
@@ -527,7 +551,7 @@ def auth_status():
     """
     return jsonify({
         'auth_system': 'Danaid Chat E2EE Authentication',
-        'version': '1.0',
+        'version': '3.0',
         'rsa_available': RSA_AVAILABLE,
         'deployment': 'Railway',
         'features': {
@@ -570,28 +594,4 @@ def internal_error(error):
     db.session.rollback()
     return jsonify({'error': 'Internal server error'}), 500
 
-# === VIEWS (HTML PAGES) - WYMAGANE DLA ROUTING'U ===
-
-@auth_bp.route('/')
-def index():
-    """Strona główna - login (index.html)"""
-    if current_user.is_authenticated:
-        next_page = request.args.get('next')
-        if next_page:
-            return redirect(next_page)
-        return redirect(url_for('chat.chat'))
-    return render_template('index.html')
-
-@auth_bp.route('/register')
-def register_page():
-    """Strona rejestracji"""
-    if current_user.is_authenticated:
-        return redirect(url_for('chat.chat'))
-    return render_template('register.html')
-
-@auth_bp.route('/login')
-def login_page():
-    """Redirect do strony głównej"""
-    return redirect(url_for('auth.index'))
-
-print("✅ Danaid Auth Backend loaded - E2EE Authentication API Ready - Railway Compatible")
+print("✅ Danaid Auth Backend v3 loaded - E2EE Authentication API Ready - Railway Compatible")
