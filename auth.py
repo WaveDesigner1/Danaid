@@ -199,7 +199,7 @@ def register_page():
         except:
             return "Error loading registration page", 500
 
-@auth_bp.route('/chat')
+
 @login_required
 def chat_page():
     """
