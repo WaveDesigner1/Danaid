@@ -37,13 +37,11 @@ body {
   overflow: hidden;
 }
 
-/* === LAYOUT GŁÓWNY - ✅ NAPRAWKA POZIOMY === */
+/* === LAYOUT GŁÓWNY === */
 .chat-main {
   display: flex;
   height: 100vh;
   width: 100vw;
-  /* ✅ DODANE - wymuszenie poziomego layoutu */
-  flex-direction: row !important;
 }
 
 /* === SIDEBAR === */
@@ -54,8 +52,6 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  /* ✅ DODANE - nie pozwól się skurczyć */
-  flex-shrink: 0 !important;
 }
 
 .user-info {
@@ -313,76 +309,6 @@ body {
   color: white;
 }
 
-/* ✅ DODANE - style dla przycisków akcji konwersacji */
-.chat-partner-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.partner-name {
-  font-size: 1.3em;
-  font-weight: 600;
-  color: var(--text-primary);
-  display: block;
-}
-
-.partner-status {
-  font-size: 0.85em;
-  margin-top: 4px;
-  display: block;
-}
-
-.partner-status.online {
-  color: var(--success);
-}
-
-.partner-status.offline {
-  color: var(--text-muted);
-}
-
-.chat-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.chat-actions .btn {
-  padding: 8px 12px;
-  font-size: 0.85em;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.chat-actions .btn:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-light);
-}
-
-.chat-actions .btn-secondary {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-}
-
-.chat-actions .btn-secondary:hover {
-  background-color: var(--border);
-}
-
-.chat-actions .btn-danger {
-  background-color: var(--danger);
-  color: white;
-}
-
-.chat-actions .btn-danger:hover {
-  background-color: #d32f2f;
-}
-
 /* === WIADOMOŚCI - POPRAWIONE KOLORY === */
 .messages-container {
   flex: 1;
@@ -462,15 +388,6 @@ body {
 .message.sent .message-time,
 .message.mine .message-time {
   color: rgba(51, 51, 51, 0.7);
-}
-
-/* ✅ DODANE - ukryj stare przyciski usuwania wiadomości */
-.message-actions {
-  display: none !important;
-}
-
-.delete-message-btn {
-  display: none !important;
 }
 
 /* === INPUT WIADOMOŚCI === */
@@ -727,11 +644,6 @@ body {
     left: 10px;
     max-width: none;
   }
-  
-  /* ✅ DODANE - ukryj tekst na mobile */
-  .chat-actions .btn span {
-    display: none;
-  }
 }
 
 @media (max-width: 480px) {
@@ -793,45 +705,4 @@ input:focus-visible,
 .friend-item:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
-}
-
-/* ✅ NAPRAWKA LAYOUTU - na końcu żeby przebić wszystko */
-@media (min-width: 769px) {
-  .chat-main {
-    flex-direction: row !important;
-  }
-  
-  .chat-sidebar {
-    width: 320px !important;
-    height: 100vh !important;
-    flex-shrink: 0 !important;
-  }
-  
-  .chat-content {
-    flex: 1 !important;
-    height: 100vh !important;
-  }
-}
-
-css/* === WYMUSZENIE POZIOMEGO LAYOUTU NA DESKTOP === */
-@media (min-width: 769px) {
-    .chat-main {
-        display: flex !important;
-        flex-direction: row !important;
-        height: 100vh !important;
-        width: 100vw !important;
-    }
-    
-    .chat-sidebar {
-        width: 320px !important;
-        height: 100vh !important;
-        flex-shrink: 0 !important;
-        flex-grow: 0 !important;
-    }
-    
-    .chat-content {
-        flex: 1 !important;
-        height: 100vh !important;
-        min-width: 0 !important;
-    }
 }
