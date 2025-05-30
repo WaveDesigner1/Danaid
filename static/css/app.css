@@ -1,4 +1,4 @@
-/* === DANAID CHAT - KOMPLETNY CSS === */
+/* === DANAID CHAT - KOMPLETNY CSS Z NAPRAWĄ LAYOUTU === */
 /* Zunifikowany CSS dla całego interfejsu czatu */
 
 :root {
@@ -37,27 +37,34 @@ body {
   overflow: hidden;
 }
 
-/* === LAYOUT GŁÓWNY === */
+/* === LAYOUT GŁÓWNY - NAPRAWIONY === */
 .chat-main {
-  display: flex;
-  height: 100vh;
-  width: 100vw;
+  display: flex !important;
+  flex-direction: row !important;  /* ✅ WYMUSZA poziomy layout */
+  height: 100vh !important;
+  width: 100vw !important;
+  overflow: hidden !important;
 }
 
-/* === SIDEBAR === */
+/* === SIDEBAR - NAPRAWIONY === */
 .chat-sidebar {
-  width: 320px;
+  width: 320px !important;
+  min-width: 320px !important;     /* ✅ Nie pozwól się skurczyć */
+  max-width: 320px !important;     /* ✅ Nie pozwól się rozszerzyć */
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100vh !important;
+  flex-shrink: 0 !important;       /* ✅ KRYTYCZNE - nie skurcz sidebar */
+  overflow-y: auto;
 }
 
 .user-info {
   padding: 20px 25px;
   border-bottom: 1px solid var(--border);
   background-color: var(--bg-tertiary);
+  flex-shrink: 0;                  /* ✅ Nie skurcz user info */
 }
 
 .user-info h3 {
@@ -107,11 +114,12 @@ body {
   transform: translateY(-1px);
 }
 
-/* === LISTA ZNAJOMYCH - POPRAWIONA === */
+/* === LISTA ZNAJOMYCH - NAPRAWIONA === */
 .friends-section {
-  flex: 1;
-  overflow-y: auto;
+  flex: 1 !important;              /* ✅ Zajmuje resztę wysokości sidebar */
+  overflow-y: auto !important;
   padding: 15px 0;
+  min-height: 0;                   /* ✅ Pozwól się skurczyć */
 }
 
 .friends-section h4 {
@@ -130,6 +138,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .friend-requests:hover {
@@ -150,6 +159,8 @@ body {
   list-style: none;
   padding: 0;
   margin: 0;
+  height: auto !important;         /* ✅ Nie ustalaj fixed height */
+  overflow-y: visible !important;  /* ✅ Scroll jest w parent */
 }
 
 /* POPRAWIONA LISTA ZNAJOMYCH - usuniete ID, clickable caly element */
@@ -234,8 +245,6 @@ body {
   color: var(--success);
 }
 
-/* Usunieto .friend-id styles - nie bedziemy wyswietlac ID */
-
 .unread-count {
   background-color: var(--danger);
   color: white;
@@ -251,12 +260,13 @@ body {
   display: none;
 }
 
-/* === OBSZAR CZATU === */
+/* === OBSZAR CZATU - NAPRAWIONY === */
 .chat-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+  flex: 1 !important;              /* ✅ Zajmuje całą resztę szerokości */
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100vh !important;
+  min-width: 0 !important;         /* ✅ Pozwól się skurczyć jeśli potrzeba */
 }
 
 .chat-header {
@@ -266,6 +276,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0 !important;       /* ✅ Nie skurcz header */
+  height: auto;
+  min-height: 60px;
 }
 
 .chat-header h2 {
@@ -309,13 +322,16 @@ body {
   color: white;
 }
 
-/* === WIADOMOŚCI - POPRAWIONE KOLORY === */
+/* === WIADOMOŚCI - NAPRAWIONE === */
 .messages-container {
-  flex: 1;
-  overflow-y: auto;
+  flex: 1 !important;              /* ✅ KRYTYCZNE - zajmuje całą dostępną wysokość */
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
   padding: 20px;
   background-color: var(--bg-dark);
   scroll-behavior: smooth;
+  height: auto !important;         /* ✅ Nie ustalaj fixed height */
+  min-height: 200px !important;    /* ✅ Minimalna wysokość */
 }
 
 .message {
@@ -390,7 +406,7 @@ body {
   color: rgba(51, 51, 51, 0.7);
 }
 
-/* === INPUT WIADOMOŚCI === */
+/* === INPUT WIADOMOŚCI - NAPRAWIONY === */
 .message-input-container {
   padding: 20px;
   border-top: 1px solid var(--border);
@@ -398,6 +414,9 @@ body {
   display: flex;
   gap: 12px;
   align-items: flex-end;
+  flex-shrink: 0 !important;       /* ✅ Nie skurcz input area */
+  height: auto;
+  min-height: 80px;
 }
 
 #message-input {
@@ -612,7 +631,27 @@ body {
   background: var(--border-light);
 }
 
-/* === RESPONSIVE === */
+/* === RESPONSIVE - NAPRAWIONE === */
+/* WYŁĄCZ responsive na desktop - ZAWSZE poziomy layout */
+@media (min-width: 769px) {
+  .chat-main {
+    flex-direction: row !important;  /* ✅ WYMUSZA poziomy na desktop */
+  }
+  
+  .chat-sidebar {
+    width: 320px !important;
+    height: 100vh !important;
+    border-right: 1px solid var(--border) !important;
+    border-bottom: none !important;
+  }
+  
+  .chat-content {
+    height: 100vh !important;
+    flex: 1 !important;
+  }
+}
+
+/* Mobile - tylko na bardzo małych ekranach */
 @media (max-width: 768px) {
   .chat-main {
     flex-direction: column;
