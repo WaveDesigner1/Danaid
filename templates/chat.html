@@ -19,7 +19,7 @@
                     <button id="add-friend-btn" class="btn btn-primary">
                         <i class="fas fa-user-plus"></i> Dodaj
                     </button>
-                    <button id="logout-btn" class="btn btn-danger">
+                    <button id="/logout" class="btn btn-danger">
                         <i class="fas fa-sign-out-alt"></i> Wyloguj
                     </button>
                 </div>
@@ -138,40 +138,6 @@
             }
         }
         
-        // FIXED: Dodaj obsługę wylogowania
-        document.addEventListener('DOMContentLoaded', function() {
-            const logoutBtn = document.getElementById('logout-btn');
-            if (logoutBtn) {
-                logoutBtn.addEventListener('click', function() {
-                    console.log("🚪 Logout clicked");
-                    
-                    if (confirm('Czy na pewno chcesz się wylogować?')) {
-                        // Użyj auth systemu do wylogowania
-                        if (window.danaidAuth && typeof window.danaidAuth.logout === 'function') {
-                            window.danaidAuth.logout();
-                        } else {
-                            // Fallback - ręczne wylogowanie
-                            console.log("🔄 Using fallback logout");
-                            
-                            // Wyczyść dane lokalne
-                            sessionStorage.clear();
-                            localStorage.clear();
-                            
-                            // Wyślij request wylogowania
-                            fetch('/api/logout', {
-                                method: 'POST',
-                                credentials: 'same-origin'
-                            }).then(() => {
-                                window.location.href = '/';
-                            }).catch(() => {
-                                // Mimo błędu, przekieruj
-                                window.location.href = '/';
-                            });
-                        }
-                    }
-                });
-            }
-        });
         
         console.log("=== DANAID CHAT ZOPTYMALIZOWANY GOTOWY ===");
     </script>
