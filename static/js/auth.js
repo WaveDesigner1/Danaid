@@ -443,7 +443,7 @@ class DanaidAuthSystem {
             console.log('👋 Logging out...');
             
             // Wyślij żądanie wylogowania
-            await this.makeRequest('/logout', {
+            await this.makeRequest('/api/logout', {
                 method: 'POST'
             });
             
