@@ -160,25 +160,10 @@ def cleanup_old_user_sessions(user_id):
 
 @auth_bp.route('/')
 def index():
-    """
-    Strona logowania - zawsze dostępna
-    """
-    try:
-        # Jeśli użytkownik jest już zalogowany, przekieruj do czatu
-        if current_user.is_authenticated:
-            print(f"✅ User {current_user.username} already logged in, redirecting to chat")
-            return redirect('/chat')
-        
-        print("📄 Serving login page")
-        return render_template('index.html')
-        
-    except Exception as e:
-        print(f"❌ Index page error: {e}")
-        # Zawsze pokaż stronę logowania przy błędzie
-        try:
-            return render_template('index.html')
-        except:
-            return "Error loading login page", 500
+    if current_user.is_authenticated:
+        return redirect(url_for('chat.chat'))
+    
+    return render_template('index.html')
 
 @auth_bp.route('/register')
 def register_page():
@@ -381,93 +366,14 @@ def login():
 
 @auth_bp.route('/logout', methods=['GET'])
 def logout_page():
-    """
-    NAPRAWIONY: Prosty logout redirect bez zapętlenia
-    """
-    try:
-        print(f"🔓 Logout requested via GET /logout")
-        
-        # Jeśli użytkownik jest zalogowany, wyloguj go
-        if current_user.is_authenticated:
-            username = current_user.username
-            
-            # Aktualizuj status offline
-            try:
-                if hasattr(current_user, 'is_online'):
-                    current_user.is_online = False
-                if hasattr(current_user, 'last_active'):
-                    current_user.last_active = datetime.utcnow()
-                db.session.commit()
-                print(f"✅ User {username} marked as offline")
-            except Exception as e:
-                print(f"⚠️ Status update failed: {e}")
-                db.session.rollback()
-            
-            # Wyloguj użytkownika
-            logout_user()
-            print(f"✅ User {username} logged out via Flask-Login")
-        
-        # Wyczyść sesję kompletnie
-        session_keys = list(session.keys())
-        for key in session_keys:
-            session.pop(key, None)
-        
-        print("✅ Session cleared completely")
-        
-        # PROSTY REDIRECT - bez dodatkowych nagłówków
-        return redirect(url_for('/'))
-        
-    except Exception as e:
-        print(f"❌ Logout error: {e}")
-        # Nawet przy błędzie, przekieruj na stronę główną
-        return redirect(url_for('auth.index'))
-
-@auth_bp.route('/api/logout', methods=['POST'])
-def api_logout():
-    """
-    API endpoint dla wylogowania przez JavaScript
-    """
-    try:
-        print(f"🔓 API Logout requested")
-        
-        username = "Anonymous"
-        if current_user.is_authenticated:
-            username = current_user.username
-            
-            # Aktualizuj status offline
-            try:
-                if hasattr(current_user, 'is_online'):
-                    current_user.is_online = False
-                if hasattr(current_user, 'last_active'):
-                    current_user.last_active = datetime.utcnow()
-                db.session.commit()
-            except Exception as e:
-                print(f"⚠️ Status update failed: {e}")
-                db.session.rollback()
-            
-            # Wyloguj użytkownika
-            logout_user()
-        
-        # Wyczyść sesję
-        session_keys = list(session.keys())
-        for key in session_keys:
-            session.pop(key, None)
-        
-        print(f"✅ API Logout successful for: {username}")
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Logged out successfully',
-            'redirect': url_for('auth.index')
-        })
-        
-    except Exception as e:
-        print(f"❌ API Logout error: {e}")
-        return jsonify({
-            'status': 'success',  # Zawsze success, żeby frontend mógł przekierować
-            'message': 'Logged out',
-            'redirect': url_for('auth.index')
-        })
+    # Wyloguj
+    logout_user()
+    
+    # Wyczyść sesję BRUTALNIE
+    session.clear()
+    
+    # Przekieruj na stronę logowania  
+    return redirect(url_for('auth.index'))
 
 # === SESSION MANAGEMENT ===
 
