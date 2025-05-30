@@ -812,3 +812,26 @@ input:focus-visible,
     height: 100vh !important;
   }
 }
+
+css/* === WYMUSZENIE POZIOMEGO LAYOUTU NA DESKTOP === */
+@media (min-width: 769px) {
+    .chat-main {
+        display: flex !important;
+        flex-direction: row !important;
+        height: 100vh !important;
+        width: 100vw !important;
+    }
+    
+    .chat-sidebar {
+        width: 320px !important;
+        height: 100vh !important;
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
+    }
+    
+    .chat-content {
+        flex: 1 !important;
+        height: 100vh !important;
+        min-width: 0 !important;
+    }
+}
