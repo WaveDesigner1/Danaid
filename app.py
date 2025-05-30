@@ -18,7 +18,7 @@ import sys
 from models import db, User, ChatSession, Message, Friend, FriendRequest
 from admin import init_admin
 from auth import auth_bp
-from chat import chat_bp, init_socketio_handlers  # ✅ ADDED Socket.IO import
+from chat import chat_bp, init_socketio_handler  # ✅ ADDED Socket.IO import
 
 # Inicjalizacja login managera
 login_manager = LoginManager()
