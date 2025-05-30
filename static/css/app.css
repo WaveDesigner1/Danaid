@@ -37,29 +37,27 @@ body {
   overflow: hidden;
 }
 
-/* === LAYOUT GŁÓWNY - GRID === */
+/* === LAYOUT GŁÓWNY === */
 .chat-main {
-  display: grid !important;
-  grid-template-columns: 320px 1fr !important;
-  height: 100vh !important;
-  width: 100vw !important;
+  display: flex;
+  height: 100vh;
+  width: 100vw;
 }
 
 /* === SIDEBAR === */
 .chat-sidebar {
+  width: 320px;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   height: 100vh;
-  overflow: hidden;
 }
 
 .user-info {
   padding: 20px 25px;
   border-bottom: 1px solid var(--border);
   background-color: var(--bg-tertiary);
-  flex-shrink: 0;
 }
 
 .user-info h3 {
@@ -109,12 +107,11 @@ body {
   transform: translateY(-1px);
 }
 
-/* === LISTA ZNAJOMYCH === */
+/* === LISTA ZNAJOMYCH - POPRAWIONA === */
 .friends-section {
   flex: 1;
   overflow-y: auto;
   padding: 15px 0;
-  min-height: 0;
 }
 
 .friends-section h4 {
@@ -133,7 +130,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-shrink: 0;
 }
 
 .friend-requests:hover {
@@ -156,6 +152,7 @@ body {
   margin: 0;
 }
 
+/* POPRAWIONA LISTA ZNAJOMYCH - usuniete ID, clickable caly element */
 .friend-item {
   display: flex;
   align-items: center;
@@ -237,6 +234,8 @@ body {
   color: var(--success);
 }
 
+/* Usunieto .friend-id styles - nie bedziemy wyswietlac ID */
+
 .unread-count {
   background-color: var(--danger);
   color: white;
@@ -247,16 +246,17 @@ body {
   margin-left: 8px;
 }
 
+/* Ukryj stare przyciski akcji - teraz caly element jest clickable */
 .friend-actions {
   display: none;
 }
 
 /* === OBSZAR CZATU === */
 .chat-content {
+  flex: 1;
   display: flex;
   flex-direction: column;
   height: 100vh;
-  min-width: 0;
 }
 
 .chat-header {
@@ -266,7 +266,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-shrink: 0;
 }
 
 .chat-header h2 {
@@ -310,83 +309,13 @@ body {
   color: white;
 }
 
-.chat-partner-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.partner-name {
-  font-size: 1.3em;
-  font-weight: 600;
-  color: var(--text-primary);
-  display: block;
-}
-
-.partner-status {
-  font-size: 0.85em;
-  margin-top: 4px;
-  display: block;
-}
-
-.partner-status.online {
-  color: var(--success);
-}
-
-.partner-status.offline {
-  color: var(--text-muted);
-}
-
-.chat-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.chat-actions .btn {
-  padding: 8px 12px;
-  font-size: 0.85em;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.chat-actions .btn:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-light);
-}
-
-.chat-actions .btn-secondary {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-}
-
-.chat-actions .btn-secondary:hover {
-  background-color: var(--border);
-}
-
-.chat-actions .btn-danger {
-  background-color: var(--danger);
-  color: white;
-}
-
-.chat-actions .btn-danger:hover {
-  background-color: #d32f2f;
-}
-
-/* === WIADOMOŚCI === */
+/* === WIADOMOŚCI - POPRAWIONE KOLORY === */
 .messages-container {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
   background-color: var(--bg-dark);
   scroll-behavior: smooth;
-  min-height: 0;
 }
 
 .message {
@@ -423,12 +352,14 @@ body {
   color: var(--text-primary);
 }
 
+/* POPRAWIONE: Pomarańczowe wiadomości wysłane */
 .message.sent .message-content,
 .message.mine .message-content {
   background-color: var(--message-sent);
   color: var(--bg-dark);
 }
 
+/* Szare wiadomości odebrane */
 .message.received .message-content,
 .message.theirs .message-content {
   background-color: var(--message-received);
@@ -467,7 +398,6 @@ body {
   display: flex;
   gap: 12px;
   align-items: flex-end;
-  flex-shrink: 0;
 }
 
 #message-input {
@@ -685,11 +615,11 @@ body {
 /* === RESPONSIVE === */
 @media (max-width: 768px) {
   .chat-main {
-    grid-template-columns: 1fr !important;
-    grid-template-rows: auto 1fr !important;
+    flex-direction: column;
   }
   
   .chat-sidebar {
+    width: 100%;
     height: auto;
     max-height: 40vh;
     border-right: none;
@@ -713,10 +643,6 @@ body {
     right: 10px;
     left: 10px;
     max-width: none;
-  }
-  
-  .chat-actions .btn span {
-    display: none;
   }
 }
 
