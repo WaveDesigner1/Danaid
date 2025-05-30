@@ -160,7 +160,8 @@ def cleanup_old_user_sessions(user_id):
 
 @auth_bp.route('/')
 def index():
-    if current_user.is_authenticated:
+    # Sprawdź sesję zamiast current_user
+    if session.get('user_id') or session.get('username'):
         return redirect(url_for('chat.chat'))
     
     return render_template('index.html')
@@ -366,15 +367,20 @@ def login():
 
 @auth_bp.route('/logout', methods=['GET'])
 def logout_page():
-    # Wyloguj
-    logout_user()
+    from flask import session
     
-    # Wyczyść sesję BRUTALNIE
+    # BRUTAL SESSION CLEANUP
     session.clear()
+    session.permanent = False
     
-    # Przekieruj na stronę logowania  
-    return redirect(url_for('auth.index'))
-
+    # BRUTAL RESPONSE z force headers
+    response = redirect(url_for('auth.index'))
+    response.headers['Clear-Site-Data'] = '"cache", "cookies", "storage"'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    
+    return response
 # === SESSION MANAGEMENT ===
 
 @auth_bp.route('/api/check_auth')
