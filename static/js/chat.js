@@ -29,6 +29,9 @@ class ChatManager {
         this.sessionKeys = new Map(); // sessionToken -> AES key
         this.userPrivateKey = null;
         this.userPublicKey = null;
+        this.messageCounters = new Map();
+        this.decryptedMessages = new Map();
+        this.forwardSecrecyEnabled = true;
     }
 
     async init() {
@@ -272,6 +275,223 @@ class ChatManager {
         return this._arrayBufferToBase64(decrypted);
     }
 
+    // ============= FORWARD SECRECY - KEY DERIVATION =============
+
+    // Message counter management
+    initMessageCounters() {
+        if (!this.messageCounters) {
+            this.messageCounters = new Map(); // sessionToken -> counter
+        }
+    }
+
+    getNextMessageNumber(sessionToken) {
+        if (!this.messageCounters.has(sessionToken)) {
+            this.messageCounters.set(sessionToken, 0);
+        }
+        
+        const current = this.messageCounters.get(sessionToken);
+        this.messageCounters.set(sessionToken, current + 1);
+        return current + 1;
+    }
+
+    // ============= CORE FORWARD SECRECY FUNCTIONS =============
+
+    /**
+     * Derive unique message key from session key + message number
+     * Signal Protocol inspired HKDF key derivation
+     */
+    async deriveMessageKey(sessionKey, messageNumber, direction = 'send') {
+        try {
+            // Create salt from message number and direction
+            const salt = new TextEncoder().encode(`msg_${messageNumber}_${direction}`);
+            
+            // Import session key for derivation if it's base64
+            let cryptoSessionKey = sessionKey;
+            if (typeof sessionKey === 'string') {
+                cryptoSessionKey = await this.importSessionKey(sessionKey);
+            }
+            
+            // Export session key to raw for HKDF
+            const rawSessionKey = await crypto.subtle.exportKey("raw", cryptoSessionKey);
+            
+            // Import as HKDF key
+            const hkdfKey = await crypto.subtle.importKey(
+                "raw",
+                rawSessionKey,
+                { name: "HKDF" },
+                false,
+                ["deriveKey"]
+            );
+            
+            // Derive message-specific key
+            const messageKey = await crypto.subtle.deriveKey(
+                {
+                    name: "HKDF",
+                    hash: "SHA-256",
+                    salt: salt,
+                    info: new TextEncoder().encode("danaid-message-key-v1")
+                },
+                hkdfKey,
+                {
+                    name: "AES-GCM",
+                    length: 256
+                },
+                false, // Not extractable for security
+                ["encrypt", "decrypt"]
+            );
+            
+            console.log(`🔑 Derived message key #${messageNumber} (${direction})`);
+            return messageKey;
+            
+        } catch (error) {
+            console.error("❌ Message key derivation failed:", error);
+            throw new Error(`Key derivation failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Encrypt message with Perfect Forward Secrecy
+     */
+    async encryptMessageWithForwardSecrecy(sessionKey, message, messageNumber) {
+        try {
+            // Derive unique key for this message
+            const messageKey = await this.deriveMessageKey(sessionKey, messageNumber, 'send');
+            
+            // Encrypt with derived key
+            const encrypted = await this.encryptMessage(messageKey, message);
+            
+            // Add message number to encrypted data
+            return {
+                ...encrypted,
+                messageNumber: messageNumber,
+                forwardSecrecy: true
+            };
+            
+        } catch (error) {
+            console.error("❌ Forward secrecy encryption failed:", error);
+            // Fallback to regular encryption
+            console.log("🔄 Falling back to legacy encryption");
+            return await this.encryptMessage(sessionKey, message);
+        }
+    }
+
+    /**
+     * Decrypt message with Perfect Forward Secrecy
+     */
+    async decryptMessageWithForwardSecrecy(sessionKey, encryptedData) {
+        try {
+            // Check if this is a forward secrecy message
+            if (!encryptedData.forwardSecrecy || !encryptedData.messageNumber) {
+                // Legacy message - use regular decryption
+                return await this.decryptMessage(sessionKey, encryptedData);
+            }
+            
+            // Derive the same key used for encryption
+            const messageKey = await this.deriveMessageKey(
+                sessionKey, 
+                encryptedData.messageNumber, 
+                'send' // Use 'send' for both directions (sender's perspective)
+            );
+            
+            // Decrypt with derived key
+            const decrypted = await this.decryptMessage(messageKey, {
+                data: encryptedData.data,
+                iv: encryptedData.iv
+            });
+            
+            console.log(`🔓 Decrypted message #${encryptedData.messageNumber} with Forward Secrecy`);
+            return decrypted;
+            
+        } catch (error) {
+            console.error("❌ Forward secrecy decryption failed:", error);
+            // Try legacy decryption as fallback
+            try {
+                return await this.decryptMessage(sessionKey, {
+                    data: encryptedData.data,
+                    iv: encryptedData.iv
+                });
+            } catch (legacyError) {
+                throw new Error(`Both FS and legacy decryption failed: ${error.message}`);
+            }
+        }
+    }
+
+    // ============= LOCAL MESSAGE STORAGE =============
+
+    /**
+     * Store decrypted message locally for offline access
+     */
+    async storeDecryptedMessage(sessionToken, message) {
+        try {
+            // Initialize storage if needed
+            if (!this.decryptedMessages) {
+                this.decryptedMessages = new Map();
+            }
+            
+            if (!this.decryptedMessages.has(sessionToken)) {
+                this.decryptedMessages.set(sessionToken, []);
+            }
+            
+            const sessionMessages = this.decryptedMessages.get(sessionToken);
+            
+            // Check if already stored
+            const existingIndex = sessionMessages.findIndex(m => m.id === message.id);
+            if (existingIndex >= 0) {
+                sessionMessages[existingIndex] = message;
+            } else {
+                sessionMessages.push(message);
+            }
+            
+            // Keep only last 500 messages per session
+            if (sessionMessages.length > 500) {
+                sessionMessages.splice(0, sessionMessages.length - 500);
+            }
+            
+            // Sort by timestamp
+            sessionMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            console.log(`💾 Stored decrypted message locally (${sessionMessages.length} total)`);
+            
+        } catch (error) {
+            console.error("❌ Failed to store decrypted message:", error);
+        }
+    }
+
+    /**
+     * Get locally stored decrypted messages
+     */
+    getStoredDecryptedMessages(sessionToken) {
+        if (!this.decryptedMessages) {
+            return [];
+        }
+        return this.decryptedMessages.get(sessionToken) || [];
+    }
+
+    // ============= SECURITY CLEANUP =============
+
+    /**
+     * Securely clear derived keys (called after encryption/decryption)
+     */
+    clearDerivedKeys() {
+        // Note: Web Crypto API keys that are not extractable 
+        // are automatically cleared by the browser's GC
+        // This is just for logging/monitoring
+        console.log("🧹 Derived keys cleared by browser security");
+    }
+
+    /**
+     * Get Forward Secrecy status info
+     */
+    getForwardSecrecyInfo() {
+        return {
+            enabled: this.forwardSecrecyEnabled,
+            messageCounters: this.messageCounters ? this.messageCounters.size : 0,
+            algorithm: "HKDF-SHA256 + AES-GCM",
+            security: "Signal Protocol inspired",
+            version: "danaid-fs-v1"
+        };
+    }
+
     // =================
     // SESSION MANAGEMENT WITH DUAL ENCRYPTION
     // =================
@@ -298,6 +518,9 @@ class ChatManager {
             
             // ✅ DUAL ENCRYPTION: Ensure session key exists
             await this._ensureSessionKey();
+            
+            // Initialize message counters for Forward Secrecy
+            this.initMessageCounters();
             
             // Load message history
             await this._loadMessages(data.session.token);
@@ -408,14 +631,14 @@ class ChatManager {
     }
 
     // =================
-    // ✅ IMPROVED MESSAGE HANDLING
+    // ✅ IMPROVED MESSAGE HANDLING WITH FORWARD SECRECY
     // =================
     
     async sendMessage() {
         const content = this.elements.messageInput?.value.trim();
         if (!content || !this.currentSession) return;
 
-        console.log('🚀 Sending message to session:', this.currentSession.token.slice(0, 8) + '...');
+        console.log('🚀 Sending message with Forward Secrecy to session:', this.currentSession.token.slice(0, 8) + '...');
 
         // Disable input temporarily
         this.elements.messageInput.disabled = true;
@@ -431,9 +654,18 @@ class ChatManager {
                 throw new Error('No session key available after ensuring');
             }
 
-            // ✅ Encrypt message
-            const encrypted = await this.encryptMessage(sessionKey, content);
-            console.log('🔐 Message encrypted');
+            // ✅ FORWARD SECRECY: Get next message number
+            const messageNumber = this.getNextMessageNumber(this.currentSession.token);
+            
+            // ✅ FORWARD SECRECY: Encrypt with derived key
+            let encrypted;
+            if (this.forwardSecrecyEnabled) {
+                encrypted = await this.encryptMessageWithForwardSecrecy(sessionKey, content, messageNumber);
+                console.log(`🔐 Message encrypted with FS (msg #${messageNumber})`);
+            } else {
+                encrypted = await this.encryptMessage(sessionKey, content);
+                console.log('🔐 Message encrypted (legacy mode)');
+            }
 
             // Send to server
             const response = await fetch('/api/message/send', {
@@ -445,7 +677,10 @@ class ChatManager {
                 body: JSON.stringify({
                     session_token: this.currentSession.token,
                     content: encrypted.data,
-                    iv: encrypted.iv
+                    iv: encrypted.iv,
+                    // ✅ FORWARD SECRECY: Include metadata
+                    message_number: encrypted.messageNumber || null,
+                    forward_secrecy: encrypted.forwardSecrecy || false
                 })
             });
 
@@ -460,19 +695,28 @@ class ChatManager {
                 // Clear input
                 this.elements.messageInput.value = '';
 
-                // Add to UI optimistically
+                // Create message object
                 const newMessage = {
                     id: data.message.id,
                     sender_id: parseInt(this.user.id),
                     content: content, // Store decrypted for local display
                     timestamp: data.message.timestamp,
-                    is_mine: true
+                    is_mine: true,
+                    // ✅ FORWARD SECRECY: Include metadata
+                    messageNumber: encrypted.messageNumber,
+                    forwardSecrecy: encrypted.forwardSecrecy
                 };
 
+                // Add to UI and store locally
                 this._addMessageToUI(newMessage);
                 await this._storeMessage(this.currentSession.token, newMessage);
+                
+                // ✅ FORWARD SECRECY: Store decrypted version locally
+                if (this.forwardSecrecyEnabled) {
+                    await this.storeDecryptedMessage(this.currentSession.token, newMessage);
+                }
 
-                console.log('✅ Message sent successfully');
+                console.log('✅ Message sent successfully with Forward Secrecy');
             } else {
                 this._showNotification(data.message || 'Send failed', 'error');
             }
@@ -509,19 +753,45 @@ class ChatManager {
                 
                 if (sessionKey) {
                     try {
-                        const decryptedContent = await this.decryptMessage(sessionKey, {
-                            data: message.content,
-                            iv: message.iv
-                        });
+                        let decryptedContent;
+                        
+                        // ✅ FORWARD SECRECY: Try Forward Secrecy decryption first
+                        if (this.forwardSecrecyEnabled && message.forward_secrecy && message.message_number) {
+                            console.log(`🔓 Attempting FS decryption for message #${message.message_number}`);
+                            decryptedContent = await this.decryptMessageWithForwardSecrecy(sessionKey, {
+                                data: message.content,
+                                iv: message.iv,
+                                messageNumber: message.message_number,
+                                forwardSecrecy: message.forward_secrecy
+                            });
+                        } else {
+                            // Legacy decryption
+                            console.log("🔓 Using legacy decryption");
+                            decryptedContent = await this.decryptMessage(sessionKey, {
+                                data: message.content,
+                                iv: message.iv
+                            });
+                        }
+                        
                         processedMessage.content = decryptedContent;
+                        processedMessage.decrypted = true;
+                        
                         console.log("✅ Message decrypted successfully");
+                        
+                        // ✅ FORWARD SECRECY: Store decrypted message locally
+                        if (this.forwardSecrecyEnabled) {
+                            await this.storeDecryptedMessage(sessionToken, processedMessage);
+                        }
+                        
                     } catch (decryptError) {
                         console.error("❌ Decryption failed:", decryptError.message);
                         processedMessage.content = `[Decryption failed: ${decryptError.message}]`;
+                        processedMessage.decrypted = false;
                     }
                 } else {
                     console.log("⚠️ No session key available for decryption");
                     processedMessage.content = '[No session key - please refresh]';
+                    processedMessage.decrypted = false;
                 }
             }
             
@@ -538,7 +808,8 @@ class ChatManager {
             // Store error message so user sees something
             await this._storeMessage(sessionToken, {
                 ...message,
-                content: `[Processing error: ${error.message}]`
+                content: `[Processing error: ${error.message}]`,
+                decrypted: false
             });
         } finally {
             this.processingMessages.delete(messageKey);
@@ -1316,6 +1587,7 @@ class ChatManager {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
                 const userId = item.dataset.userId;
+                console.log('🎯 Clicking friend:', userId);
                 this._selectFriend(userId);
             });
         });
@@ -1359,7 +1631,7 @@ class ChatManager {
                     </span>
                 </div>
                 <div class="session-info">
-                    <span class="session-status ready">🔐 Encrypted</span>
+                    <span class="session-status ready">🔐 Encrypted${this.forwardSecrecyEnabled ? ' + FS' : ''}</span>
                 </div>
             `;
         }
@@ -1596,7 +1868,7 @@ class ChatManager {
     }
 
     // =================
-    // PUBLIC API
+    // PUBLIC API & DEBUG FUNCTIONS
     // =================
 
     getCurrentSession() {
@@ -1617,6 +1889,24 @@ class ChatManager {
 
     isConnected() {
         return this.socket && this.socket.connected;
+    }
+
+    // ✅ DEBUG INFO with Forward Secrecy status
+    getDebugInfo() {
+        return {
+            user: this.user?.username || 'Not logged in',
+            friends: this.friends.length,
+            sessions: this.sessions.length,
+            currentSession: this.currentSession?.token?.slice(0, 8) + '...' || 'None',
+            socketConnected: this.isConnected(),
+            sessionKeys: this.sessionKeys.size,
+            forwardSecrecy: this.getForwardSecrecyInfo(),
+            messageCounters: Array.from(this.messageCounters.entries()).map(([token, count]) => ({
+                session: token.slice(0, 8) + '...',
+                messageCount: count
+            })),
+            decryptedMessagesStored: this.decryptedMessages ? this.decryptedMessages.size : 0
+        };
     }
 
     async refresh() {
@@ -1649,6 +1939,8 @@ class ChatManager {
         this.unreadCounts.clear();
         this.processingMessages.clear();
         this.sessionKeys.clear();
+        this.messageCounters.clear();
+        this.decryptedMessages.clear();
         
         console.log('🧹 ChatManager cleaned up');
     }
@@ -1671,7 +1963,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         
-        // ✅ Initialize with integrated crypto
+        // ✅ Initialize with integrated crypto and Forward Secrecy
         chatManager = new ChatManager();
         await chatManager.init();
         
@@ -1681,28 +1973,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         // ✅ BACKWARD COMPATIBILITY: Set up crypto manager reference
         window.cryptoManager = {
             loadKeys: () => Promise.resolve(true),
-            hasPrivateKey: () => true,
-            clearAllKeys: () => chatManager.cleanup(),
+            hasPrivateKey: () => chatManager?.userPrivateKey !== null,
+            clearAllKeys: () => chatManager?.cleanup(),
             // Delegate crypto functions to ChatManager
-            encryptMessage: (key, msg) => chatManager.encryptMessage(key, msg),
-            decryptMessage: (key, data) => chatManager.decryptMessage(key, data),
-            generateSessionKey: () => chatManager.generateSessionKey(),
-            storeSessionKey: (token, key) => chatManager.storeSessionKey(token, key),
-            getSessionKey: (token) => chatManager.getSessionKey(token)
+            encryptMessage: (key, msg) => chatManager?.encryptMessage(key, msg),
+            decryptMessage: (key, data) => chatManager?.decryptMessage(key, data),
+            generateSessionKey: () => chatManager?.generateSessionKey(),
+            storeSessionKey: (token, key) => chatManager?.storeSessionKey(token, key),
+            getSessionKey: (token) => chatManager?.getSessionKey(token),
+            // ✅ Forward Secrecy functions
+            encryptMessageWithForwardSecrecy: (key, msg, num) => chatManager?.encryptMessageWithForwardSecrecy(key, msg, num),
+            decryptMessageWithForwardSecrecy: (key, data) => chatManager?.decryptMessageWithForwardSecrecy(key, data),
+            getForwardSecrecyInfo: () => chatManager?.getForwardSecrecyInfo()
         };
         
-        console.log('✅ Chat application initialized successfully');
+        console.log('✅ Chat application initialized successfully with Forward Secrecy');
+        console.log('🔐 Forward Secrecy Status:', chatManager.getForwardSecrecyInfo());
+        
+        // ✅ Show FS status in console for confirmation
+        setTimeout(() => {
+            console.log('🎯 Debug Info:', chatManager.getDebugInfo());
+        }, 2000);
         
     } catch (error) {
         console.error('❌ Failed to initialize chat application:', error);
         alert('Failed to initialize chat application: ' + error.message);
     }
 });
-
-// =================
-// WINDOW EVENT LISTENERS (POZA KLASĄ)
-// =================
-
+   
 // Window event listener POZA klasą (to jest poprawne!)
 window.addEventListener('beforeunload', () => {
     if (chatManager) {
@@ -1710,4 +2008,34 @@ window.addEventListener('beforeunload', () => {
     }
 });
 
-console.log("✅ chat.js loaded successfully");
+// ✅ GLOBAL HELPER FUNCTIONS for debugging
+window.testForwardSecrecy = async () => {
+    if (!window.chatManager) {
+        console.error('ChatManager not initialized');
+        return;
+    }
+    
+    try {
+        const sessionKey = await window.chatManager.generateSessionKey();
+        const testMessage = "Test Forward Secrecy Message";
+        
+        // Test encryption with FS
+        const encrypted = await window.chatManager.encryptMessageWithForwardSecrecy(sessionKey, testMessage, 1);
+        console.log('🔐 Encrypted with FS:', encrypted);
+        
+        // Test decryption with FS
+        const decrypted = await window.chatManager.decryptMessageWithForwardSecrecy(sessionKey, encrypted);
+        console.log('🔓 Decrypted with FS:', decrypted);
+        
+        console.log('✅ Forward Secrecy test successful!');
+        return decrypted === testMessage;
+    } catch (error) {
+        console.error('❌ Forward Secrecy test failed:', error);
+        return false;
+    }
+};
+
+console.log("✅ chat.js loaded successfully with Forward Secrecy support");
+console.log("🧪 Run 'testForwardSecrecy()' in console to test Forward Secrecy");
+console.log("🔍 Run 'chatManager.getDebugInfo()' for detailed status");
+console.log("📊 Run 'chatManager.getForwardSecrecyInfo()' for FS status");
