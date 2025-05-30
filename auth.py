@@ -200,18 +200,6 @@ def register_page():
             return "Error loading registration page", 500
 
 
-@login_required
-def chat_page():
-    """
-    Strona czatu - tylko dla zalogowanych użytkowników
-    """
-    try:
-        print(f"📱 Serving chat page for user: {current_user.username}")
-        return render_template('chat.html')
-        
-    except Exception as e:
-        print(f"❌ Chat page error: {e}")
-        return redirect(url_for('auth.index'))
 
 # === AUTHENTICATION API ===
 
