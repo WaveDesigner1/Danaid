@@ -291,6 +291,30 @@ Ten projekt demonstruje:
 - 🔒 **Security engineers** - analiza protokołów bezpieczeństwa
 - 📚 **Edukatorzy** - materiał do kursów bezpieczeństwa
 
+## 🚧 Planowane Funkcje
+
+### 🔄 W rozwoju
+
+- [ ] **Czyszczenie czatu** - możliwość usuwania wszystkich wiadomości z konwersacji
+- [ ] **Usuwanie znajomych** - funkcja usuwania kontaktów z listy znajomych
+
+### 💡 Roadmap
+
+- [ ] **File encryption** - bezpieczne udostępnianie plików
+- [ ] **Group messaging** - czaty grupowe z E2EE
+- [ ] **Message reactions** - reakcje na wiadomości
+- [ ] **Key rotation** - automatyczna rotacja kluczy sesji
+- [ ] **Voice messages** - szyfrowane wiadomości głosowe
+- [ ] **Mobile app** - aplikacja na Android/iOS
+- [ ] **Desktop client** - natywna aplikacja desktop
+
+### 🎯 Future Vision
+
+- **Perfect Forward Secrecy** na poziomie wiadomości (Double Ratchet)
+- **Multi-device synchronization** z encrypted backup
+- **Post-quantum cryptography** - przygotowanie na quantum computing
+- **Federation support** - komunikacja z innymi serwerami
+
 ## 🤝 Contributing
 
 Zapraszamy do współpracy! Zobacz [CONTRIBUTING.md](CONTRIBUTING.md) dla szczegółów.
