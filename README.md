@@ -4,7 +4,7 @@
 
 Danaid Chat to edukacyjna aplikacja webowa demonstrująca implementację hybrid encryption (RSA + AES-GCM) z Perfect Forward Secrecy dla bezpiecznej komunikacji w czasie rzeczywistym.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-green.svg)
 ![Security](https://img.shields.io/badge/security-E2EE-red.svg)
 ![Status](https://img.shields.io/badge/status-production%20ready-brightgreen.svg)
