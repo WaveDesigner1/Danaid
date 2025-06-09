@@ -32,7 +32,6 @@ class ChatManager {
         this.messageCounters = new Map();
         this.decryptedMessages = new Map();
         this.forwardSecrecyEnabled = true;
-        this.typingTimeout = null; // ✅ DODANE z działającego kodu
     }
 
     async init() {
@@ -62,7 +61,7 @@ class ChatManager {
     }
 
     // =================
-    // ✅ INTEGRATED CRYPTO FUNCTIONS - ORYGINALNE Z DZIAŁAJĄCEGO KODU
+    // ✅ INTEGRATED CRYPTO FUNCTIONS
     // =================
     
     async _loadCryptoKeys() {
@@ -132,7 +131,7 @@ class ChatManager {
         return btoa(binary);
     }
     
-    // ✅ AES SESSION KEY MANAGEMENT - ORYGINALNE
+    // ✅ AES SESSION KEY MANAGEMENT
     async generateSessionKey() {
         const key = await crypto.subtle.generateKey(
             {
@@ -159,7 +158,7 @@ class ChatManager {
                 name: "AES-GCM",
                 length: 256
             },
-            true, // ✅ NAPRAWIONE: extractable = true z działającego kodu
+            false,
             ["encrypt", "decrypt"]
         );
         return key;
@@ -178,7 +177,7 @@ class ChatManager {
         this.sessionKeys.delete(sessionToken);
     }
     
-    // ✅ MESSAGE ENCRYPTION/DECRYPTION - ORYGINALNE
+    // ✅ MESSAGE ENCRYPTION/DECRYPTION
     async encryptMessage(sessionKey, message) {
         const encoder = new TextEncoder();
         const data = encoder.encode(message);
@@ -216,7 +215,7 @@ class ChatManager {
         return decoder.decode(decrypted);
     }
     
-    // ✅ SESSION KEY ENCRYPTION FOR MULTIPLE USERS - ORYGINALNE
+    // ✅ SESSION KEY ENCRYPTION FOR MULTIPLE USERS
     async encryptSessionKeyForMultipleUsers(recipients, sessionKey) {
         const sessionKeyBase64 = await this.exportSessionKey(sessionKey);
         const sessionKeyBuffer = this._base64ToArrayBuffer(sessionKeyBase64);
@@ -276,7 +275,7 @@ class ChatManager {
         return this._arrayBufferToBase64(decrypted);
     }
 
-// ============= FORWARD SECRECY - KEY DERIVATION (ORYGINALNE Z DZIAŁAJĄCEGO KODU) =============
+    // ============= FORWARD SECRECY - KEY DERIVATION =============
 
     // Message counter management
     initMessageCounters() {
@@ -493,7 +492,7 @@ class ChatManager {
         };
     }
 
-// =================
+    // =================
     // SESSION MANAGEMENT WITH DUAL ENCRYPTION
     // =================
     
@@ -835,85 +834,8 @@ class ChatManager {
         const base64Pattern = /^[A-Za-z0-9+/]+=*$/;
         return base64Pattern.test(message.content.replace(/\s/g, ''));
     }
-
-    // =================
-    // POLLING FALLBACK
-    // =================
     
-    _enablePollingFallback() {
-        if (this.pollingInterval) return;
-        
-        console.log("🔄 Enabling polling fallback");
-        
-        let lastMessageId = 0;
-        
-        this.pollingInterval = setInterval(async () => {
-            try {
-                const response = await fetch(`/api/polling/messages?last_id=${lastMessageId}`);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    if (data.messages && data.messages.length > 0) {
-                        for (const msgData of data.messages) {
-                            await this._handleNewMessage(msgData);
-                        }
-                        lastMessageId = data.last_id;
-                    }
-                }
-            } catch (error) {
-                console.error("❌ Polling error:", error);
-            }
-        }, 3000);
-    }
-
-    // =================
-    // MESSAGE LOADING AND CACHING
-    // =================
-    
-    async _loadMessages(sessionToken, limit = 50, offset = 0) {
-        try {
-            const response = await fetch(`/api/messages/${sessionToken}?limit=${limit}&offset=${offset}`);
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                // Clear existing messages for this session first
-                this.elements.messagesContainer.innerHTML = '';
-                
-                for (const message of data.messages) {
-                    await this._processMessage(sessionToken, message, 'history');
-                }
-                
-                console.log(`✅ Loaded ${data.messages.length} messages for session`);
-            }
-        } catch (error) {
-            console.error("❌ Failed to load messages:", error);
-            this._showNotification('Failed to load message history', 'error');
-        }
-    }
-
-    async _storeMessage(sessionToken, message) {
-        if (!this.messages.has(sessionToken)) {
-            this.messages.set(sessionToken, []);
-        }
-        
-        const sessionMessages = this.messages.get(sessionToken);
-        
-        const existingIndex = sessionMessages.findIndex(m => m.id === message.id);
-        if (existingIndex >= 0) {
-            sessionMessages[existingIndex] = message;
-        } else {
-            sessionMessages.push(message);
-            
-            if (sessionMessages.length > this.maxCachedMessages) {
-                sessionMessages.splice(0, sessionMessages.length - this.maxCachedMessages);
-            }
-        }
-        
-        sessionMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    }
-    
-    // ✅ DZIAŁAJĄCE FUNKCJE USUWANIA Z ORYGINALNEGO KODU
+    // ✅ NAPRAWIONE: deleteMessage WEWNĄTRZ KLASY
     async deleteMessage(messageId, messageElement) {
         if (!confirm('Czy na pewno chcesz usunąć tę wiadomość?')) {
             return;
@@ -1061,7 +983,7 @@ class ChatManager {
         }
     }
 
-// =================
+    // =================
     // ✅ IMPROVED SOCKET.IO HANDLING
     // =================
     
@@ -1240,6 +1162,146 @@ class ChatManager {
         }
     }
 
+    _showFriendRequestsModal() {
+        console.log("🔔 Showing friend requests modal");
+        
+        let modal = document.getElementById('friend-requests-modal');
+        
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'friend-requests-modal';
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Zaproszenia do znajomych</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="friend-requests-list">
+                            Ładowanie...
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            modal.querySelector('.modal-close').addEventListener('click', () => {
+                modal.style.display = 'none';
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+        
+        modal.style.display = 'block';
+        this._loadFriendRequestsInModal();
+    }
+
+    async _loadFriendRequestsInModal() {
+        try {
+            const response = await fetch('/api/friend_requests/pending');
+            const data = await response.json();
+            
+            const container = document.getElementById('friend-requests-list');
+            
+            if (data.status === 'success' && data.requests.length > 0) {
+                container.innerHTML = data.requests.map(req => `
+                    <div class="friend-request-item">
+                        <div class="request-info">
+                            <strong>${this._escapeHtml(req.username)}</strong>
+                            <small>ID: ${req.sender_id}</small>
+                        </div>
+                        <div class="request-actions">
+                            <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})">
+                                Akceptuj
+                            </button>
+                            <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})">
+                                Odrzuć
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<p style="text-align: center;">Brak zaproszeń</p>';
+            }
+            
+            const countElement = document.getElementById('friend-request-count');
+            if (countElement) {
+                countElement.textContent = data.requests ? data.requests.length : 0;
+            }
+            
+        } catch (error) {
+            console.error("❌ Failed to load friend requests:", error);
+            document.getElementById('friend-requests-list').innerHTML = 
+                '<p style="color: red;">Błąd ładowania zaproszeń</p>';
+        }
+    }
+
+    async acceptFriendRequest(requestId) {
+        try {
+            const response = await fetch(`/api/friend_requests/${requestId}/accept`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                this._showNotification('Zaproszenie zaakceptowane', 'success');
+                this._loadFriendRequestsInModal();
+                this._loadFriends();
+            }
+        } catch (error) {
+            this._showNotification('Błąd akceptacji zaproszenia', 'error');
+        }
+    }
+
+    async rejectFriendRequest(requestId) {
+        try {
+            const response = await fetch(`/api/friend_requests/${requestId}/reject`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                this._showNotification('Zaproszenie odrzucone', 'success');
+                this._loadFriendRequestsInModal();
+            }
+        } catch (error) {
+            this._showNotification('Błąd odrzucenia zaproszenia', 'error');
+        }
+    }
+
+    async _loadFriendRequests() {
+        try {
+            const response = await fetch('/api/friend_requests/pending');
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                this._renderFriendRequests(data.requests);
+                
+                const countElement = document.getElementById('friend-request-count');
+                if (countElement) {
+                    countElement.textContent = data.requests ? data.requests.length : 0;
+                    if (data.requests && data.requests.length > 0) {
+                        countElement.style.display = 'inline';
+                    } else {
+                        countElement.style.display = 'none';
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("❌ Failed to load friend requests:", error);
+        }
+    }
+
+    // =================
+    // SESSION MANAGEMENT
+    // =================
+    
     async _loadSessions() {
         try {
             const response = await fetch('/api/sessions/active');
@@ -1280,6 +1342,37 @@ class ChatManager {
         if (friendElement) {
             friendElement.classList.add('active');
         }
+    }
+
+    // =================
+    // POLLING FALLBACK
+    // =================
+    
+    _enablePollingFallback() {
+        if (this.pollingInterval) return;
+        
+        console.log("🔄 Enabling polling fallback");
+        
+        let lastMessageId = 0;
+        
+        this.pollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/polling/messages?last_id=${lastMessageId}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.messages && data.messages.length > 0) {
+                        for (const msgData of data.messages) {
+                            await this._handleNewMessage(msgData);
+                        }
+                        lastMessageId = data.last_id;
+                    }
+                }
+            } catch (error) {
+                console.error("❌ Polling error:", error);
+            }
+        }, 3000);
     }
 
     // =================
@@ -1372,7 +1465,7 @@ class ChatManager {
             this.lastActivity = Date.now();
         });
 
-        // Keyboard shortcuts z działającego kodu
+        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Ctrl+Delete = clear session
             if (e.ctrlKey && e.key === 'Delete' && !e.shiftKey) {
@@ -1428,7 +1521,7 @@ class ChatManager {
         }
     }
 
-    // ✅ IMPROVED: Better message display z działającego kodu
+    // ✅ IMPROVED: Better message display with proper colors
     _addMessageToUI(message) {
         if (!this.elements.messagesContainer) return;
         
@@ -1445,7 +1538,7 @@ class ChatManager {
             ${(message.is_mine || message.sender_id == this.user.id) ? '<div class="message-status">✓</div>' : ''}
         `;
         
-        // ✅ DZIAŁAJĄCE: Add message actions for own messages
+        // Add message actions for own messages
         if (message.is_mine || message.sender_id == this.user.id) {
             const actionsEl = document.createElement('div');
             actionsEl.className = 'message-actions';
@@ -1461,7 +1554,7 @@ class ChatManager {
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
     }
 
-    // ✅ IMPROVED: Friend list bez ID, clickable items z działającego kodu
+    // ✅ IMPROVED: Friend list without IDs, clickable items
     _renderFriendsList() {
         if (!this.elements.friendsList) return;
         
@@ -1500,87 +1593,48 @@ class ChatManager {
         });
     }
 
-    _updateChatUI() {
-        console.log('🔄 Updating chat UI, current session:', this.currentSession?.token?.slice(0,8));
+    _renderFriendRequests(requests) {
+        // This method is used by the modal system
+        const container = document.getElementById('friend-requests-list');
+        if (!container) return;
         
+        if (requests && requests.length > 0) {
+            container.innerHTML = requests.map(req => `
+                <div class="friend-request-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #555;">
+                    <div>
+                        <strong>${this._escapeHtml(req.username)}</strong>
+                        <small style="display: block; color: #999;">ID: ${req.sender_id}</small>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
+                            Akceptuj
+                        </button>
+                        <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
+                            Odrzuć
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = '<p style="text-align: center; color: #999;">Brak zaproszeń</p>';
+        }
+    }
+
+    _updateChatUI() {
         if (this.currentSession && this.elements.chatHeader) {
             const otherUser = this.currentSession.other_user;
-            
-            const partnerInfo = this.elements.chatHeader.querySelector('.chat-partner-info h2');
-            const statusElement = this.elements.chatHeader.querySelector('.chat-status');
-            
-            if (partnerInfo) {
-                partnerInfo.textContent = otherUser.username;
-            } else {
-                const existingH2 = this.elements.chatHeader.querySelector('h2');
-                if (existingH2) {
-                    existingH2.textContent = otherUser.username;
-                }
-            }
-            
-            if (statusElement) {
-                statusElement.textContent = otherUser.is_online ? 'Online' : 'Offline';
-                statusElement.className = `chat-status ${otherUser.is_online ? 'online' : 'offline'}`;
-            }
+            this.elements.chatHeader.innerHTML = `
+                <div class="chat-partner-info">
+                    <span class="partner-name">${this._escapeHtml(otherUser.username)}</span>
+                    <span class="partner-status ${otherUser.is_online ? 'online' : 'offline'}">
+                        ${otherUser.is_online ? '🟢 Online' : '⚪ Offline'}
+                    </span>
+                </div>
+                <div class="session-info">
+                    <span class="session-status ready">🔐 Encrypted${this.forwardSecrecyEnabled ? ' + FS' : ''}</span>
+                </div>
+            `;
         }
-
-        const chatActions = document.querySelector('.chat-actions');
-        
-        if (chatActions) {
-            if (this.currentSession) {
-                chatActions.classList.add('visible');
-                chatActions.style.display = 'flex';
-                chatActions.style.visibility = 'visible';
-                this._ensureChatActionListeners();
-            } else {
-                chatActions.classList.remove('visible');
-                chatActions.style.display = 'none';
-            }
-        } else if (this.currentSession) {
-            this._createChatActionsIfMissing();
-        }
-    }
-
-    _ensureChatActionListeners() {
-        const clearBtn = document.getElementById('clear-conversation-btn');
-        const deleteBtn = document.getElementById('delete-conversation-btn');
-        
-        if (clearBtn && !clearBtn.dataset.listenerAttached) {
-            clearBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.clearSessionMessages();
-            });
-            clearBtn.dataset.listenerAttached = 'true';
-        }
-
-        if (deleteBtn && !deleteBtn.dataset.listenerAttached) {
-            deleteBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.deleteSession();
-            });
-            deleteBtn.dataset.listenerAttached = 'true';
-        }
-    }
-
-    _createChatActionsIfMissing() {
-        const chatHeader = this.elements.chatHeader;
-        if (!chatHeader || document.querySelector('.chat-actions')) return;
-        
-        const chatActions = document.createElement('div');
-        chatActions.className = 'chat-actions visible';
-        chatActions.style.cssText = 'display: flex; gap: 12px; align-items: center; margin-left: auto;';
-        
-        chatActions.innerHTML = `
-            <button id="clear-conversation-btn" class="btn btn-secondary" title="Wyczyść konwersację (Ctrl+Delete)">
-                <i class="fas fa-broom"></i> <span>Wyczyść</span>
-            </button>
-            <button id="delete-conversation-btn" class="btn btn-danger" title="Usuń całą konwersację (Ctrl+Shift+Delete)">
-                <i class="fas fa-trash"></i> <span>Usuń</span>
-            </button>
-        `;
-        
-        chatHeader.appendChild(chatActions);
-        this._ensureChatActionListeners();
     }
 
     _showNotification(message, type = 'info', duration = 5000) {
@@ -1719,33 +1773,6 @@ class ChatManager {
         }
     }
 
-    _enablePollingFallback() {
-        if (this.pollingInterval) return;
-        
-        console.log("🔄 Enabling polling fallback");
-        
-        let lastMessageId = 0;
-        
-        this.pollingInterval = setInterval(async () => {
-            try {
-                const response = await fetch(`/api/polling/messages?last_id=${lastMessageId}`);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    if (data.messages && data.messages.length > 0) {
-                        for (const msgData of data.messages) {
-                            await this._handleNewMessage(msgData);
-                        }
-                        lastMessageId = data.last_id;
-                    }
-                }
-            } catch (error) {
-                console.error("❌ Polling error:", error);
-            }
-        }, 3000);
-    }
-
     _startPeriodicTasks() {
         setInterval(() => {
             this.lastActivity = Date.now();
@@ -1834,169 +1861,6 @@ class ChatManager {
         });
     }
 
-    // ✅ FRIEND REQUESTS z działającego kodu
-    _showFriendRequestsModal() {
-        console.log("🔔 Showing friend requests modal");
-        
-        let modal = document.getElementById('friend-requests-modal');
-        
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'friend-requests-modal';
-            modal.className = 'modal';
-            modal.innerHTML = `
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3>Zaproszenia do znajomych</h3>
-                        <button class="modal-close">&times;</button>
-                    </div>
-                    <div class="modal-body">
-                        <div id="friend-requests-list">
-                            Ładowanie...
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            document.body.appendChild(modal);
-            
-            modal.querySelector('.modal-close').addEventListener('click', () => {
-                modal.style.display = 'none';
-            });
-            
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    modal.style.display = 'none';
-                }
-            });
-        }
-        
-        modal.style.display = 'block';
-        this._loadFriendRequestsInModal();
-    }
-
-    async _loadFriendRequestsInModal() {
-        try {
-            const response = await fetch('/api/friend_requests/pending');
-            const data = await response.json();
-            
-            const container = document.getElementById('friend-requests-list');
-            
-            if (data.status === 'success' && data.requests.length > 0) {
-                container.innerHTML = data.requests.map(req => `
-                    <div class="friend-request-item">
-                        <div class="request-info">
-                            <strong>${this._escapeHtml(req.username)}</strong>
-                            <small>ID: ${req.sender_id}</small>
-                        </div>
-                        <div class="request-actions">
-                            <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})">
-                                Akceptuj
-                            </button>
-                            <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})">
-                                Odrzuć
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                container.innerHTML = '<p style="text-align: center;">Brak zaproszeń</p>';
-            }
-            
-            const countElement = document.getElementById('friend-request-count');
-            if (countElement) {
-                countElement.textContent = data.requests ? data.requests.length : 0;
-            }
-            
-        } catch (error) {
-            console.error("❌ Failed to load friend requests:", error);
-            document.getElementById('friend-requests-list').innerHTML = 
-                '<p style="color: red;">Błąd ładowania zaproszeń</p>';
-        }
-    }
-
-    async acceptFriendRequest(requestId) {
-        try {
-            const response = await fetch(`/api/friend_requests/${requestId}/accept`, {
-                method: 'POST'
-            });
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this._showNotification('Zaproszenie zaakceptowane', 'success');
-                this._loadFriendRequestsInModal();
-                this._loadFriends();
-            }
-        } catch (error) {
-            this._showNotification('Błąd akceptacji zaproszenia', 'error');
-        }
-    }
-
-    async rejectFriendRequest(requestId) {
-        try {
-            const response = await fetch(`/api/friend_requests/${requestId}/reject`, {
-                method: 'POST'
-            });
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this._showNotification('Zaproszenie odrzucone', 'success');
-                this._loadFriendRequestsInModal();
-            }
-        } catch (error) {
-            this._showNotification('Błąd odrzucenia zaproszenia', 'error');
-        }
-    }
-
-    async _loadFriendRequests() {
-        try {
-            const response = await fetch('/api/friend_requests/pending');
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this._renderFriendRequests(data.requests);
-                
-                const countElement = document.getElementById('friend-request-count');
-                if (countElement) {
-                    countElement.textContent = data.requests ? data.requests.length : 0;
-                    if (data.requests && data.requests.length > 0) {
-                        countElement.style.display = 'inline';
-                    } else {
-                        countElement.style.display = 'none';
-                    }
-                }
-            }
-        } catch (error) {
-            console.error("❌ Failed to load friend requests:", error);
-        }
-    }
-
-    _renderFriendRequests(requests) {
-        const container = document.getElementById('friend-requests-list');
-        if (!container) return;
-        
-        if (requests && requests.length > 0) {
-            container.innerHTML = requests.map(req => `
-                <div class="friend-request-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #555;">
-                    <div>
-                        <strong>${this._escapeHtml(req.username)}</strong>
-                        <small style="display: block; color: #999;">ID: ${req.sender_id}</small>
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
-                            Akceptuj
-                        </button>
-                        <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
-                            Odrzuć
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            container.innerHTML = '<p style="text-align: center; color: #999;">Brak zaproszeń</p>';
-        }
-    }
-
     _escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -2004,7 +1868,7 @@ class ChatManager {
     }
 
     // =================
-    // PUBLIC API & DEBUG FUNCTIONS z działającego kodu
+    // PUBLIC API & DEBUG FUNCTIONS
     // =================
 
     getCurrentSession() {
@@ -2084,7 +1948,7 @@ class ChatManager {
 }  // ✅ KONIEC KLASY ChatManager
 
 // =================
-// GLOBAL INITIALIZATION z działającego kodu
+// GLOBAL INITIALIZATION
 // =================
 
 // Global initialization
@@ -2144,7 +2008,7 @@ window.addEventListener('beforeunload', () => {
     }
 });
 
-// ✅ GLOBAL HELPER FUNCTIONS for debugging z działającego kodu
+// ✅ GLOBAL HELPER FUNCTIONS for debugging
 window.testForwardSecrecy = async () => {
     if (!window.chatManager) {
         console.error('ChatManager not initialized');
