@@ -818,6 +818,12 @@ class ChatManager {
         }
     }
 
+    _updateUnreadCount(senderId) {
+        const current = this.unreadCounts.get(senderId) || 0;
+        this.unreadCounts.set(senderId, current + 1);
+        this._renderFriendsList(); // Odświeża listę z licznikami
+    }
+
     _shouldDecryptMessage(message) {
         // If no IV, definitely not encrypted
         if (!message.iv) return false;
@@ -1042,8 +1048,11 @@ class ChatManager {
             await this._processMessage(data.session_token, data.message, 'realtime');
             
             // Update unread count if not current session
-            if (data.session_token !== this.currentSession?.token) {
-                this._updateUnreadCount(data.session_token);
+            if (sessionToken === this.currentSession?.token) {
+                this._addMessageToUI(processedMessage);
+            } else {
+                // Aktualizuj licznik dla znajomego
+                this._updateUnreadCount(data.message.sender_id); 
             }
             
             this._playNotificationSound();
@@ -1299,12 +1308,18 @@ class ChatManager {
         const friend = this.friends.find(f => f.user_id === userId);
         if (friend) {
             this.currentChatPartner = friend;
-            
+        
+            // ✅ Wyczyść licznik nieprzeczytanych
+            this.unreadCounts.delete(userId);
+        
             // Mark as active in UI
             this._markFriendAsActive(userId);
-            
+        
             // Initialize session
             await this._initSession(userId);
+        
+            // ✅ Odśwież listę (usunie badge)
+        this._renderFriendsList();
         }
     }
 
@@ -1539,7 +1554,7 @@ class ChatManager {
                         </div>
                     </div>
                     ${this.unreadCounts.get(friend.user_id) ? 
-                        `<span class="unread-count">${this.unreadCounts.get(friend.user_id)}</span>` : 
+                        `<span class="unread-badge">${this.unreadCounts.get(friend.user_id)}</span>` : 
                         ''
                     }
                     <!-- ✅ DODANE: Przyciski akcji znajomego -->
