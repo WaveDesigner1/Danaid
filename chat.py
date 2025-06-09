@@ -685,3 +685,12 @@ def emit_friend_request_notification(recipient_id, notification_data):
     except Exception as e:
         logger.error(f"Socket.IO friend request notification failed: {e}")
     return False
+
+@chat_bp.route('/api/session/<session_token>/clear', methods=['DELETE'])
+@login_required
+def clear_session_messages(session_token):
+    # ... (kod z poprzedniego artifact)
+
+@chat_bp.route('/api/session/<session_token>/delete', methods=['DELETE'])  
+@login_required
+def delete_session(session_token):
