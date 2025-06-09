@@ -27,8 +27,8 @@ class ChatManager {
         this.messageLoadBatch = 50;
         this.maxCachedMessages = 1000;
         
-        // ✅ INTEGRATED CRYPTO STORAGE
-        this.sessionKeys = new Map(); // sessionToken -> AES key
+        // Integrated crypto storage
+        this.sessionKeys = new Map();
         this.userPrivateKey = null;
         this.userPublicKey = null;
         this.messageCounters = new Map();
@@ -43,7 +43,6 @@ class ChatManager {
             this.user = await this._getCurrentUser();
             console.log("✅ User loaded:", this.user.username);
             
-            // ✅ LOAD CRYPTO KEYS
             await this._loadCryptoKeys();
             
             this._initElements();
@@ -63,12 +62,11 @@ class ChatManager {
     }
 
     // =================
-    // ✅ INTEGRATED CRYPTO FUNCTIONS
+    // INTEGRATED CRYPTO FUNCTIONS
     // =================
     
     async _loadCryptoKeys() {
         try {
-            // Load private key from sessionStorage (set during login)
             const privateKeyPEM = sessionStorage.getItem('user_private_key_pem');
             if (!privateKeyPEM) {
                 throw new Error('No private key found - please login again');
@@ -76,7 +74,6 @@ class ChatManager {
             
             console.log("🔑 Loading crypto keys...");
             
-            // Import private key for signing (we use the same key for encryption)
             this.userPrivateKey = await this._importPrivateKey(privateKeyPEM);
             
             console.log("✅ Crypto keys loaded successfully");
@@ -90,7 +87,6 @@ class ChatManager {
         try {
             const binaryData = this._pemToBinary(pemData);
             
-            // Import for both signing and decryption
             const privateKey = await crypto.subtle.importKey(
                 "pkcs8",
                 binaryData,
@@ -133,7 +129,7 @@ class ChatManager {
         return btoa(binary);
     }
     
-    // ✅ AES SESSION KEY MANAGEMENT
+    // AES SESSION KEY MANAGEMENT
     async generateSessionKey() {
         const key = await crypto.subtle.generateKey(
             {
@@ -179,7 +175,7 @@ class ChatManager {
         this.sessionKeys.delete(sessionToken);
     }
     
-    // ✅ MESSAGE ENCRYPTION/DECRYPTION
+    // MESSAGE ENCRYPTION/DECRYPTION
     async encryptMessage(sessionKey, message) {
         const encoder = new TextEncoder();
         const data = encoder.encode(message);
@@ -217,7 +213,7 @@ class ChatManager {
         return decoder.decode(decrypted);
     }
     
-    // ✅ SESSION KEY ENCRYPTION FOR MULTIPLE USERS
+    // SESSION KEY ENCRYPTION FOR MULTIPLE USERS
     async encryptSessionKeyForMultipleUsers(recipients, sessionKey) {
         const sessionKeyBase64 = await this.exportSessionKey(sessionKey);
         const sessionKeyBuffer = this._base64ToArrayBuffer(sessionKeyBase64);
@@ -225,10 +221,8 @@ class ChatManager {
         
         for (const [userId, publicKeyPEM] of Object.entries(recipients)) {
             try {
-                // Import public key
                 const publicKey = await this._importPublicKey(publicKeyPEM);
                 
-                // Encrypt session key
                 const encrypted = await crypto.subtle.encrypt(
                     {
                         name: "RSA-OAEP"
@@ -277,12 +271,12 @@ class ChatManager {
         return this._arrayBufferToBase64(decrypted);
     }
 
-// ============= FORWARD SECRECY - KEY DERIVATION =============
+// CZĘŚĆ 2/4: Forward Secrecy + Session Management
 
-    // Message counter management
+    // FORWARD SECRECY - KEY DERIVATION
     initMessageCounters() {
         if (!this.messageCounters) {
-            this.messageCounters = new Map(); // sessionToken -> counter
+            this.messageCounters = new Map();
         }
     }
 
@@ -296,27 +290,17 @@ class ChatManager {
         return current + 1;
     }
 
-    // ============= CORE FORWARD SECRECY FUNCTIONS =============
-
-    /**
-     * Derive unique message key from session key + message number
-     * Signal Protocol inspired HKDF key derivation
-     */
     async deriveMessageKey(sessionKey, messageNumber, direction = 'send') {
         try {
-            // Create salt from message number and direction
             const salt = new TextEncoder().encode(`msg_${messageNumber}_${direction}`);
             
-            // Import session key for derivation if it's base64
             let cryptoSessionKey = sessionKey;
             if (typeof sessionKey === 'string') {
                 cryptoSessionKey = await this.importSessionKey(sessionKey);
             }
             
-            // Export session key to raw for HKDF
             const rawSessionKey = await crypto.subtle.exportKey("raw", cryptoSessionKey);
             
-            // Import as HKDF key
             const hkdfKey = await crypto.subtle.importKey(
                 "raw",
                 rawSessionKey,
@@ -325,7 +309,6 @@ class ChatManager {
                 ["deriveKey"]
             );
             
-            // Derive message-specific key
             const messageKey = await crypto.subtle.deriveKey(
                 {
                     name: "HKDF",
@@ -338,7 +321,7 @@ class ChatManager {
                     name: "AES-GCM",
                     length: 256
                 },
-                false, // Not extractable for security
+                false,
                 ["encrypt", "decrypt"]
             );
             
@@ -351,18 +334,11 @@ class ChatManager {
         }
     }
 
-    /**
-     * Encrypt message with Perfect Forward Secrecy
-     */
     async encryptMessageWithForwardSecrecy(sessionKey, message, messageNumber) {
         try {
-            // Derive unique key for this message
             const messageKey = await this.deriveMessageKey(sessionKey, messageNumber, 'send');
-            
-            // Encrypt with derived key
             const encrypted = await this.encryptMessage(messageKey, message);
             
-            // Add message number to encrypted data
             return {
                 ...encrypted,
                 messageNumber: messageNumber,
@@ -371,31 +347,23 @@ class ChatManager {
             
         } catch (error) {
             console.error("❌ Forward secrecy encryption failed:", error);
-            // Fallback to regular encryption
             console.log("🔄 Falling back to legacy encryption");
             return await this.encryptMessage(sessionKey, message);
         }
     }
 
-    /**
-     * Decrypt message with Perfect Forward Secrecy
-     */
     async decryptMessageWithForwardSecrecy(sessionKey, encryptedData) {
         try {
-            // Check if this is a forward secrecy message
             if (!encryptedData.forwardSecrecy || !encryptedData.messageNumber) {
-                // Legacy message - use regular decryption
                 return await this.decryptMessage(sessionKey, encryptedData);
             }
             
-            // Derive the same key used for encryption
             const messageKey = await this.deriveMessageKey(
                 sessionKey, 
                 encryptedData.messageNumber, 
-                'send' // Use 'send' for both directions (sender's perspective)
+                'send'
             );
             
-            // Decrypt with derived key
             const decrypted = await this.decryptMessage(messageKey, {
                 data: encryptedData.data,
                 iv: encryptedData.iv
@@ -406,7 +374,6 @@ class ChatManager {
             
         } catch (error) {
             console.error("❌ Forward secrecy decryption failed:", error);
-            // Try legacy decryption as fallback
             try {
                 return await this.decryptMessage(sessionKey, {
                     data: encryptedData.data,
@@ -418,14 +385,9 @@ class ChatManager {
         }
     }
 
-    // ============= LOCAL MESSAGE STORAGE =============
-
-    /**
-     * Store decrypted message locally for offline access
-     */
+    // LOCAL MESSAGE STORAGE
     async storeDecryptedMessage(sessionToken, message) {
         try {
-            // Initialize storage if needed
             if (!this.decryptedMessages) {
                 this.decryptedMessages = new Map();
             }
@@ -436,7 +398,6 @@ class ChatManager {
             
             const sessionMessages = this.decryptedMessages.get(sessionToken);
             
-            // Check if already stored
             const existingIndex = sessionMessages.findIndex(m => m.id === message.id);
             if (existingIndex >= 0) {
                 sessionMessages[existingIndex] = message;
@@ -444,12 +405,10 @@ class ChatManager {
                 sessionMessages.push(message);
             }
             
-            // Keep only last 500 messages per session
             if (sessionMessages.length > 500) {
                 sessionMessages.splice(0, sessionMessages.length - 500);
             }
             
-            // Sort by timestamp
             sessionMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
             console.log(`💾 Stored decrypted message locally (${sessionMessages.length} total)`);
@@ -459,9 +418,6 @@ class ChatManager {
         }
     }
 
-    /**
-     * Get locally stored decrypted messages
-     */
     getStoredDecryptedMessages(sessionToken) {
         if (!this.decryptedMessages) {
             return [];
@@ -469,21 +425,10 @@ class ChatManager {
         return this.decryptedMessages.get(sessionToken) || [];
     }
 
-    // ============= SECURITY CLEANUP =============
-
-    /**
-     * Securely clear derived keys (called after encryption/decryption)
-     */
     clearDerivedKeys() {
-        // Note: Web Crypto API keys that are not extractable 
-        // are automatically cleared by the browser's GC
-        // This is just for logging/monitoring
         console.log("🧹 Derived keys cleared by browser security");
     }
 
-    /**
-     * Get Forward Secrecy status info
-     */
     getForwardSecrecyInfo() {
         return {
             enabled: this.forwardSecrecyEnabled,
@@ -494,15 +439,11 @@ class ChatManager {
         };
     }
 
-    // =================
     // SESSION MANAGEMENT WITH DUAL ENCRYPTION
-    // =================
-    
     async _initSession(recipientId) {
         console.log("🚀 Initializing session with:", recipientId);
         
         try {
-            // Request session from server
             const response = await fetch('/api/session/init', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -518,16 +459,9 @@ class ChatManager {
             
             console.log("✅ Session initialized:", data.session.token.slice(0, 8) + "...");
             
-            // ✅ DUAL ENCRYPTION: Ensure session key exists
             await this._ensureSessionKey();
-            
-            // Initialize message counters for Forward Secrecy
             this.initMessageCounters();
-            
-            // Load message history
             await this._loadMessages(data.session.token);
-            
-            // Update UI
             this._updateChatUI();
             
         } catch (error) {
@@ -545,13 +479,11 @@ class ChatManager {
         const sessionToken = this.currentSession.token;
         console.log("🔑 Ensuring session key exists for:", sessionToken.slice(0, 8) + "...");
 
-        // Check if we already have session key locally
         if (await this._getSessionKeyOptimized(sessionToken)) {
             console.log("✅ Session key already exists locally");
             return;
         }
 
-        // Check server for existing keys
         try {
             const response = await fetch(`/api/session/${sessionToken}/key`);
             if (response.ok) {
@@ -559,7 +491,6 @@ class ChatManager {
                 if (data.encrypted_key) {
                     console.log("🔍 Found existing session key on server, decrypting...");
                     
-                    // Decrypt existing key with our private key
                     const decryptedKey = await this.decryptSessionKey(data.encrypted_key);
                     this.storeSessionKey(sessionToken, decryptedKey);
                     console.log("✅ Existing session key decrypted and stored");
@@ -570,22 +501,18 @@ class ChatManager {
             console.log("⚠️ No existing key or decryption failed, will generate new");
         }
 
-        // ✅ DUAL ENCRYPTION: Generate new session key for both users
         console.log("🔧 Generating new session key with dual encryption...");
         await this._generateDualEncryptedSessionKey(sessionToken);
     }
 
     async _generateDualEncryptedSessionKey(sessionToken) {
         try {
-            // 1. Generate AES session key
             const sessionKey = await this.generateSessionKey();
             const sessionKeyBase64 = await this.exportSessionKey(sessionKey);
             
-            // 2. Store locally for immediate use
             this.storeSessionKey(sessionToken, sessionKeyBase64);
             console.log("💾 Session key stored locally");
             
-            // 3. Get public keys for both participants
             const currentUserId = this.user.id;
             const otherUserId = this.currentSession.other_user.id;
             
@@ -595,7 +522,6 @@ class ChatManager {
             
             console.log(`🔑 Got public keys for users: ${currentUserId}, ${otherUserId}`);
             
-            // 4. Encrypt session key for both users
             const encryptedKeys = await this.encryptSessionKeyForMultipleUsers(
                 recipients,
                 sessionKey
@@ -603,7 +529,6 @@ class ChatManager {
             
             console.log("🔐 Session key encrypted for users:", Object.keys(encryptedKeys));
             
-            // 5. Send to server
             const response = await fetch(`/api/session/${sessionToken}/exchange_key`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -621,45 +546,37 @@ class ChatManager {
             console.log("✅ Dual-encrypted session key sent to server");
             console.log(`   Generator: ${result.key_generator}`);
             
-            // Clear API cache for this session key
             this.apiCache.delete(`session_key_${sessionToken}`);
             
         } catch (error) {
-            // Cleanup on error
             this.removeSessionKey(sessionToken);
             console.error("❌ Dual encrypted key generation failed:", error);
             throw new Error(`Session key setup failed: ${error.message}`);
         }
     }
 
-// =================
-    // ✅ IMPROVED MESSAGE HANDLING WITH FORWARD SECRECY
-    // =================
-    
+// CZĘŚĆ 3/4: Message Handling + Socket.IO
+
+    // IMPROVED MESSAGE HANDLING WITH FORWARD SECRECY
     async sendMessage() {
         const content = this.elements.messageInput?.value.trim();
         if (!content || !this.currentSession) return;
 
         console.log('🚀 Sending message with Forward Secrecy to session:', this.currentSession.token.slice(0, 8) + '...');
 
-        // Disable input temporarily
         this.elements.messageInput.disabled = true;
         this.elements.sendButton.disabled = true;
 
         try {
-            // Ensure session key exists (with dual encryption)
             await this._ensureSessionKey();
 
-            // ✅ Get session key for encryption
             const sessionKey = await this._getSessionKeyOptimized(this.currentSession.token);
             if (!sessionKey) {
                 throw new Error('No session key available after ensuring');
             }
 
-            // ✅ FORWARD SECRECY: Get next message number
             const messageNumber = this.getNextMessageNumber(this.currentSession.token);
             
-            // ✅ FORWARD SECRECY: Encrypt with derived key
             let encrypted;
             if (this.forwardSecrecyEnabled) {
                 encrypted = await this.encryptMessageWithForwardSecrecy(sessionKey, content, messageNumber);
@@ -669,7 +586,6 @@ class ChatManager {
                 console.log('🔐 Message encrypted (legacy mode)');
             }
 
-            // Send to server
             const response = await fetch('/api/message/send', {
                 method: 'POST',
                 headers: { 
@@ -680,7 +596,6 @@ class ChatManager {
                     session_token: this.currentSession.token,
                     content: encrypted.data,
                     iv: encrypted.iv,
-                    // ✅ FORWARD SECRECY: Include metadata
                     message_number: encrypted.messageNumber || null,
                     forward_secrecy: encrypted.forwardSecrecy || false
                 })
@@ -694,26 +609,21 @@ class ChatManager {
             const data = await response.json();
 
             if (data.status === 'success') {
-                // Clear input
                 this.elements.messageInput.value = '';
 
-                // Create message object
                 const newMessage = {
                     id: data.message.id,
                     sender_id: parseInt(this.user.id),
-                    content: content, // Store decrypted for local display
+                    content: content,
                     timestamp: data.message.timestamp,
                     is_mine: true,
-                    // ✅ FORWARD SECRECY: Include metadata
                     messageNumber: encrypted.messageNumber,
                     forwardSecrecy: encrypted.forwardSecrecy
                 };
 
-                // Add to UI and store locally
                 this._addMessageToUI(newMessage);
                 await this._storeMessage(this.currentSession.token, newMessage);
                 
-                // ✅ FORWARD SECRECY: Store decrypted version locally
                 if (this.forwardSecrecyEnabled) {
                     await this.storeDecryptedMessage(this.currentSession.token, newMessage);
                 }
@@ -727,7 +637,6 @@ class ChatManager {
             console.error("❌ Send message error:", error);
             this._showNotification('Failed to send message: ' + error.message, 'error');
         } finally {
-            // Re-enable input
             this.elements.messageInput.disabled = false;
             this.elements.sendButton.disabled = false;
             this.elements.messageInput.focus();
@@ -747,7 +656,6 @@ class ChatManager {
         try {
             let processedMessage = { ...message };
             
-            // ✅ IMPROVED: Better encryption detection
             const needsDecryption = this._shouldDecryptMessage(message);
             
             if (needsDecryption) {
@@ -757,7 +665,6 @@ class ChatManager {
                     try {
                         let decryptedContent;
                         
-                        // ✅ FORWARD SECRECY: Try Forward Secrecy decryption first
                         if (this.forwardSecrecyEnabled && message.forward_secrecy && message.message_number) {
                             console.log(`🔓 Attempting FS decryption for message #${message.message_number}`);
                             decryptedContent = await this.decryptMessageWithForwardSecrecy(sessionKey, {
@@ -767,7 +674,6 @@ class ChatManager {
                                 forwardSecrecy: message.forward_secrecy
                             });
                         } else {
-                            // Legacy decryption
                             console.log("🔓 Using legacy decryption");
                             decryptedContent = await this.decryptMessage(sessionKey, {
                                 data: message.content,
@@ -780,7 +686,6 @@ class ChatManager {
                         
                         console.log("✅ Message decrypted successfully");
                         
-                        // ✅ FORWARD SECRECY: Store decrypted message locally
                         if (this.forwardSecrecyEnabled) {
                             await this.storeDecryptedMessage(sessionToken, processedMessage);
                         }
@@ -797,14 +702,17 @@ class ChatManager {
                 }
             }
             
-            // Store processed message
             await this._storeMessage(sessionToken, processedMessage);
 
-            // ✅ ZAWSZE dodaj do UI (usunięte ograniczenie do current session)
-            this._addMessageToUI(processedMessage);
+            if (this.currentSession && this.currentSession.token === sessionToken) {
+                this._addMessageToUI(processedMessage);
+                console.log("✅ Message added to UI (active session)");
+            } else {
+                console.log("📦 Message processed but not in active session");
+            }
+            
         } catch (error) {
             console.error("❌ Message processing error:", error);
-            // Store error message so user sees something
             await this._storeMessage(sessionToken, {
                 ...message,
                 content: `[Processing error: ${error.message}]`,
@@ -816,136 +724,21 @@ class ChatManager {
     }
 
     _shouldDecryptMessage(message) {
-        // If no IV, definitely not encrypted
         if (!message.iv) return false;
         
-        // Use explicit flag if available
         if (message.hasOwnProperty('is_encrypted')) {
             return message.is_encrypted;
         }
         
-        // If content is very short and looks like plain text, probably not encrypted
         if (message.content.length < 20 && /^[a-zA-Z0-9\s\.\,\!\?]+$/.test(message.content)) {
             return false;
         }
         
-        // If we have IV and content looks like base64, probably encrypted
         const base64Pattern = /^[A-Za-z0-9+/]+=*$/;
         return base64Pattern.test(message.content.replace(/\s/g, ''));
     }
-    
-    // ✅ SESSION CLEANUP METHODS - FIXED (usunięte duplikaty)
-    async clearSessionMessages() {
-        if (!this.currentSession) {
-            this._showNotification('Brak aktywnej sesji', 'warning');
-            return;
-        }
 
-        if (!confirm('Czy na pewno chcesz wyczyścić wszystkie wiadomości?')) {
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/session/${this.currentSession.token}/clear`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            const data = await response.json();
-            if (response.ok && data.status === 'success') {
-                // Clear UI
-                if (this.elements.messagesContainer) {
-                    this.elements.messagesContainer.innerHTML = '';
-                }
-                
-                // Clear local cache
-                this.messages.delete(this.currentSession.token);
-                
-                this._showNotification(`Wyczyszczono ${data.messages_deleted} wiadomości`, 'success');
-                console.log(`✅ Session ${this.currentSession.token.slice(0, 8)}... cleared`);
-            } else {
-                throw new Error(data.error || 'Failed to clear session');
-            }
-        } catch (error) {
-            console.error('❌ Clear session error:', error);
-            this._showNotification('Nie udało się wyczyścić wiadomości: ' + error.message, 'error');
-        }
-    }
-
-    async deleteSession() {
-        if (!this.currentSession) {
-            this._showNotification('Brak aktywnej sesji', 'warning');
-            return;
-        }
-
-        if (!confirm('Czy na pewno chcesz usunąć całą rozmowę? Ta operacja jest nieodwracalna.')) {
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/session/${this.currentSession.token}/delete`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            const data = await response.json();
-            if (response.ok && data.status === 'success') {
-                // Clear UI
-                if (this.elements.messagesContainer) {
-                    this.elements.messagesContainer.innerHTML = '<div class="welcome-message">Wybierz znajomego, aby rozpocząć rozmowę</div>';
-                }
-                
-                // Clear session data
-                this.messages.delete(this.currentSession.token);
-                this.removeSessionKey(this.currentSession.token);
-                this.currentSession = null;
-                this.currentChatPartner = null;
-                
-                // Update UI
-                this._updateChatUI();
-                await this._loadSessions();
-                
-                this._showNotification(`Usunięto rozmowę (${data.messages_deleted} wiadomości)`, 'success');
-                console.log('✅ Session deleted successfully');
-            } else {
-                throw new Error(data.error || 'Failed to delete session');
-            }
-        } catch (error) {
-            console.error('❌ Delete session error:', error);
-            this._showNotification('Nie udało się usunąć rozmowy: ' + error.message, 'error');
-        }
-    }
-
-    async cleanupOldMessages() {
-        try {
-            const response = await fetch('/api/messages/cleanup', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            const data = await response.json();
-            if (response.ok && data.status === 'success') {
-                this._showNotification(`Wyczyszczono ${data.messages_deleted} starych wiadomości`, 'success');
-                console.log(`✅ Cleaned up ${data.messages_deleted} old messages`);
-            } else {
-                throw new Error(data.error || 'Cleanup failed');
-            }
-        } catch (error) {
-            console.error('❌ Cleanup error:', error);
-            this._showNotification('Nie udało się wyczyścić starych wiadomości: ' + error.message, 'error');
-        }
-    }
-
-// =================
-    // ✅ IMPROVED SOCKET.IO HANDLING
-    // =================
-    
+    // IMPROVED SOCKET.IO HANDLING
     async _initSocket() {
         try {
             const config = await this._getSocketConfig();
@@ -973,7 +766,6 @@ class ChatManager {
             console.log("✅ Socket.IO connected");
             this.socket.emit('register_user', { user_id: this.user.id });
             
-            // Clear polling fallback when socket connects
             if (this.pollingInterval) {
                 clearInterval(this.pollingInterval);
                 this.pollingInterval = null;
@@ -1025,19 +817,22 @@ class ChatManager {
     }
 
     async _handleNewMessage(data) {
-        // Skip own messages
         if (data.message.sender_id == this.user.id) return;
-    
+
         try {
-            // Validate session access
             if (!this._hasSessionAccess(data.session_token)) {
                 console.warn("Received message for unauthorized session");
                 return;
             }
         
-            // Process message
             await this._processMessage(data.session_token, data.message, 'realtime');
-        
+            
+            if (!this.currentSession || this.currentSession.token !== data.session_token) {
+                const senderId = data.message.sender_id;
+                this._updateUnreadCount(senderId);
+                this._renderFriendsList();
+            }
+            
             this._playNotificationSound();
         
         } catch (error) {
@@ -1051,10 +846,182 @@ class ChatManager {
         return !!session;
     }
 
-    // =================
-    // ✅ IMPROVED FRIENDS MANAGEMENT
-    // =================
-    
+    _updateUnreadCount(senderId) {
+        const friend = this.friends.find(f => f.user_id == senderId);
+        if (!friend) {
+            console.warn(`Friend not found for sender_id: ${senderId}`);
+            return;
+        }
+        
+        const currentCount = this.unreadCounts.get(friend.user_id) || 0;
+        this.unreadCounts.set(friend.user_id, currentCount + 1);
+
+        console.log(`📬 Updated unread count for ${friend.username}: ${currentCount + 1}`);
+    }
+
+    getUnreadCounts() {
+        const counts = {};
+        for (const [userId, count] of this.unreadCounts.entries()) {
+            const friend = this.friends.find(f => f.user_id == userId);
+            counts[friend?.username || userId] = count;
+        }
+        return counts;
+    }
+
+    // POLLING FALLBACK
+    _enablePollingFallback() {
+        if (this.pollingInterval) return;
+        
+        console.log("🔄 Enabling polling fallback");
+        
+        let lastMessageId = 0;
+        
+        this.pollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/polling/messages?last_id=${lastMessageId}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.messages && data.messages.length > 0) {
+                        for (const msgData of data.messages) {
+                            await this._handleNewMessage(msgData);
+                        }
+                        lastMessageId = data.last_id;
+                    }
+                }
+            } catch (error) {
+                console.error("❌ Polling error:", error);
+            }
+        }, 3000);
+    }
+
+    // MESSAGE LOADING AND CACHING
+    async _loadMessages(sessionToken, limit = 50, offset = 0) {
+        try {
+            const response = await fetch(`/api/messages/${sessionToken}?limit=${limit}&offset=${offset}`);
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                this.elements.messagesContainer.innerHTML = '';
+                
+                for (const message of data.messages) {
+                    await this._processMessage(sessionToken, message, 'history');
+                }
+                
+                console.log(`✅ Loaded ${data.messages.length} messages for session`);
+            }
+        } catch (error) {
+            console.error("❌ Failed to load messages:", error);
+            this._showNotification('Failed to load message history', 'error');
+        }
+    }
+
+    async _storeMessage(sessionToken, message) {
+        if (!this.messages.has(sessionToken)) {
+            this.messages.set(sessionToken, []);
+        }
+        
+        const sessionMessages = this.messages.get(sessionToken);
+        
+        const existingIndex = sessionMessages.findIndex(m => m.id === message.id);
+        if (existingIndex >= 0) {
+            sessionMessages[existingIndex] = message;
+        } else {
+            sessionMessages.push(message);
+            
+            if (sessionMessages.length > this.maxCachedMessages) {
+                sessionMessages.splice(0, sessionMessages.length - this.maxCachedMessages);
+            }
+        }
+        
+        sessionMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    }
+
+// CZĘŚĆ 4/4: UI Management + Friends + Utilities
+
+    // SESSION CLEANUP METHODS
+    async clearSessionMessages() {
+        if (!this.currentSession) {
+            this._showNotification('Brak aktywnej sesji', 'warning');
+            return;
+        }
+
+        if (!confirm('Czy na pewno chcesz wyczyścić wszystkie wiadomości?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/session/${this.currentSession.token}/clear`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            if (response.ok && data.status === 'success') {
+                if (this.elements.messagesContainer) {
+                    this.elements.messagesContainer.innerHTML = '';
+                }
+                
+                this.messages.delete(this.currentSession.token);
+                
+                this._showNotification(`Wyczyszczono ${data.messages_deleted} wiadomości`, 'success');
+                console.log(`✅ Session ${this.currentSession.token.slice(0, 8)}... cleared`);
+            } else {
+                throw new Error(data.error || 'Failed to clear session');
+            }
+        } catch (error) {
+            console.error('❌ Clear session error:', error);
+            this._showNotification('Nie udało się wyczyścić wiadomości: ' + error.message, 'error');
+        }
+    }
+
+    async deleteSession() {
+        if (!this.currentSession) {
+            this._showNotification('Brak aktywnej sesji', 'warning');
+            return;
+        }
+
+        if (!confirm('Czy na pewno chcesz usunąć całą rozmowę? Ta operacja jest nieodwracalna.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/session/${this.currentSession.token}/delete`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            if (response.ok && data.status === 'success') {
+                if (this.elements.messagesContainer) {
+                    this.elements.messagesContainer.innerHTML = '<div class="welcome-message">Wybierz znajomego, aby rozpocząć rozmowę</div>';
+                }
+                
+                this.messages.delete(this.currentSession.token);
+                this.removeSessionKey(this.currentSession.token);
+                this.currentSession = null;
+                this.currentChatPartner = null;
+                
+                this._updateChatUI();
+                await this._loadSessions();
+                
+                this._showNotification(`Usunięto rozmowę (${data.messages_deleted} wiadomości)`, 'success');
+                console.log('✅ Session deleted successfully');
+            } else {
+                throw new Error(data.error || 'Failed to delete session');
+            }
+        } catch (error) {
+            console.error('❌ Delete session error:', error);
+            this._showNotification('Nie udało się usunąć rozmowy: ' + error.message, 'error');
+        }
+    }
+
+    // IMPROVED FRIENDS MANAGEMENT
     async _loadFriends() {
         try {
             const response = await fetch('/api/friends');
@@ -1093,7 +1060,6 @@ class ChatManager {
         }
     }
 
-    // ✅ POPRAWIONA METODA removeFriend - używa właściwe ID
     async removeFriend(friendId) {
         if (!confirm('Czy na pewno chcesz usunąć tego znajomego?')) return;
 
@@ -1112,10 +1078,8 @@ class ChatManager {
             if (response.ok && data.status === 'success') {
                 this._showNotification('Znajomy został usunięty', 'success');
                 
-                // Odśwież listę znajomych
                 await this._loadFriends();
                 
-                // Jeśli usunięty znajomy był aktywny w czacie, wyczyść sesję
                 if (this.currentChatPartner && this.currentChatPartner.id === friendId) {
                     this.currentChatPartner = null;
                     this.currentSession = null;
@@ -1132,83 +1096,70 @@ class ChatManager {
         }
     }
 
-    _showFriendRequestsModal() {
-        console.log("🔔 Showing friend requests modal");
+    async _selectFriend(userId) {
+        const friend = this.friends.find(f => f.user_id === userId);
+        if (friend) {
+            this.currentChatPartner = friend;
         
-        let modal = document.getElementById('friend-requests-modal');
+            this.unreadCounts.delete(parseInt(userId));
+            console.log(`🧹 Cleared unread count for user_id: ${userId}`);
         
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'friend-requests-modal';
-            modal.className = 'modal';
-            modal.innerHTML = `
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3>Zaproszenia do znajomych</h3>
-                        <button class="modal-close">&times;</button>
-                    </div>
-                    <div class="modal-body">
-                        <div id="friend-requests-list">
-                            Ładowanie...
-                        </div>
-                    </div>
-                </div>
-            `;
+            this._markFriendAsActive(userId);
+            await this._initSession(userId);
+            this._renderFriendsList();
             
-            document.body.appendChild(modal);
-            
-            modal.querySelector('.modal-close').addEventListener('click', () => {
-                modal.style.display = 'none';
-            });
-            
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    modal.style.display = 'none';
-                }
-            });
+            console.log(`✅ Selected friend: ${friend.username} (user_id: ${userId})`);
         }
-        
-        modal.style.display = 'block';
-        this._loadFriendRequestsInModal();
     }
 
-    async _loadFriendRequestsInModal() {
+    _markFriendAsActive(userId) {
+        document.querySelectorAll('.friend-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        
+        const friendElement = document.querySelector(`[data-user-id="${userId}"]`);
+        if (friendElement) {
+            friendElement.classList.add('active');
+        }
+    }
+
+    // SESSION MANAGEMENT
+    async _loadSessions() {
+        try {
+            const response = await fetch('/api/sessions/active');
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                this.sessions = data.sessions || [];
+                this._renderSessionsList();
+                console.log(`✅ Loaded ${this.sessions.length} sessions`);
+            }
+        } catch (error) {
+            console.error("❌ Failed to load sessions:", error);
+        }
+    }
+
+    // FRIEND REQUESTS
+    async _loadFriendRequests() {
         try {
             const response = await fetch('/api/friend_requests/pending');
             const data = await response.json();
             
-            const container = document.getElementById('friend-requests-list');
-            
-            if (data.status === 'success' && data.requests.length > 0) {
-                container.innerHTML = data.requests.map(req => `
-                    <div class="friend-request-item">
-                        <div class="request-info">
-                            <strong>${this._escapeHtml(req.username)}</strong>
-                            <small>ID: ${req.sender_id}</small>
-                        </div>
-                        <div class="request-actions">
-                            <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})">
-                                Akceptuj
-                            </button>
-                            <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})">
-                                Odrzuć
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                container.innerHTML = '<p style="text-align: center;">Brak zaproszeń</p>';
+            if (data.status === 'success') {
+                this._renderFriendRequests(data.requests);
+                
+                const countElement = document.getElementById('friend-request-count');
+                if (countElement) {
+                    countElement.textContent = data.requests ? data.requests.length : 0;
+                    if (data.requests && data.requests.length > 0) {
+                        countElement.style.display = 'inline';
+                    } else {
+                        countElement.style.display = 'none';
+                    }
+                }
             }
-            
-            const countElement = document.getElementById('friend-request-count');
-            if (countElement) {
-                countElement.textContent = data.requests ? data.requests.length : 0;
-            }
-            
         } catch (error) {
             console.error("❌ Failed to load friend requests:", error);
-            document.getElementById('friend-requests-list').innerHTML = 
-                '<p style="color: red;">Błąd ładowania zaproszeń</p>';
         }
     }
 
@@ -1245,161 +1196,7 @@ class ChatManager {
         }
     }
 
-    async _loadFriendRequests() {
-        try {
-            const response = await fetch('/api/friend_requests/pending');
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this._renderFriendRequests(data.requests);
-                
-                const countElement = document.getElementById('friend-request-count');
-                if (countElement) {
-                    countElement.textContent = data.requests ? data.requests.length : 0;
-                    if (data.requests && data.requests.length > 0) {
-                        countElement.style.display = 'inline';
-                    } else {
-                        countElement.style.display = 'none';
-                    }
-                }
-            }
-        } catch (error) {
-            console.error("❌ Failed to load friend requests:", error);
-        }
-    }
-
-    // =================
-    // SESSION MANAGEMENT
-    // =================
-    
-    async _loadSessions() {
-        try {
-            const response = await fetch('/api/sessions/active');
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                this.sessions = data.sessions || [];
-                this._renderSessionsList();
-                console.log(`✅ Loaded ${this.sessions.length} sessions`);
-            }
-        } catch (error) {
-            console.error("❌ Failed to load sessions:", error);
-        }
-    }
-
-    async _selectFriend(userId) {
-        const friend = this.friends.find(f => f.user_id === userId);
-        if (friend) {
-            this.currentChatPartner = friend;
-        
-            // ✅ Wyczyść licznik nieprzeczytanych
-            this.unreadCounts.delete(userId);
-        
-            // Mark as active in UI
-            this._markFriendAsActive(userId);
-        
-            // Initialize session
-            await this._initSession(userId);
-        
-            // ✅ Odśwież listę (usunie badge)
-        this._renderFriendsList();
-        }
-    }
-
-    _markFriendAsActive(userId) {
-        // Remove active class from all friends
-        document.querySelectorAll('.friend-item').forEach(item => {
-            item.classList.remove('active');
-        });
-        
-        // Add active class to selected friend
-        const friendElement = document.querySelector(`[data-user-id="${userId}"]`);
-        if (friendElement) {
-            friendElement.classList.add('active');
-        }
-    }
-
-    // =================
-    // POLLING FALLBACK
-    // =================
-    
-    _enablePollingFallback() {
-        if (this.pollingInterval) return;
-        
-        console.log("🔄 Enabling polling fallback");
-        
-        let lastMessageId = 0;
-        
-        this.pollingInterval = setInterval(async () => {
-            try {
-                const response = await fetch(`/api/polling/messages?last_id=${lastMessageId}`);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    if (data.messages && data.messages.length > 0) {
-                        for (const msgData of data.messages) {
-                            await this._handleNewMessage(msgData);
-                        }
-                        lastMessageId = data.last_id;
-                    }
-                }
-            } catch (error) {
-                console.error("❌ Polling error:", error);
-            }
-        }, 3000);
-    }
-
-    // =================
-    // MESSAGE LOADING AND CACHING
-    // =================
-    
-    async _loadMessages(sessionToken, limit = 50, offset = 0) {
-        try {
-            const response = await fetch(`/api/messages/${sessionToken}?limit=${limit}&offset=${offset}`);
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                // Clear existing messages for this session first
-                this.elements.messagesContainer.innerHTML = '';
-                
-                for (const message of data.messages) {
-                    await this._processMessage(sessionToken, message, 'history');
-                }
-                
-                console.log(`✅ Loaded ${data.messages.length} messages for session`);
-            }
-        } catch (error) {
-            console.error("❌ Failed to load messages:", error);
-            this._showNotification('Failed to load message history', 'error');
-        }
-    }
-
-    async _storeMessage(sessionToken, message) {
-        if (!this.messages.has(sessionToken)) {
-            this.messages.set(sessionToken, []);
-        }
-        
-        const sessionMessages = this.messages.get(sessionToken);
-        
-        const existingIndex = sessionMessages.findIndex(m => m.id === message.id);
-        if (existingIndex >= 0) {
-            sessionMessages[existingIndex] = message;
-        } else {
-            sessionMessages.push(message);
-            
-            if (sessionMessages.length > this.maxCachedMessages) {
-                sessionMessages.splice(0, sessionMessages.length - this.maxCachedMessages);
-            }
-        }
-        
-        sessionMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    }
-
-    // =================
-    // ✅ IMPROVED UI MANAGEMENT
-    // =================
-    
+    // UI MANAGEMENT
     _initElements() {
         this.elements = {
             messageInput: document.getElementById('message-input'),
@@ -1417,7 +1214,6 @@ class ChatManager {
     }
 
     _setupEventListeners() {
-        // Message sending
         this.elements.sendButton?.addEventListener('click', () => this.sendMessage());
         this.elements.messageInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -1426,12 +1222,10 @@ class ChatManager {
             }
         });
 
-        // Add friend modal
         this.elements.addFriendBtn?.addEventListener('click', () => {
             this._showAddFriendModal();
         });
 
-        // Typing indicator
         this.elements.messageInput?.addEventListener('input', () => {
             this._handleTyping();
         });
@@ -1440,15 +1234,12 @@ class ChatManager {
             this.lastActivity = Date.now();
         });
 
-        // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            // Ctrl+Delete = clear session
             if (e.ctrlKey && e.key === 'Delete' && !e.shiftKey) {
                 e.preventDefault();
                 this.clearSessionMessages();
             }
             
-            // Ctrl+Shift+Delete = delete session
             if (e.ctrlKey && e.shiftKey && e.key === 'Delete') {
                 e.preventDefault();
                 this.deleteSession();
@@ -1500,7 +1291,6 @@ class ChatManager {
         if (!this.elements.messagesContainer) return;
         
         const messageEl = document.createElement('div');
-        // Use consistent class names for styling
         messageEl.className = `message ${message.is_mine || message.sender_id == this.user.id ? 'mine' : 'theirs'}`;
         messageEl.dataset.messageId = message.id;
 
@@ -1516,12 +1306,10 @@ class ChatManager {
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
     }
 
-    // ✅ POPRAWIONA METODA _renderFriendsList - z przyciskami usuwania
     _renderFriendsList() {
         if (!this.elements.friendsList) return;
         
         this.elements.friendsList.innerHTML = this.friends.map(friend => {
-            // Generate avatar initial from username
             const initial = friend.username.charAt(0).toUpperCase();
             
             return `
@@ -1540,7 +1328,6 @@ class ChatManager {
                         `<span class="unread-badge">${this.unreadCounts.get(friend.user_id)}</span>` : 
                         ''
                     }
-                    <!-- ✅ DODANE: Przyciski akcji znajomego -->
                     <div class="friend-actions">
                         <button class="btn btn-primary" title="Czat" onclick="event.stopPropagation(); window.chatManager._selectFriend('${friend.user_id}');">
                             <i class="fas fa-comment"></i>
@@ -1553,10 +1340,8 @@ class ChatManager {
             `;
         }).join('');
         
-        // ✅ POPRAWIONE: Obsługa kliknięcia w element znajomego (nie w przyciski)
         this.elements.friendsList.querySelectorAll('.friend-item').forEach(item => {
             item.addEventListener('click', (e) => {
-                // Nie reaguj jeśli kliknięto przycisk
                 if (e.target.closest('.friend-actions')) {
                     return;
                 }
@@ -1569,34 +1354,6 @@ class ChatManager {
         });
     }
 
-    _renderFriendRequests(requests) {
-        // This method is used by the modal system
-        const container = document.getElementById('friend-requests-list');
-        if (!container) return;
-        
-        if (requests && requests.length > 0) {
-            container.innerHTML = requests.map(req => `
-                <div class="friend-request-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #555;">
-                    <div>
-                        <strong>${this._escapeHtml(req.username)}</strong>
-                        <small style="display: block; color: #999;">ID: ${req.sender_id}</small>
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
-                            Akceptuj
-                        </button>
-                        <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
-                            Odrzuć
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            container.innerHTML = '<p style="text-align: center; color: #999;">Brak zaproszeń</p>';
-        }
-    }
-
-    // ✅ POPRAWIONA METODA _updateChatUI - pokazuje przyciski akcji
     _updateChatUI() {
         if (this.currentSession && this.elements.chatHeader) {
             const otherUser = this.currentSession.other_user;
@@ -1610,7 +1367,6 @@ class ChatManager {
                 <div class="session-info">
                     <span class="session-status ready">🔐 Encrypted${this.forwardSecrecyEnabled ? ' + FS' : ''}</span>
                 </div>
-                <!-- ✅ DODANE: Przyciski akcji czatu -->
                 <div id="chat-actions" class="chat-actions visible">
                     <button id="clear-conversation-btn" class="btn btn-secondary" title="Wyczyść konwersację (Ctrl+Delete)">
                         <i class="fas fa-broom"></i> <span>Wyczyść</span>
@@ -1621,10 +1377,8 @@ class ChatManager {
                 </div>
             `;
             
-            // ✅ DODAJ OBSŁUGĘ PRZYCISKÓW PO UTWORZENIU
             this._attachChatActionListeners();
         } else {
-            // Brak aktywnej sesji - ukryj przyciski
             if (this.elements.chatHeader) {
                 this.elements.chatHeader.innerHTML = `
                     <div class="chat-partner-info">
@@ -1637,7 +1391,6 @@ class ChatManager {
         }
     }
 
-    // ✅ NOWA METODA: Dodaj obsługę przycisków po utworzeniu
     _attachChatActionListeners() {
         const clearBtn = document.getElementById('clear-conversation-btn');
         const deleteBtn = document.getElementById('delete-conversation-btn');
@@ -1696,10 +1449,7 @@ class ChatManager {
         }
     }
 
-    // =================
     // UTILITY FUNCTIONS
-    // =================
-
     async _getCurrentUser() {
         const response = await fetch('/api/check_auth');
         if (!response.ok) {
@@ -1733,7 +1483,6 @@ class ChatManager {
         return keyData.public_key;
     }
 
-    // ✅ POPRAWIONA METODA _getSessionKeyOptimized
     async _getSessionKeyOptimized(sessionToken) {
         const sessionKey = this.getSessionKey(sessionToken);
         if (sessionKey) {
@@ -1778,23 +1527,6 @@ class ChatManager {
                 });
             }
         }, 1000);
-    }
-
-    _updateUnreadCount(senderId) {
-        const currentCount = this.unreadCounts.get(senderId) || 0;
-        this.unreadCounts.set(senderId, currentCount + 1);
-    
-        // Znajdź element znajomego po user_id
-        const friendElement = document.querySelector(`[data-user-id="${senderId}"]`);
-        if (friendElement) {
-            let badge = friendElement.querySelector('.unread-badge');
-            if (!badge) {
-                badge = document.createElement('span');
-                badge.className = 'unread-badge';
-                friendElement.appendChild(badge);
-            }
-            badge.textContent = currentCount + 1;
-        }
     }
 
     _startPeriodicTasks() {
@@ -1885,16 +1617,119 @@ class ChatManager {
         });
     }
 
+    _renderFriendRequests(requests) {
+        const container = document.getElementById('friend-requests-list');
+        if (!container) return;
+        
+        if (requests && requests.length > 0) {
+            container.innerHTML = requests.map(req => `
+                <div class="friend-request-item" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #555;">
+                    <div>
+                        <strong>${this._escapeHtml(req.username)}</strong>
+                        <small style="display: block; color: #999;">ID: ${req.sender_id}</small>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
+                            Akceptuj
+                        </button>
+                        <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})" style="padding: 5px 10px; font-size: 0.8em;">
+                            Odrzuć
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = '<p style="text-align: center; color: #999;">Brak zaproszeń</p>';
+        }
+    }
+
+    _showFriendRequestsModal() {
+        console.log("🔔 Showing friend requests modal");
+        
+        let modal = document.getElementById('friend-requests-modal');
+        
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'friend-requests-modal';
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Zaproszenia do znajomych</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="friend-requests-list">
+                            Ładowanie...
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            modal.querySelector('.modal-close').addEventListener('click', () => {
+                modal.style.display = 'none';
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+        
+        modal.style.display = 'block';
+        this._loadFriendRequestsInModal();
+    }
+
+    async _loadFriendRequestsInModal() {
+        try {
+            const response = await fetch('/api/friend_requests/pending');
+            const data = await response.json();
+            
+            const container = document.getElementById('friend-requests-list');
+            
+            if (data.status === 'success' && data.requests.length > 0) {
+                container.innerHTML = data.requests.map(req => `
+                    <div class="friend-request-item">
+                        <div class="request-info">
+                            <strong>${this._escapeHtml(req.username)}</strong>
+                            <small>ID: ${req.sender_id}</small>
+                        </div>
+                        <div class="request-actions">
+                            <button class="btn btn-success" onclick="window.chatManager.acceptFriendRequest(${req.id})">
+                                Akceptuj
+                            </button>
+                            <button class="btn btn-danger" onclick="window.chatManager.rejectFriendRequest(${req.id})">
+                                Odrzuć
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = '<p style="text-align: center;">Brak zaproszeń</p>';
+            }
+            
+            const countElement = document.getElementById('friend-request-count');
+            if (countElement) {
+                countElement.textContent = data.requests ? data.requests.length : 0;
+            }
+            
+        } catch (error) {
+            console.error("❌ Failed to load friend requests:", error);
+            document.getElementById('friend-requests-list').innerHTML = 
+                '<p style="color: red;">Błąd ładowania zaproszeń</p>';
+        }
+    }
+
     _escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 
-    // =================
     // PUBLIC API & DEBUG FUNCTIONS
-    // =================
-
     getCurrentSession() {
         return this.currentSession;
     }
@@ -1915,7 +1750,6 @@ class ChatManager {
         return this.socket && this.socket.connected;
     }
 
-    // ✅ POPRAWIONA METODA getDebugInfo
     getDebugInfo() {
         return {
             user: this.user?.username || 'Not logged in',
@@ -1972,43 +1806,33 @@ class ChatManager {
         console.log('🧹 ChatManager cleaned up');
     }
 
-}  // ✅ KONIEC KLASY ChatManager
+}
 
-// =================
 // GLOBAL INITIALIZATION
-// =================
-
-// Global initialization
 let chatManager = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        // Check if user is authenticated
         const auth = await fetch('/api/check_auth');
         if (!auth.ok) {
             window.location.href = '/';
             return;
         }
         
-        // ✅ Initialize with integrated crypto and Forward Secrecy
         chatManager = new ChatManager();
         await chatManager.init();
         
-        // Make globally available
         window.chatManager = chatManager;
         
-        // ✅ BACKWARD COMPATIBILITY: Set up crypto manager reference
         window.cryptoManager = {
             loadKeys: () => Promise.resolve(true),
             hasPrivateKey: () => chatManager?.userPrivateKey !== null,
             clearAllKeys: () => chatManager?.cleanup(),
-            // Delegate crypto functions to ChatManager
             encryptMessage: (key, msg) => chatManager?.encryptMessage(key, msg),
             decryptMessage: (key, data) => chatManager?.decryptMessage(key, data),
             generateSessionKey: () => chatManager?.generateSessionKey(),
             storeSessionKey: (token, key) => chatManager?.storeSessionKey(token, key),
             getSessionKey: (token) => chatManager?.getSessionKey(token),
-            // ✅ Forward Secrecy functions
             encryptMessageWithForwardSecrecy: (key, msg, num) => chatManager?.encryptMessageWithForwardSecrecy(key, msg, num),
             decryptMessageWithForwardSecrecy: (key, data) => chatManager?.decryptMessageWithForwardSecrecy(key, data),
             getForwardSecrecyInfo: () => chatManager?.getForwardSecrecyInfo()
@@ -2017,7 +1841,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('✅ Chat application initialized successfully with Forward Secrecy');
         console.log('🔐 Forward Secrecy Status:', chatManager.getForwardSecrecyInfo());
         
-        // ✅ Show FS status in console for confirmation
         setTimeout(() => {
             console.log('🎯 Debug Info:', chatManager.getDebugInfo());
         }, 2000);
@@ -2028,14 +1851,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
    
-// Window event listener POZA klasą (to jest poprawne!)
 window.addEventListener('beforeunload', () => {
     if (chatManager) {
         chatManager.cleanup();
     }
 });
 
-// ✅ GLOBAL HELPER FUNCTIONS for debugging
 window.testForwardSecrecy = async () => {
     if (!window.chatManager) {
         console.error('ChatManager not initialized');
@@ -2046,11 +1867,9 @@ window.testForwardSecrecy = async () => {
         const sessionKey = await window.chatManager.generateSessionKey();
         const testMessage = "Test Forward Secrecy Message";
         
-        // Test encryption with FS
         const encrypted = await window.chatManager.encryptMessageWithForwardSecrecy(sessionKey, testMessage, 1);
         console.log('🔐 Encrypted with FS:', encrypted);
         
-        // Test decryption with FS
         const decrypted = await window.chatManager.decryptMessageWithForwardSecrecy(sessionKey, encrypted);
         console.log('🔓 Decrypted with FS:', decrypted);
         
