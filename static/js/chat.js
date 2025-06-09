@@ -1499,18 +1499,6 @@ class ChatManager {
             ${(message.is_mine || message.sender_id == this.user.id) ? '<div class="message-status">✓</div>' : ''}
         `;
         
-        // Add message actions for own messages
-        if (message.is_mine || message.sender_id == this.user.id) {
-            const actionsEl = document.createElement('div');
-            actionsEl.className = 'message-actions';
-            actionsEl.innerHTML = `
-                <button class="delete-message-btn" onclick="window.chatManager.deleteMessage(${message.id}, this.closest('.message'))" title="Usuń wiadomość">
-                    ×
-                </button>
-            `;
-            messageEl.appendChild(actionsEl);
-        }
-        
         this.elements.messagesContainer.appendChild(messageEl);
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
     }
