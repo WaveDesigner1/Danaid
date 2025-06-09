@@ -1067,25 +1067,52 @@ class ChatManager {
         }
     }
 
+    // ✅ POPRAWIONA FUNKCJA removeFriend Z PRZYCISKAMI
     async removeFriend(friendId) {
-        if (!confirm('Are you sure you want to remove this friend?')) return;
+        console.log('🗑️ Attempting to remove friend:', friendId);
+        
+        const friend = this.friends.find(f => f.user_id == friendId);
+        const friendName = friend ? friend.username : 'tego znajomego';
+        
+        if (!confirm(`Czy na pewno chcesz usunąć ${friendName} z listy znajomych?`)) {
+            console.log('🚫 Friend removal cancelled by user');
+            return;
+        }
 
         try {
+            this._showNotification('Usuwanie znajomego...', 'info', 2000);
+            
             const response = await fetch(`/api/friends/${friendId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
 
             const data = await response.json();
 
-            if (data.status === 'success') {
-                this._showNotification('Friend removed successfully', 'success');
-                await this._loadFriends();
+            if (response.ok && data.status === 'success') {
+                this.friends = this.friends.filter(f => f.user_id != friendId);
+                
+                if (this.currentChatPartner && this.currentChatPartner.user_id == friendId) {
+                    this.currentSession = null;
+                    this.currentChatPartner = null;
+                    this._updateChatUI();
+                    
+                    if (this.elements.messagesContainer) {
+                        this.elements.messagesContainer.innerHTML = '<div class="welcome-message">Wybierz znajomego, aby rozpocząć rozmowę</div>';
+                    }
+                }
+                
+                this._renderFriendsList();
+                this._showNotification(`Usunięto ${friendName} z listy znajomych`, 'success');
+                console.log('✅ Friend removed successfully');
             } else {
-                this._showNotification(data.message || 'Failed to remove friend', 'error');
+                throw new Error(data.message || data.error || 'Failed to remove friend');
             }
         } catch (error) {
             console.error('❌ Remove friend error:', error);
-            this._showNotification('Failed to remove friend', 'error');
+            this._showNotification(`Nie udało się usunąć znajomego: ${error.message}`, 'error');
         }
     }
 
@@ -1367,7 +1394,6 @@ class ChatManager {
             connectionStatus: document.getElementById('connection-status')
         };
         
-        // Validate that required elements exist
         const requiredElements = ['messageInput', 'sendButton', 'messagesContainer'];
         for (const elementName of requiredElements) {
             if (!this.elements[elementName]) {
@@ -1471,6 +1497,7 @@ class ChatManager {
         });
     }
 
+    // ✅ POPRAWIONA LISTA ZNAJOMYCH - z opcjonalnymi przyciskami
     _renderFriendsList() {
         if (!this.elements.friendsList) return;
         
@@ -1489,6 +1516,22 @@ class ChatManager {
                             ${friend.is_online ? 'Online' : 'Offline'}
                         </div>
                     </div>
+                    <div class="friend-actions">
+                        <button 
+                            class="btn btn-primary btn-sm chat-btn" 
+                            data-user-id="${friend.user_id}"
+                            title="Rozpocznij rozmowę"
+                            style="margin-right: 8px; padding: 4px 8px; background: #FF9800; color: #333; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
+                            💬
+                        </button>
+                        <button 
+                            class="btn btn-danger btn-sm remove-friend-btn" 
+                            data-friend-id="${friend.user_id}"
+                            title="Usuń znajomego"
+                            style="padding: 4px 8px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">
+                            🗑️
+                        </button>
+                    </div>
                     ${this.unreadCounts.get(friend.user_id) ? 
                         `<span class="unread-count">${this.unreadCounts.get(friend.user_id)}</span>` : 
                         ''
@@ -1497,11 +1540,41 @@ class ChatManager {
             `;
         }).join('');
         
+        this._attachFriendListeners();
+    }
+
+    // ✅ DODANA FUNKCJA _attachFriendListeners
+    _attachFriendListeners() {
+        if (!this.elements.friendsList) return;
+        
+        // Chat buttons
+        this.elements.friendsList.querySelectorAll('.chat-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const userId = btn.dataset.userId;
+                console.log('🎯 Chat button clicked for user:', userId);
+                this._selectFriend(userId);
+            });
+        });
+
+        // Remove friend buttons
+        this.elements.friendsList.querySelectorAll('.remove-friend-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const friendId = btn.dataset.friendId;
+                console.log('🗑️ Remove button clicked for friend:', friendId);
+                this.removeFriend(friendId);
+            });
+        });
+
+        // Całe elementy listy (ale nie na przyciski)
         this.elements.friendsList.querySelectorAll('.friend-item').forEach(item => {
             item.addEventListener('click', (e) => {
-                e.preventDefault();
-                const userId = item.dataset.userId;
-                this._selectFriend(userId);
+                if (!e.target.closest('.friend-actions')) {
+                    const userId = item.dataset.userId;
+                    console.log('👤 Friend item clicked:', userId);
+                    this._selectFriend(userId);
+                }
             });
         });
     }
@@ -1615,12 +1688,6 @@ class ChatManager {
         this._ensureChatActionListeners();
     }
 
-    _clearMessagesDisplay() {
-        const messagesContainer = document.getElementById('messages');
-        if (messagesContainer) {
-            messagesContainer.innerHTML = `
-                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
-                    <i class="fas fa-broom" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i>
     _clearMessagesDisplay() {
         const messagesContainer = document.getElementById('messages');
         if (messagesContainer) {
@@ -2072,3 +2139,5 @@ console.log("✅ chat.js loaded successfully with Forward Secrecy support");
 console.log("🧪 Run 'testForwardSecrecy()' in console to test Forward Secrecy");
 console.log("🔍 Run 'chatManager.getDebugInfo()' for detailed status");
 console.log("📊 Run 'chatManager.getForwardSecrecyInfo()' for FS status");
+
+
