@@ -835,46 +835,6 @@ class ChatManager {
         return base64Pattern.test(message.content.replace(/\s/g, ''));
     }
     
-    // ✅ NAPRAWIONE: deleteMessage WEWNĄTRZ KLASY
-    async deleteMessage(messageId, messageElement) {
-        if (!confirm('Czy na pewno chcesz usunąć tę wiadomość?')) {
-            return;
-        }
-        try {
-            const response = await fetch(`/api/message/${messageId}/delete`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            });
-            const data = await response.json();
-            if (response.ok && data.status === 'success') {
-                // Usuń z UI
-                if (messageElement) {
-                    messageElement.style.transition = 'opacity 0.3s ease';
-                    messageElement.style.opacity = '0';
-                    setTimeout(() => {
-                        messageElement.remove();
-                    }, 300);
-                }
-                // Usuń z lokalnego cache
-                if (this.currentSession) {
-                    const sessionMessages = this.messages.get(this.currentSession.token) || [];
-                    const filteredMessages = sessionMessages.filter(msg => msg.id !== messageId);
-                    this.messages.set(this.currentSession.token, filteredMessages);
-                }
-                this._showNotification('Wiadomość została usunięta', 'success', 3000);
-                console.log(`✅ Message ${messageId} deleted successfully`);
-            } else {
-                throw new Error(data.error || 'Failed to delete message');
-            }
-        } catch (error) {
-            console.error('❌ Delete message error:', error);
-            this._showNotification('Nie udało się usunąć wiadomości: ' + error.message, 'error');
-        }
-    }
-
     // ✅ SESSION CLEANUP METHODS
     async clearSessionMessages() {
         if (!this.currentSession) {
@@ -1537,18 +1497,6 @@ class ChatManager {
             <div class="message-time">${timeStr}</div>
             ${(message.is_mine || message.sender_id == this.user.id) ? '<div class="message-status">✓</div>' : ''}
         `;
-        
-        // Add message actions for own messages
-        if (message.is_mine || message.sender_id == this.user.id) {
-            const actionsEl = document.createElement('div');
-            actionsEl.className = 'message-actions';
-            actionsEl.innerHTML = `
-                <button class="delete-message-btn" onclick="window.chatManager.deleteMessage(${message.id}, this.closest('.message'))" title="Usuń wiadomość">
-                    ×
-                </button>
-            `;
-            messageEl.appendChild(actionsEl);
-        }
         
         this.elements.messagesContainer.appendChild(messageEl);
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
