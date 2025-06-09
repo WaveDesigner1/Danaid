@@ -76,20 +76,28 @@ if (typeof window !== 'undefined') {
         }
     });
     
-    // Performance optimization - placeholder
+    // Performance optimization - placeholder  
     setInterval(() => {
-        if (window.cryptoManager) {
-            window.cryptoManager.optimizePerformance();
+        try {
+            if (window.cryptoManager?.optimizePerformance) {
+                window.cryptoManager.optimizePerformance();
+            }
+        } catch (error) {
+            console.debug('Performance optimization skipped:', error.message);
         }
     }, 300000); // Every 5 minutes
-    
+
     // Security cleanup on page visibility change
     document.addEventListener('visibilitychange', () => {
-        if (document.hidden && window.cryptoManager) {
-            window.cryptoManager.optimizePerformance();
+        try {
+            if (document.hidden && window.cryptoManager?.optimizePerformance) {
+                window.cryptoManager.optimizePerformance();
+            }
+        } catch (error) {
+            console.debug('Visibility change optimization skipped:', error.message);
         }
     });
-
+    
     // Immediate initialization if DOM already loaded
     if (document.readyState === 'loading') {
         // DOM still loading, wait for DOMContentLoaded
