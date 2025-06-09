@@ -799,12 +799,9 @@ class ChatManager {
             
             // Store processed message
             await this._storeMessage(sessionToken, processedMessage);
-            
-            // Update UI if it's for current session
-            if (sessionToken === this.currentSession?.token) {
-                this._addMessageToUI(processedMessage);
-            }
-            
+
+            // ✅ ZAWSZE dodaj do UI (usunięte ograniczenie do current session)
+            this._addMessageToUI(processedMessage);
         } catch (error) {
             console.error("❌ Message processing error:", error);
             // Store error message so user sees something
@@ -1040,12 +1037,6 @@ class ChatManager {
         
             // Process message
             await this._processMessage(data.session_token, data.message, 'realtime');
-        
-            // Update unread count if not current session
-            if (data.session_token !== this.currentSession?.token) {
-                this._updateUnreadCount(data.session_token);
-                this._renderFriendsList();
-            }
         
             this._playNotificationSound();
         
