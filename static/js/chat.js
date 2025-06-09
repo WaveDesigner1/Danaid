@@ -683,103 +683,88 @@ class ChatManager {
     }
 
     async _processMessage(sessionToken, message, source = 'unknown') {
-        const messageKey = `${sessionToken}-${message.id || message.timestamp}`;
+    const messageKey = `${sessionToken}-${message.id || message.timestamp}`;
+    
+    if (this.processingMessages.has(messageKey)) {
+        console.log("Message already processing, skipping");
+        return;
+    }
+    
+    this.processingMessages.add(messageKey);
+    
+    try {
+        let processedMessage = { ...message };
         
-        console.log(`🔄 Processing message from ${source}:`, messageKey);
+        // ✅ IMPROVED: Better encryption detection
+        const needsDecryption = this._shouldDecryptMessage(message);
         
-        if (this.processingMessages.has(messageKey)) {
-            console.log("⏭️ Message already processing, skipping");
-            return;
-        }
-        
-        this.processingMessages.add(messageKey);
-        
-        try {
-            let processedMessage = { ...message };
-            const needsDecryption = this._shouldDecryptMessage(message);
-            console.log(`🔍 Message needs decryption: ${needsDecryption}`);
+        if (needsDecryption) {
+            const sessionKey = await this._getSessionKeyOptimized(sessionToken);
             
-            if (needsDecryption) {
-                const sessionKey = await this._getSessionKeyOptimized(sessionToken);
-                
-                if (sessionKey) {
-                    try {
-                        let decryptedContent;
-                        
-                        if (this.forwardSecrecyEnabled && message.forward_secrecy && message.message_number) {
-                            console.log(`🔓 Attempting FS decryption for message #${message.message_number}`);
-                            decryptedContent = await this.decryptMessageWithForwardSecrecy(sessionKey, {
-                                data: message.content,
-                                iv: message.iv,
-                                messageNumber: message.message_number,
-                                forwardSecrecy: message.forward_secrecy
-                            });
-                        } else {
-                            console.log("🔓 Using legacy decryption");
-                            decryptedContent = await this.decryptMessage(sessionKey, {
-                                data: message.content,
-                                iv: message.iv
-                            });
-                        }
-                        
-                        processedMessage.content = decryptedContent;
-                        processedMessage.decrypted = true;
-                        
-                        console.log("✅ Message decrypted successfully");
-                        
-                        if (this.forwardSecrecyEnabled) {
-                            await this.storeDecryptedMessage(sessionToken, processedMessage);
-                        }
-                        
-                    } catch (decryptError) {
-                        console.error("❌ Decryption failed:", decryptError.message);
-                        processedMessage.content = `[Decryption failed: ${decryptError.message}]`;
-                        processedMessage.decrypted = false;
+            if (sessionKey) {
+                try {
+                    let decryptedContent;
+                    
+                    // ✅ FORWARD SECRECY: Try Forward Secrecy decryption first
+                    if (this.forwardSecrecyEnabled && message.forward_secrecy && message.message_number) {
+                        console.log(`🔓 Attempting FS decryption for message #${message.message_number}`);
+                        decryptedContent = await this.decryptMessageWithForwardSecrecy(sessionKey, {
+                            data: message.content,
+                            iv: message.iv,
+                            messageNumber: message.message_number,
+                            forwardSecrecy: message.forward_secrecy
+                        });
+                    } else {
+                        // Legacy decryption
+                        console.log("🔓 Using legacy decryption");
+                        decryptedContent = await this.decryptMessage(sessionKey, {
+                            data: message.content,
+                            iv: message.iv
+                        });
                     }
-                } else {
-                    console.log("⚠️ No session key available for decryption");
-                    processedMessage.content = '[No session key - please refresh]';
+                    
+                    processedMessage.content = decryptedContent;
+                    processedMessage.decrypted = true;
+                    
+                    console.log("✅ Message decrypted successfully");
+                    
+                    // ✅ FORWARD SECRECY: Store decrypted message locally
+                    if (this.forwardSecrecyEnabled) {
+                        await this.storeDecryptedMessage(sessionToken, processedMessage);
+                    }
+                    
+                } catch (decryptError) {
+                    console.error("❌ Decryption failed:", decryptError.message);
+                    processedMessage.content = `[Decryption failed: ${decryptError.message}]`;
                     processedMessage.decrypted = false;
                 }
-            }
-            
-            await this._storeMessage(sessionToken, processedMessage);
-            console.log("💾 Message stored locally");
-            
-            if (sessionToken === this.currentSession?.token) {
-                console.log("🎯 Adding message to UI for current session");
-                this._addMessageToUI(processedMessage);
             } else {
-                console.log("📝 Message stored for different session");
+                console.log("⚠️ No session key available for decryption");
+                processedMessage.content = '[No session key - please refresh]';
+                processedMessage.decrypted = false;
             }
-            
-        } catch (error) {
-            console.error("❌ Message processing error:", error);
-            await this._storeMessage(sessionToken, {
-                ...message,
-                content: `[Processing error: ${error.message}]`,
-                decrypted: false
-            });
-        } finally {
-            this.processingMessages.delete(messageKey);
-            console.log("🏁 Message processing completed");
         }
+        
+        // Store processed message
+        await this._storeMessage(sessionToken, processedMessage);
+        
+        // ✅ KLUCZOWA NAPRAWA: Update UI if it's for current session
+        if (sessionToken === this.currentSession?.token) {
+            this._addMessageToUI(processedMessage);
+        }
+        
+    } catch (error) {
+        console.error("❌ Message processing error:", error);
+        // Store error message so user sees something
+        await this._storeMessage(sessionToken, {
+            ...message,
+            content: `[Processing error: ${error.message}]`,
+            decrypted: false
+        });
+    } finally {
+        this.processingMessages.delete(messageKey);
     }
-
-    _shouldDecryptMessage(message) {
-        if (!message.iv) return false;
-        
-        if (message.hasOwnProperty('is_encrypted')) {
-            return message.is_encrypted;
-        }
-        
-        if (message.content.length < 20 && /^[a-zA-Z0-9\s\.\,\!\?]+$/.test(message.content)) {
-            return false;
-        }
-        
-        const base64Pattern = /^[A-Za-z0-9+/]+=*$/;
-        return base64Pattern.test(message.content.replace(/\s/g, ''));
-    }
+}
     
     // ✅ SESSION CLEANUP METHODS
     async clearSessionMessages() {
