@@ -1451,24 +1451,6 @@ class ChatManager {
             this.socket.disconnect();
         }
     });
-
-    // ✅ Clear conversation button
-    const clearBtn = document.getElementById('clear-conversation-btn');
-    if (clearBtn) {
-        clearBtn.addEventListener('click', () => {
-            console.log('🧹 Clear button clicked');
-            this.clearSessionMessages();
-        });
-    }
-
-    // ✅ Delete conversation button  
-    const deleteBtn = document.getElementById('delete-conversation-btn');
-    if (deleteBtn) {
-        deleteBtn.addEventListener('click', () => {
-            console.log('🗑️ Delete button clicked');
-            this.deleteSession();
-        });
-    }
 }
 
     _showAddFriendModal() {
@@ -1593,30 +1575,126 @@ class ChatManager {
     }
 
     _updateChatUI() {
+    console.log('🔄 Updating chat UI, current session:', this.currentSession?.token?.slice(0,8));
+    
+    // Aktualizuj nagłówek
     if (this.currentSession && this.elements.chatHeader) {
         const otherUser = this.currentSession.other_user;
-        this.elements.chatHeader.innerHTML = `
-            <div class="chat-partner-info">
-                <span class="partner-name">${this._escapeHtml(otherUser.username)}</span>
-                <span class="partner-status ${otherUser.is_online ? 'online' : 'offline'}">
-                    ${otherUser.is_online ? '🟢 Online' : '⚪ Offline'}
-                </span>
-            </div>
-            <div class="session-info">
-                <span class="session-status ready">🔐 Encrypted${this.forwardSecrecyEnabled ? ' + FS' : ''}</span>
-            </div>
-        `;
-    }
-
-    // ✅ Show/hide chat actions based on session (moved outside the if block)
-    const chatActions = document.querySelector('.chat-actions');
-    if (chatActions) {
-        if (this.currentSession) {
-            chatActions.style.display = 'flex';  // ✅ POKAŻ!
+        
+        // Znajdź elementy w headerze i zaktualizuj
+        const partnerInfo = this.elements.chatHeader.querySelector('.chat-partner-info h2');
+        const statusElement = this.elements.chatHeader.querySelector('.chat-status');
+        
+        if (partnerInfo) {
+            partnerInfo.textContent = otherUser.username;
         } else {
-            chatActions.style.display = 'none';  // Ukryj
+            // Jeśli nie ma h2, zaktualizuj cały header
+            const existingH2 = this.elements.chatHeader.querySelector('h2');
+            if (existingH2) {
+                existingH2.textContent = otherUser.username;
+            }
+        }
+        
+        if (statusElement) {
+            statusElement.textContent = otherUser.is_online ? 'Online' : 'Offline';
+            statusElement.className = `chat-status ${otherUser.is_online ? 'online' : 'offline'}`;
         }
     }
+
+    // ✅ KLUCZOWA POPRAWKA: Używaj classList zamiast style
+    const chatActions = document.querySelector('.chat-actions');
+    console.log('🔍 Chat actions element found:', !!chatActions);
+    
+    if (chatActions) {
+        if (this.currentSession) {
+            // ✅ UŻYJ KLASY CSS + FORCE STYLE
+            chatActions.classList.add('visible');
+            chatActions.style.display = 'flex';
+            chatActions.style.visibility = 'visible';
+            console.log('✅ Chat actions SHOWN with class + style');
+            
+            // ✅ UPEWNIJ SIĘ ŻE LISTENERY SĄ PODŁĄCZONE
+            this._ensureChatActionListeners();
+        } else {
+            chatActions.classList.remove('visible');
+            chatActions.style.display = 'none';
+            console.log('❌ Chat actions HIDDEN');
+        }
+    } else {
+        console.error('❌ .chat-actions element NOT FOUND in DOM!');
+        
+        // ✅ SPRÓBUJ UTWORZYĆ PRZYCISKI DYNAMICZNIE
+        this._createChatActionsIfMissing();
+    }
+}
+
+// ✅ DODAJ nową funkcję _ensureChatActionListeners():
+_ensureChatActionListeners() {
+    const clearBtn = document.getElementById('clear-conversation-btn');
+    const deleteBtn = document.getElementById('delete-conversation-btn');
+    
+    // Sprawdź czy już mają listenery (unikaj duplikatów)
+    if (clearBtn && !clearBtn.dataset.listenerAttached) {
+        clearBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('🧹 Clear button clicked');
+            this.clearSessionMessages();
+        });
+        clearBtn.dataset.listenerAttached = 'true';
+        console.log('✅ Clear button listener attached');
+    }
+
+    if (deleteBtn && !deleteBtn.dataset.listenerAttached) {
+        deleteBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('🗑️ Delete button clicked');
+            this.deleteSession();
+        });
+        deleteBtn.dataset.listenerAttached = 'true';
+        console.log('✅ Delete button listener attached');
+    }
+}
+
+// ✅ DODAJ funkcję _createChatActionsIfMissing():
+_createChatActionsIfMissing() {
+    console.log('🔧 Creating missing chat actions...');
+    
+    const chatHeader = this.elements.chatHeader;
+    if (!chatHeader) {
+        console.error('❌ chat-header not found!');
+        return;
+    }
+    
+    // Sprawdź czy już istnieje
+    if (document.querySelector('.chat-actions')) {
+        console.log('✅ Chat actions already exist');
+        return;
+    }
+    
+    // Utwórz nowy div z przyciskami
+    const chatActions = document.createElement('div');
+    chatActions.className = 'chat-actions visible';
+    chatActions.style.display = 'flex';
+    chatActions.style.gap = '12px';
+    chatActions.style.alignItems = 'center';
+    chatActions.style.marginLeft = 'auto';
+    
+    chatActions.innerHTML = `
+        <button id="clear-conversation-btn" class="btn btn-secondary" title="Wyczyść konwersację (Ctrl+Delete)">
+            <i class="fas fa-broom"></i> <span>Wyczyść</span>
+        </button>
+        <button id="delete-conversation-btn" class="btn btn-danger" title="Usuń całą konwersację (Ctrl+Shift+Delete)">
+            <i class="fas fa-trash"></i> <span>Usuń</span>
+        </button>
+    `;
+    
+    // Dodaj do header
+    chatHeader.appendChild(chatActions);
+    
+    // Dodaj listenery
+    this._ensureChatActionListeners();
+    
+    console.log('✅ Chat actions created dynamically');
 }
 
     _showNotification(message, type = 'info', duration = 5000) {
