@@ -2005,6 +2005,287 @@ _createChatActionsIfMissing() {
         console.log('🧹 ChatManager cleaned up');
     }
 
+        /**
+     * ✅ CZYŚCI KONWERSACJĘ (usuwa wiadomości, zachowuje sesję)
+     */
+    async _clearConversation() {
+        console.log('🧹 Clear conversation requested');
+        
+        if (!this.currentSession || !this.currentSession.token) {
+            console.error('❌ No active session to clear');
+            this._showNotification('Brak aktywnej sesji do wyczyszczenia', 'error');
+            return false;
+        }
+        
+        const sessionToken = this.currentSession.token;
+        
+        // Potwierdź akcję
+        if (!confirm('Czy na pewno chcesz wyczyścić wszystkie wiadomości w tej konwersacji? Ta akcja nie może zostać cofnięta.')) {
+            console.log('🚫 Clear conversation cancelled by user');
+            return false;
+        }
+        
+        try {
+            console.log(`🗑️ Clearing session: ${sessionToken.slice(0, 8)}...`);
+            
+            const response = await fetch(`/api/session/${sessionToken}/clear`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.status === 'success') {
+                console.log('✅ Session cleared successfully:', data);
+                
+                // Wyczyść wiadomości z interfejsu
+                this._clearMessagesDisplay();
+                
+                // Wyślij Socket.IO notification o wyczyszczeniu
+                this._notifySessionCleared(sessionToken);
+                
+                // Pokazz powiadomienie
+                this._showNotification(
+                    `Wyczyszczono ${data.messages_deleted || 0} wiadomości`, 
+                    'success'
+                );
+                
+                console.log(`✅ Session ${sessionToken.slice(0, 8)}... cleared`);
+                return true;
+                
+            } else {
+                console.error('❌ Clear session failed:', data);
+                this._showNotification(data.error || 'Błąd podczas czyszczenia konwersacji', 'error');
+                return false;
+            }
+            
+        } catch (error) {
+            console.error('❌ Clear session error:', error);
+            this._showNotification('Błąd połączenia podczas czyszczenia konwersacji', 'error');
+            return false;
+        }
+    }
+    
+    /**
+     * ✅ USUWA CAŁĄ SESJĘ (usuwa sesję + wiadomości)
+     */
+    async _deleteConversation() {
+        console.log('🗑️ Delete conversation requested');
+        
+        if (!this.currentSession || !this.currentSession.token) {
+            console.error('❌ No active session to delete');
+            this._showNotification('Brak aktywnej sesji do usunięcia', 'error');
+            return false;
+        }
+        
+        const sessionToken = this.currentSession.token;
+        const otherUser = this.currentSession.otherUser;
+        
+        // Potwierdź akcję
+        if (!confirm(`Czy na pewno chcesz usunąć całą konwersację z użytkownikiem ${otherUser?.username || 'nieznany'}? Ta akcja nie może zostać cofnięta.`)) {
+            console.log('🚫 Delete conversation cancelled by user');
+            return false;
+        }
+        
+        try {
+            console.log(`🗑️ Deleting session: ${sessionToken.slice(0, 8)}...`);
+            
+            const response = await fetch(`/api/session/${sessionToken}/delete`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.status === 'success') {
+                console.log('✅ Session deleted successfully:', data);
+                
+                // Usuń sesję z lokalnej pamięci
+                delete this.sessionKeys[sessionToken];
+                this.currentSession = null;
+                
+                // Wyczyść interfejs
+                this._clearMessagesDisplay();
+                this._updateChatUI();
+                
+                // Odśwież listę sesji
+                await this._loadActiveSessions();
+                
+                // Wyślij Socket.IO notification o usunięciu
+                this._notifySessionDeleted(sessionToken, otherUser?.id);
+                
+                // Pokazz powiadomienie
+                this._showNotification(
+                    `Konwersacja z ${otherUser?.username || 'użytkownikiem'} została usunięta`, 
+                    'success'
+                );
+                
+                console.log('✅ Session deleted successfully');
+                return true;
+                
+            } else {
+                console.error('❌ Delete session failed:', data);
+                this._showNotification(data.error || 'Błąd podczas usuwania konwersacji', 'error');
+                return false;
+            }
+            
+        } catch (error) {
+            console.error('❌ Delete session error:', error);
+            this._showNotification('Błąd połączenia podczas usuwania konwersacji', 'error');
+            return false;
+        }
+    }
+    
+    /**
+     * ✅ WYCZYŚĆ WYŚWIETLANIE WIADOMOŚCI
+     */
+    _clearMessagesDisplay() {
+        const messagesContainer = document.getElementById('messages');
+        if (messagesContainer) {
+            messagesContainer.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                    <i class="fas fa-broom" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i>
+                    <p>Konwersacja została wyczyszczona</p>
+                </div>
+            `;
+            console.log('🧹 Messages display cleared');
+        }
+    }
+    
+    /**
+     * ✅ SOCKET.IO NOTIFICATIONS
+     */
+    _notifySessionCleared(sessionToken) {
+        try {
+            if (this.socket && this.socket.connected) {
+                this.socket.emit('session_action', {
+                    type: 'cleared',
+                    session_token: sessionToken,
+                    timestamp: new Date().toISOString()
+                });
+                console.log('📡 Session cleared notification sent via Socket.IO');
+            }
+        } catch (error) {
+            console.error('📡 Failed to send session cleared notification:', error);
+        }
+    }
+    
+    _notifySessionDeleted(sessionToken, otherUserId) {
+        try {
+            if (this.socket && this.socket.connected) {
+                this.socket.emit('session_action', {
+                    type: 'deleted',
+                    session_token: sessionToken,
+                    timestamp: new Date().toISOString()
+                });
+                console.log('📡 Session deleted notification sent via Socket.IO');
+            }
+        } catch (error) {
+            console.error('📡 Failed to send session deleted notification:', error);
+        }
+    }
+    
+    /**
+     * ✅ POKAZUJ POWIADOMIENIA
+     */
+    _showNotification(message, type = 'info') {
+        console.log(`🔔 Notification (${type}): ${message}`);
+        
+        // Sprawdź czy istnieje container na powiadomienia
+        let notificationContainer = document.getElementById('notification-container');
+        if (!notificationContainer) {
+            // Utwórz container
+            notificationContainer = document.createElement('div');
+            notificationContainer.id = 'notification-container';
+            notificationContainer.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 10000;
+                max-width: 300px;
+            `;
+            document.body.appendChild(notificationContainer);
+        }
+        
+        // Utwórz powiadomienie
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
+            color: white;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-size: 14px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+        `;
+        notification.textContent = message;
+        
+        notificationContainer.appendChild(notification);
+        
+        // Animacja wejścia
+        setTimeout(() => {
+            notification.style.opacity = '1';
+            notification.style.transform = 'translateX(0)';
+        }, 100);
+        
+        // Auto usuń po 4 sekundach
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            notification.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 4000);
+    }
+
+// ✅ DODAJ TEŻ FUNKCJE DEBUGOWANIA:
+
+    /**
+     * 🔍 DEBUG: Sprawdź aktualny stan
+     */
+    getDebugInfo() {
+        return {
+            currentSession: this.currentSession ? {
+                token: this.currentSession.token?.slice(0, 8) + '...',
+                otherUser: this.currentSession.otherUser?.username,
+                hasKey: !!this.sessionKeys[this.currentSession.token]
+            } : null,
+            sessionKeysCount: Object.keys(this.sessionKeys).length,
+            isSocketConnected: this.socket?.connected,
+            activeUser: this.currentUser,
+            functions: {
+                clearConversation: typeof this._clearConversation,
+                deleteConversation: typeof this._deleteConversation,
+                showNotification: typeof this._showNotification
+            }
+        };
+    }
+    
+    /**
+     * 🧪 TEST: Testuj funkcje bez wykonywania
+     */
+    async testClearFunction() {
+        console.log('🧪 Testing clear function...');
+        if (!this.currentSession) {
+            console.log('❌ No active session for testing');
+            return false;
+        }
+        
+        console.log('✅ Clear function available:', typeof this._clearConversation);
+        console.log('🎯 Would clear session:', this.currentSession.token?.slice(0, 8) + '...');
+        console.log('👤 Other user:', this.currentSession.otherUser?.username);
+        return true;
+    }
+
 }  // ✅ KONIEC KLASY ChatManager
 
 // =================
