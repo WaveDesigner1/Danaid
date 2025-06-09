@@ -76,13 +76,6 @@ if (typeof window !== 'undefined') {
         }
     });
     
-    // Performance optimization - placeholder
-    setInterval(() => {
-        if (window.cryptoManager) {
-            window.cryptoManager.optimizePerformance();
-        }
-    }, 300000); // Every 5 minutes
-    
     // Security cleanup on page visibility change
     document.addEventListener('visibilitychange', () => {
         if (document.hidden && window.cryptoManager) {
