@@ -1329,9 +1329,6 @@ class ChatManager {
                         ''
                     }
                     <div class="friend-actions">
-                        <button class="btn btn-primary" title="Czat" onclick="event.stopPropagation(); window.chatManager._selectFriend('${friend.user_id}');">
-                            <i class="fas fa-comment"></i>
-                        </button>
                         <button class="btn btn-danger" title="Usuń znajomego" onclick="event.stopPropagation(); window.chatManager.removeFriend(${friend.id});">
                             <i class="fas fa-user-minus"></i>
                         </button>
