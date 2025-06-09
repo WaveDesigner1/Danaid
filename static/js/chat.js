@@ -1789,17 +1789,18 @@ class ChatManager {
         }, 1000);
     }
 
-    _updateUnreadCount(sessionToken) {
-        const currentCount = this.unreadCounts.get(sessionToken) || 0;
-        this.unreadCounts.set(sessionToken, currentCount + 1);
-        
-        const sessionElement = document.querySelector(`[data-session-token="${sessionToken}"]`);
-        if (sessionElement) {
-            let badge = sessionElement.querySelector('.unread-badge');
+    _updateUnreadCount(senderId) {
+        const currentCount = this.unreadCounts.get(senderId) || 0;
+        this.unreadCounts.set(senderId, currentCount + 1);
+    
+        // Znajdź element znajomego po user_id
+        const friendElement = document.querySelector(`[data-user-id="${senderId}"]`);
+        if (friendElement) {
+            let badge = friendElement.querySelector('.unread-badge');
             if (!badge) {
                 badge = document.createElement('span');
                 badge.className = 'unread-badge';
-                sessionElement.appendChild(badge);
+                friendElement.appendChild(badge);
             }
             badge.textContent = currentCount + 1;
         }
