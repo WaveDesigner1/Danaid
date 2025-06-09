@@ -712,6 +712,11 @@ input:focus-visible,
     gap: 12px;
     align-items: center;
     margin-left: auto;
+    flex-shrink: 0;
+}
+
+.chat-actions.visible {
+    display: flex !important;
 }
 
 .chat-actions .btn {
