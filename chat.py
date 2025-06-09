@@ -689,8 +689,234 @@ def emit_friend_request_notification(recipient_id, notification_data):
 @chat_bp.route('/api/session/<session_token>/clear', methods=['DELETE'])
 @login_required
 def clear_session_messages(session_token):
-    # ... (kod z poprzedniego artifact)
+    """Czyści wszystkie wiadomości w sesji (zachowuje sesję)"""
+    try:
+        # Znajdź sesję
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Sprawdź uprawnienia
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Policz wiadomości do usunięcia
+        messages_count = Message.query.filter_by(session_id=session.id).count()
+        
+        # Usuń wszystkie wiadomości w sesji
+        Message.query.filter_by(session_id=session.id).delete()
+        
+        # Zaktualizuj sesję
+        session.last_activity = datetime.utcnow()
+        db.session.commit()
+        
+        logger.info(f"User {current_user.username} cleared {messages_count} messages from session {session_token[:8]}...")
+        
+        # Powiadom drugiego użytkownika Socket.IO
+        other_user = _get_other_user(session)
+        try:
+            from flask import current_app
+            if hasattr(current_app, 'socketio'):
+                current_app.socketio.emit('session_cleared', {
+                    'session_token': session_token,
+                    'cleared_by': current_user.username,
+                    'message': 'Wiadomości zostały wyczyszczone'
+                }, room=f"user_{other_user.id}")
+        except Exception as e:
+            logger.error(f"Socket.IO clear notification failed: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Session messages cleared successfully',
+            'messages_deleted': messages_count,
+            'session_token': session_token
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Clear session error: {e}")
+        return jsonify({'error': str(e)}), 500
 
-@chat_bp.route('/api/session/<session_token>/delete', methods=['DELETE'])  
+
+@chat_bp.route('/api/session/<session_token>/delete', methods=['DELETE'])
 @login_required
 def delete_session(session_token):
+    """Usuwa całą sesję wraz z wszystkimi wiadomościami"""
+    try:
+        # Znajdź sesję
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Sprawdź uprawnienia
+        if session.initiator_id != current_user.id and session.recipient_id != current_user.id:
+            return jsonify({'error': 'Access denied'}), 403
+        
+        # Policz wiadomości
+        messages_count = Message.query.filter_by(session_id=session.id).count()
+        
+        # Znajdź drugiego użytkownika przed usunięciem
+        other_user = _get_other_user(session)
+        
+        # Usuń wszystkie wiadomości
+        Message.query.filter_by(session_id=session.id).delete()
+        
+        # Oznacz sesję jako nieaktywną (nie usuwaj fizycznie dla audytu)
+        session.is_active = False
+        # Dodaj pola jeśli istnieją w modelu:
+        if hasattr(session, 'deleted_at'):
+            session.deleted_at = datetime.utcnow()
+        if hasattr(session, 'deleted_by_user_id'):
+            session.deleted_by_user_id = current_user.id
+        
+        db.session.commit()
+        
+        logger.info(f"User {current_user.username} deleted session {session_token[:8]}... with {messages_count} messages")
+        
+        # Powiadom drugiego użytkownika Socket.IO
+        try:
+            from flask import current_app
+            if hasattr(current_app, 'socketio'):
+                current_app.socketio.emit('session_deleted', {
+                    'session_token': session_token,
+                    'deleted_by': current_user.username,
+                    'message': 'Rozmowa została usunięta'
+                }, room=f"user_{other_user.id}")
+        except Exception as e:
+            logger.error(f"Socket.IO delete notification failed: {e}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Session deleted successfully',
+            'messages_deleted': messages_count,
+            'session_token': session_token
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Delete session error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@chat_bp.route('/api/messages/cleanup', methods=['POST'])
+@login_required
+def cleanup_old_messages():
+    """Czyści stare wiadomości (starsze niż 30 dni)"""
+    try:
+        # Data graniczna (30 dni temu)
+        cutoff_date = datetime.utcnow() - timedelta(days=30)
+        
+        # Znajdź sesje użytkownika
+        user_sessions = ChatSession.query.filter(
+            or_(ChatSession.initiator_id == current_user.id, ChatSession.recipient_id == current_user.id)
+        ).all()
+        
+        session_ids = [session.id for session in user_sessions]
+        
+        # Policz stare wiadomości
+        old_messages_count = Message.query.filter(
+            Message.session_id.in_(session_ids),
+            Message.timestamp < cutoff_date
+        ).count()
+        
+        # Usuń stare wiadomości
+        Message.query.filter(
+            Message.session_id.in_(session_ids),
+            Message.timestamp < cutoff_date
+        ).delete()
+        
+        db.session.commit()
+        
+        logger.info(f"User {current_user.username} cleaned up {old_messages_count} old messages")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Old messages cleaned up successfully',
+            'messages_deleted': old_messages_count,
+            'cutoff_date': cutoff_date.isoformat()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Cleanup old messages error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ✅ ENDPOINT DO DEBUGOWANIA API
+@chat_bp.route('/api/debug/endpoints')
+@login_required 
+def debug_endpoints():
+    """Debug endpoint - pokazuje dostępne endpointy"""
+    return jsonify({
+        'status': 'success',
+        'available_endpoints': [
+            'GET /api/sessions/active',
+            'POST /api/session/init', 
+            'GET /api/session/<token>/key',
+            'POST /api/session/<token>/exchange_key',
+            'DELETE /api/session/<token>/clear',
+            'DELETE /api/session/<token>/delete',
+            'POST /api/message/send',
+            'GET /api/messages/<token>',
+            'POST /api/messages/cleanup',
+            'GET /api/friends',
+            'POST /api/friends/add',
+            'DELETE /api/friends/<id>',
+            'GET /api/friend_requests/pending',
+            'POST /api/friend_requests/<id>/accept',
+            'POST /api/friend_requests/<id>/reject',
+            'GET /api/user/<id>/public_key',
+            'GET /api/users',
+            'GET /api/polling/messages',
+            'GET /api/debug/endpoints'
+        ],
+        'missing_endpoints_added': [
+            '/api/session/<token>/clear',
+            '/api/session/<token>/delete', 
+            '/api/messages/cleanup'
+        ]
+    })
+
+
+# ✅ ENDPOINT DO TESTOWANIA PRZYCISKÓW
+@chat_bp.route('/api/test/buttons', methods=['POST'])
+@login_required
+def test_buttons():
+    """Test endpoint dla przycisków czatu"""
+    try:
+        data = request.get_json()
+        action = data.get('action')  # 'clear' lub 'delete'
+        session_token = data.get('session_token')
+        
+        if not action or not session_token:
+            return jsonify({'error': 'Missing action or session_token'}), 400
+        
+        # Sprawdź czy sesja istnieje
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        if action == 'clear':
+            return jsonify({
+                'status': 'success',
+                'message': 'Clear button test successful',
+                'action': 'clear',
+                'session_token': session_token,
+                'would_delete_messages': Message.query.filter_by(session_id=session.id).count()
+            })
+        
+        elif action == 'delete':
+            return jsonify({
+                'status': 'success', 
+                'message': 'Delete button test successful',
+                'action': 'delete',
+                'session_token': session_token,
+                'would_delete_messages': Message.query.filter_by(session_id=session.id).count(),
+                'would_deactivate_session': True
+            })
+        
+        else:
+            return jsonify({'error': 'Invalid action'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
