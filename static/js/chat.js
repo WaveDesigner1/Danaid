@@ -1,4 +1,6 @@
 // Optimized chat.js with integrated crypto functions and improved UI
+// CZĘŚĆ 1/4: Constructor + Crypto Functions
+
 class ChatManager {
     constructor() {
         this.socket = null;
@@ -275,7 +277,7 @@ class ChatManager {
         return this._arrayBufferToBase64(decrypted);
     }
 
-    // ============= FORWARD SECRECY - KEY DERIVATION =============
+// ============= FORWARD SECRECY - KEY DERIVATION =============
 
     // Message counter management
     initMessageCounters() {
@@ -630,7 +632,7 @@ class ChatManager {
         }
     }
 
-    // =================
+// =================
     // ✅ IMPROVED MESSAGE HANDLING WITH FORWARD SECRECY
     // =================
     
@@ -835,7 +837,7 @@ class ChatManager {
         return base64Pattern.test(message.content.replace(/\s/g, ''));
     }
     
-    // ✅ SESSION CLEANUP METHODS
+    // ✅ SESSION CLEANUP METHODS - FIXED (usunięte duplikaty)
     async clearSessionMessages() {
         if (!this.currentSession) {
             this._showNotification('Brak aktywnej sesji', 'warning');
@@ -943,7 +945,7 @@ class ChatManager {
         }
     }
 
-    // =================
+// =================
     // ✅ IMPROVED SOCKET.IO HANDLING
     // =================
     
@@ -1077,7 +1079,6 @@ class ChatManager {
         }
     }
 
-    // ✅ IMPROVED: Updated API endpoint call
     async addFriend(userIdOrUsername) {
         try {
             const response = await fetch('/api/friends/add', {
@@ -1100,25 +1101,42 @@ class ChatManager {
         }
     }
 
+    // ✅ POPRAWIONA METODA removeFriend - używa właściwe ID
     async removeFriend(friendId) {
-        if (!confirm('Are you sure you want to remove this friend?')) return;
+        if (!confirm('Czy na pewno chcesz usunąć tego znajomego?')) return;
 
         try {
+            console.log(`🗑️ Removing friend ID: ${friendId}`);
+            
             const response = await fetch(`/api/friends/${friendId}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
 
             const data = await response.json();
 
-            if (data.status === 'success') {
-                this._showNotification('Friend removed successfully', 'success');
+            if (response.ok && data.status === 'success') {
+                this._showNotification('Znajomy został usunięty', 'success');
+                
+                // Odśwież listę znajomych
                 await this._loadFriends();
+                
+                // Jeśli usunięty znajomy był aktywny w czacie, wyczyść sesję
+                if (this.currentChatPartner && this.currentChatPartner.id === friendId) {
+                    this.currentChatPartner = null;
+                    this.currentSession = null;
+                    this._updateChatUI();
+                }
+                
+                console.log('✅ Friend removed successfully');
             } else {
-                this._showNotification(data.message || 'Failed to remove friend', 'error');
+                throw new Error(data.error || 'Failed to remove friend');
             }
         } catch (error) {
             console.error('❌ Remove friend error:', error);
-            this._showNotification('Failed to remove friend', 'error');
+            this._showNotification('Nie udało się usunąć znajomego: ' + error.message, 'error');
         }
     }
 
@@ -1277,7 +1295,6 @@ class ChatManager {
         }
     }
 
-    // ✅ IMPROVED: Direct friend click starts chat session
     async _selectFriend(userId) {
         const friend = this.friends.find(f => f.user_id === userId);
         if (friend) {
@@ -1481,7 +1498,6 @@ class ChatManager {
         }
     }
 
-    // ✅ IMPROVED: Better message display with proper colors
     _addMessageToUI(message) {
         if (!this.elements.messagesContainer) return;
         
@@ -1502,7 +1518,7 @@ class ChatManager {
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
     }
 
-    // ✅ IMPROVED: Friend list without IDs, clickable items
+    // ✅ POPRAWIONA METODA _renderFriendsList - z przyciskami usuwania
     _renderFriendsList() {
         if (!this.elements.friendsList) return;
         
@@ -1526,13 +1542,27 @@ class ChatManager {
                         `<span class="unread-count">${this.unreadCounts.get(friend.user_id)}</span>` : 
                         ''
                     }
+                    <!-- ✅ DODANE: Przyciski akcji znajomego -->
+                    <div class="friend-actions">
+                        <button class="btn btn-primary" title="Czat" onclick="event.stopPropagation(); window.chatManager._selectFriend('${friend.user_id}');">
+                            <i class="fas fa-comment"></i>
+                        </button>
+                        <button class="btn btn-danger" title="Usuń znajomego" onclick="event.stopPropagation(); window.chatManager.removeFriend(${friend.id});">
+                            <i class="fas fa-user-minus"></i>
+                        </button>
+                    </div>
                 </li>
             `;
         }).join('');
         
-        // ✅ IMPROVED: Add click listeners to entire friend items
+        // ✅ POPRAWIONE: Obsługa kliknięcia w element znajomego (nie w przyciski)
         this.elements.friendsList.querySelectorAll('.friend-item').forEach(item => {
             item.addEventListener('click', (e) => {
+                // Nie reaguj jeśli kliknięto przycisk
+                if (e.target.closest('.friend-actions')) {
+                    return;
+                }
+                
                 e.preventDefault();
                 const userId = item.dataset.userId;
                 console.log('🎯 Clicking friend:', userId);
@@ -1568,6 +1598,7 @@ class ChatManager {
         }
     }
 
+    // ✅ POPRAWIONA METODA _updateChatUI - pokazuje przyciski akcji
     _updateChatUI() {
         if (this.currentSession && this.elements.chatHeader) {
             const otherUser = this.currentSession.other_user;
@@ -1581,8 +1612,47 @@ class ChatManager {
                 <div class="session-info">
                     <span class="session-status ready">🔐 Encrypted${this.forwardSecrecyEnabled ? ' + FS' : ''}</span>
                 </div>
+                <!-- ✅ DODANE: Przyciski akcji czatu -->
+                <div id="chat-actions" class="chat-actions visible">
+                    <button id="clear-conversation-btn" class="btn btn-secondary" title="Wyczyść konwersację (Ctrl+Delete)">
+                        <i class="fas fa-broom"></i> <span>Wyczyść</span>
+                    </button>
+                    <button id="delete-conversation-btn" class="btn btn-danger" title="Usuń całą konwersację (Ctrl+Shift+Delete)">
+                        <i class="fas fa-trash"></i> <span>Usuń</span>
+                    </button>
+                </div>
             `;
+            
+            // ✅ DODAJ OBSŁUGĘ PRZYCISKÓW PO UTWORZENIU
+            this._attachChatActionListeners();
+        } else {
+            // Brak aktywnej sesji - ukryj przyciski
+            if (this.elements.chatHeader) {
+                this.elements.chatHeader.innerHTML = `
+                    <div class="chat-partner-info">
+                        <h2>Wybierz rozmowę</h2>
+                        <span class="chat-status"></span>
+                    </div>
+                    <div class="chat-actions" style="display: none;"></div>
+                `;
+            }
         }
+    }
+
+    // ✅ NOWA METODA: Dodaj obsługę przycisków po utworzeniu
+    _attachChatActionListeners() {
+        const clearBtn = document.getElementById('clear-conversation-btn');
+        const deleteBtn = document.getElementById('delete-conversation-btn');
+        
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => this.clearSessionMessages());
+        }
+        
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => this.deleteSession());
+        }
+        
+        console.log('✅ Chat action listeners attached');
     }
 
     _showNotification(message, type = 'info', duration = 5000) {
@@ -1665,10 +1735,17 @@ class ChatManager {
         return keyData.public_key;
     }
 
+    // ✅ POPRAWIONA METODA _getSessionKeyOptimized
     async _getSessionKeyOptimized(sessionToken) {
         const sessionKey = this.getSessionKey(sessionToken);
         if (sessionKey) {
-            return await this.importSessionKey(sessionKey);
+            try {
+                return await this.importSessionKey(sessionKey);
+            } catch (error) {
+                console.error('❌ Failed to import session key:', error);
+                this.removeSessionKey(sessionToken);
+                return null;
+            }
         }
         return null;
     }
@@ -1839,13 +1916,15 @@ class ChatManager {
         return this.socket && this.socket.connected;
     }
 
-    // ✅ DEBUG INFO with Forward Secrecy status
+    // ✅ POPRAWIONA METODA getDebugInfo
     getDebugInfo() {
         return {
             user: this.user?.username || 'Not logged in',
+            userId: this.user?.id || 'Unknown',
             friends: this.friends.length,
             sessions: this.sessions.length,
             currentSession: this.currentSession?.token?.slice(0, 8) + '...' || 'None',
+            currentPartner: this.currentChatPartner?.username || 'None',
             socketConnected: this.isConnected(),
             sessionKeys: this.sessionKeys.size,
             forwardSecrecy: this.getForwardSecrecyInfo(),
@@ -1853,7 +1932,8 @@ class ChatManager {
                 session: token.slice(0, 8) + '...',
                 messageCount: count
             })),
-            decryptedMessagesStored: this.decryptedMessages ? this.decryptedMessages.size : 0
+            decryptedMessagesStored: this.decryptedMessages ? this.decryptedMessages.size : 0,
+            version: 'v2.0-fixed'
         };
     }
 
@@ -1891,245 +1971,6 @@ class ChatManager {
         this.decryptedMessages.clear();
         
         console.log('🧹 ChatManager cleaned up');
-    }
-
-    async _clearConversation() {
-        console.log('🧹 Clear conversation requested');
-        
-        if (!this.currentSession || !this.currentSession.token) {
-            console.error('❌ No active session to clear');
-            this._showNotification('Brak aktywnej sesji do wyczyszczenia', 'error');
-            return false;
-        }
-        
-        const sessionToken = this.currentSession.token;
-        
-        // Potwierdź akcję
-        if (!confirm('Czy na pewno chcesz wyczyścić wszystkie wiadomości w tej konwersacji? Ta akcja nie może zostać cofnięta.')) {
-            console.log('🚫 Clear conversation cancelled by user');
-            return false;
-        }
-        
-        try {
-            console.log(`🗑️ Clearing session: ${sessionToken.slice(0, 8)}...`);
-            
-            const response = await fetch(`/api/session/${sessionToken}/clear`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.status === 'success') {
-                console.log('✅ Session cleared successfully:', data);
-                
-                // Wyczyść wiadomości z interfejsu
-                this._clearMessagesDisplay();
-                
-                // Wyślij Socket.IO notification o wyczyszczeniu
-                this._notifySessionCleared(sessionToken);
-                
-                // Pokazz powiadomienie
-                this._showNotification(
-                    `Wyczyszczono ${data.messages_deleted || 0} wiadomości`, 
-                    'success'
-                );
-                
-                console.log(`✅ Session ${sessionToken.slice(0, 8)}... cleared`);
-                return true;
-                
-            } else {
-                console.error('❌ Clear session failed:', data);
-                this._showNotification(data.error || 'Błąd podczas czyszczenia konwersacji', 'error');
-                return false;
-            }
-            
-        } catch (error) {
-            console.error('❌ Clear session error:', error);
-            this._showNotification('Błąd połączenia podczas czyszczenia konwersacji', 'error');
-            return false;
-        }
-    }
-    
-    /**
-     * ✅ USUWA CAŁĄ SESJĘ (usuwa sesję + wiadomości)
-     */
-    async _deleteConversation() {
-        console.log('🗑️ Delete conversation requested');
-        
-        if (!this.currentSession || !this.currentSession.token) {
-            console.error('❌ No active session to delete');
-            this._showNotification('Brak aktywnej sesji do usunięcia', 'error');
-            return false;
-        }
-        
-        const sessionToken = this.currentSession.token;
-        const otherUser = this.currentSession.otherUser;
-        
-        // Potwierdź akcję
-        if (!confirm(`Czy na pewno chcesz usunąć całą konwersację z użytkownikiem ${otherUser?.username || 'nieznany'}? Ta akcja nie może zostać cofnięta.`)) {
-            console.log('🚫 Delete conversation cancelled by user');
-            return false;
-        }
-        
-        try {
-            console.log(`🗑️ Deleting session: ${sessionToken.slice(0, 8)}...`);
-            
-            const response = await fetch(`/api/session/${sessionToken}/delete`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.status === 'success') {
-                console.log('✅ Session deleted successfully:', data);
-                
-                // Usuń sesję z lokalnej pamięci
-                delete this.sessionKeys[sessionToken];
-                this.currentSession = null;
-                
-                // Wyczyść interfejs
-                this._clearMessagesDisplay();
-                this._updateChatUI();
-                
-                // Odśwież listę sesji
-                await this._loadActiveSessions();
-                
-                // Wyślij Socket.IO notification o usunięciu
-                this._notifySessionDeleted(sessionToken, otherUser?.id);
-                
-                // Pokazz powiadomienie
-                this._showNotification(
-                    `Konwersacja z ${otherUser?.username || 'użytkownikiem'} została usunięta`, 
-                    'success'
-                );
-                
-                console.log('✅ Session deleted successfully');
-                return true;
-                
-            } else {
-                console.error('❌ Delete session failed:', data);
-                this._showNotification(data.error || 'Błąd podczas usuwania konwersacji', 'error');
-                return false;
-            }
-            
-        } catch (error) {
-            console.error('❌ Delete session error:', error);
-            this._showNotification('Błąd połączenia podczas usuwania konwersacji', 'error');
-            return false;
-        }
-    }
-    
-    /**
-     * ✅ WYCZYŚĆ WYŚWIETLANIE WIADOMOŚCI
-     */
-    _clearMessagesDisplay() {
-        const messagesContainer = document.getElementById('messages');
-        if (messagesContainer) {
-            messagesContainer.innerHTML = `
-                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
-                    <i class="fas fa-broom" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i>
-                    <p>Konwersacja została wyczyszczona</p>
-                </div>
-            `;
-            console.log('🧹 Messages display cleared');
-        }
-    }
-    
-    /**
-     * ✅ SOCKET.IO NOTIFICATIONS
-     */
-    _notifySessionCleared(sessionToken) {
-        try {
-            if (this.socket && this.socket.connected) {
-                this.socket.emit('session_action', {
-                    type: 'cleared',
-                    session_token: sessionToken,
-                    timestamp: new Date().toISOString()
-                });
-                console.log('📡 Session cleared notification sent via Socket.IO');
-            }
-        } catch (error) {
-            console.error('📡 Failed to send session cleared notification:', error);
-        }
-    }
-    
-    _notifySessionDeleted(sessionToken, otherUserId) {
-        try {
-            if (this.socket && this.socket.connected) {
-                this.socket.emit('session_action', {
-                    type: 'deleted',
-                    session_token: sessionToken,
-                    timestamp: new Date().toISOString()
-                });
-                console.log('📡 Session deleted notification sent via Socket.IO');
-            }
-        } catch (error) {
-            console.error('📡 Failed to send session deleted notification:', error);
-        }
-    }
-    
-    /**
-     * ✅ POKAZUJ POWIADOMIENIA
-     */
-    _showNotification(message, type = 'info') {
-        console.log(`🔔 Notification (${type}): ${message}`);
-        
-        // Sprawdź czy istnieje container na powiadomienia
-        let notificationContainer = document.getElementById('notification-container');
-        if (!notificationContainer) {
-            // Utwórz container
-            notificationContainer = document.createElement('div');
-            notificationContainer.id = 'notification-container';
-            notificationContainer.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                z-index: 10000;
-                max-width: 300px;
-            `;
-            document.body.appendChild(notificationContainer);
-        }
-        
-        // Utwórz powiadomienie
-        const notification = document.createElement('div');
-        notification.style.cssText = `
-            background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
-            color: white;
-            padding: 12px 16px;
-            margin-bottom: 8px;
-            border-radius: 4px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            font-size: 14px;
-            opacity: 0;
-            transform: translateX(100%);
-            transition: all 0.3s ease;
-        `;
-        notification.textContent = message;
-        
-        notificationContainer.appendChild(notification);
-        
-        // Animacja wejścia
-        setTimeout(() => {
-            notification.style.opacity = '1';
-            notification.style.transform = 'translateX(0)';
-        }, 100);
-        
-        // Auto usuń po 4 sekundach
-        setTimeout(() => {
-            notification.style.opacity = '0';
-            notification.style.transform = 'translateX(100%)';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
-        }, 4000);
     }
 
 }  // ✅ KONIEC KLASY ChatManager
@@ -2226,3 +2067,4 @@ console.log("✅ chat.js loaded successfully with Forward Secrecy support");
 console.log("🧪 Run 'testForwardSecrecy()' in console to test Forward Secrecy");
 console.log("🔍 Run 'chatManager.getDebugInfo()' for detailed status");
 console.log("📊 Run 'chatManager.getForwardSecrecyInfo()' for FS status");
+
