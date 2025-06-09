@@ -246,9 +246,67 @@ body {
   margin-left: 8px;
 }
 
-/* Ukryj stare przyciski akcji - teraz caly element jest clickable */
 .friend-actions {
-  display: none;
+  display: flex; /* ZMIENIONE z display: none */
+  gap: 8px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  flex-shrink: 0;
+}
+
+.friend-item:hover .friend-actions {
+  opacity: 1;
+}
+
+/* ✅ NOWE STYLE DLA PRZYCISKÓW */
+.friend-actions .btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+}
+
+.friend-actions .btn-primary {
+  background-color: var(--primary); /* #FF9800 */
+  color: var(--bg-dark); /* #333 */
+}
+
+.friend-actions .btn-primary:hover {
+  background-color: var(--primary-dark); /* #F57C00 */
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.friend-actions .btn-danger {
+  background-color: var(--danger); /* #f44336 */
+  color: white;
+}
+
+.friend-actions .btn-danger:hover {
+  background-color: #c0392b;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* ✅ RESPONSYWNE - Na mobile zawsze widoczne */
+@media (max-width: 768px) {
+  .friend-actions {
+    opacity: 1; /* Zawsze widoczne na telefonie */
+  }
+  
+  .friend-actions .btn {
+    min-width: 20px;
+    height: 20px;
+    font-size: 10px;
+  }
 }
 
 /* === OBSZAR CZATU === */
