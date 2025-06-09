@@ -1402,51 +1402,69 @@ class ChatManager {
         };
     }
 
-    _setupEventListeners() {
-        // Message sending
-        this.elements.sendButton?.addEventListener('click', () => this.sendMessage());
-        this.elements.messageInput?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                this.sendMessage();
-            }
-        });
+   _setupEventListeners() {
+    // Message sending
+    this.elements.sendButton?.addEventListener('click', () => this.sendMessage());
+    this.elements.messageInput?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            this.sendMessage();
+        }
+    });
 
-        // Add friend modal
-        this.elements.addFriendBtn?.addEventListener('click', () => {
-            this._showAddFriendModal();
-        });
+    // Add friend modal
+    this.elements.addFriendBtn?.addEventListener('click', () => {
+        this._showAddFriendModal();
+    });
 
-        // Typing indicator
-        this.elements.messageInput?.addEventListener('input', () => {
-            this._handleTyping();
-        });
+    // Typing indicator
+    this.elements.messageInput?.addEventListener('input', () => {
+        this._handleTyping();
+    });
 
-        window.addEventListener('focus', () => {
-            this.lastActivity = Date.now();
-        });
+    window.addEventListener('focus', () => {
+        this.lastActivity = Date.now();
+    });
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            // Ctrl+Delete = clear session
-            if (e.ctrlKey && e.key === 'Delete' && !e.shiftKey) {
-                e.preventDefault();
-                this.clearSessionMessages();
-            }
-            
-            // Ctrl+Shift+Delete = delete session
-            if (e.ctrlKey && e.shiftKey && e.key === 'Delete') {
-                e.preventDefault();
-                this.deleteSession();
-            }
-        });
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Ctrl+Delete = clear session
+        if (e.ctrlKey && e.key === 'Delete' && !e.shiftKey) {
+            e.preventDefault();
+            this.clearSessionMessages();
+        }
+        
+        // Ctrl+Shift+Delete = delete session
+        if (e.ctrlKey && e.shiftKey && e.key === 'Delete') {
+            e.preventDefault();
+            this.deleteSession();
+        }
+    });
 
-        window.addEventListener('beforeunload', () => {
-            if (this.socket) {
-                this.socket.disconnect();
-            }
+    window.addEventListener('beforeunload', () => {
+        if (this.socket) {
+            this.socket.disconnect();
+        }
+    });
+
+    // ✅ Clear conversation button
+    const clearBtn = document.getElementById('clear-conversation-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            console.log('🧹 Clear button clicked');
+            this.clearSessionMessages();
         });
     }
+
+    // ✅ Delete conversation button  
+    const deleteBtn = document.getElementById('delete-conversation-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => {
+            console.log('🗑️ Delete button clicked');
+            this.deleteSession();
+        });
+    }
+}
 
     _showAddFriendModal() {
         const modal = document.getElementById('add-friend-modal');
