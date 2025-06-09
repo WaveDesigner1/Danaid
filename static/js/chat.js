@@ -818,12 +818,6 @@ class ChatManager {
         }
     }
 
-    _updateUnreadCount(senderId) {
-        const current = this.unreadCounts.get(senderId) || 0;
-        this.unreadCounts.set(senderId, current + 1);
-        this._renderFriendsList(); // Odświeża listę z licznikami
-    }
-
     _shouldDecryptMessage(message) {
         // If no IV, definitely not encrypted
         if (!message.iv) return false;
@@ -1036,27 +1030,25 @@ class ChatManager {
     async _handleNewMessage(data) {
         // Skip own messages
         if (data.message.sender_id == this.user.id) return;
-        
+    
         try {
             // Validate session access
             if (!this._hasSessionAccess(data.session_token)) {
                 console.warn("Received message for unauthorized session");
                 return;
             }
-            
+        
             // Process message
             await this._processMessage(data.session_token, data.message, 'realtime');
-            
+        
             // Update unread count if not current session
-            if (sessionToken === this.currentSession?.token) {
-                this._addMessageToUI(processedMessage);
-            } else {
-                // Aktualizuj licznik dla znajomego
-                this._updateUnreadCount(data.message.sender_id); 
+            if (data.session_token !== this.currentSession?.token) {
+                this._updateUnreadCount(data.session_token);
+                this._renderFriendsList();
             }
-            
+        
             this._playNotificationSound();
-            
+        
         } catch (error) {
             console.error("❌ Error handling new message:", error);
             this._showNotification('Error receiving message', 'error', 3000);
