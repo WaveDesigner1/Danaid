@@ -48,8 +48,8 @@
                     <span class="chat-status"></span>
                 </div>
     
-               <!-- Przyciski akcji - ukryte gdy brak sesji -->
-                <div class="chat-actions" style="display: none;">
+               <!-- ✅ POPRAWIONE: Przyciski akcji z właściwymi ID -->
+                <div id="chat-actions" class="chat-actions" style="display: none;">
                     <button id="clear-conversation-btn" class="btn btn-secondary" title="Wyczyść konwersację (Ctrl+Delete)">
                         <i class="fas fa-broom"></i> <span>Wyczyść</span>
                     </button>
@@ -105,7 +105,7 @@
     <script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     
-    <!-- Inicjalizacja aplikacji -->
+    <!-- ✅ POPRAWIONA INICJALIZACJA z obsługą przycisków -->
     <script>
         console.log("=== DANAID CHAT INICJALIZACJA (ZOPTYMALIZOWANA) ===");
         
@@ -151,6 +151,30 @@
             }
         }
         
+        // ✅ DODANA OBSŁUGA PRZYCISKÓW PO ZAŁADOWANIU STRONY
+        document.addEventListener('DOMContentLoaded', () => {
+            // Dodaj obsługę przycisków czyszczenia/usuwania konwersacji
+            const clearBtn = document.getElementById('clear-conversation-btn');
+            const deleteBtn = document.getElementById('delete-conversation-btn');
+            
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    if (window.chatManager) {
+                        window.chatManager.clearSessionMessages();
+                    }
+                });
+            }
+            
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', () => {
+                    if (window.chatManager) {
+                        window.chatManager.deleteSession();
+                    }
+                });
+            }
+            
+            console.log("✅ Obsługa przycisków konwersacji dodana");
+        });
         
         console.log("=== DANAID CHAT ZOPTYMALIZOWANY GOTOWY ===");
     </script>
