@@ -706,3 +706,134 @@ input:focus-visible,
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
+
+/* ✅ CHAT ACTIONS - PRZYCISKI WYCZYŚĆ/USUŃ */
+
+.chat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #444;
+    background: #2a2a2a;
+    min-height: 60px;
+}
+
+.chat-info {
+    flex: 1;
+}
+
+.chat-actions {
+    display: none; /* Domyślnie ukryte */
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.chat-actions .btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    transition: all 0.2s ease;
+}
+
+.btn-warning {
+    background: #f39c12;
+    color: white;
+}
+
+.btn-warning:hover {
+    background: #e67e22;
+    transform: translateY(-1px);
+}
+
+.btn-danger {
+    background: #e74c3c;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c0392b;
+    transform: translateY(-1px);
+}
+
+.btn-sm {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+}
+
+/* Chat partner info styling */
+.chat-partner-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.partner-name {
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #fff;
+}
+
+.partner-status {
+    font-size: 0.85rem;
+    opacity: 0.8;
+}
+
+.partner-status.online {
+    color: #2ecc71;
+}
+
+.partner-status.offline {
+    color: #95a5a6;
+}
+
+.session-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+}
+
+.session-status {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    background: #27ae60;
+    color: white;
+}
+
+.session-status.ready {
+    background: #27ae60;
+}
+
+.session-status.connecting {
+    background: #f39c12;
+}
+
+.session-status.error {
+    background: #e74c3c;
+}
+
+/* Responsive dla mniejszych ekranów */
+@media (max-width: 768px) {
+    .chat-header {
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 0.8rem;
+    }
+    
+    .chat-actions {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .chat-actions .btn {
+        flex: 1;
+        justify-content: center;
+    }
+}
