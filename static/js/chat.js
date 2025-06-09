@@ -1588,21 +1588,31 @@ class ChatManager {
     }
 
     _updateChatUI() {
-        if (this.currentSession && this.elements.chatHeader) {
-            const otherUser = this.currentSession.other_user;
-            this.elements.chatHeader.innerHTML = `
-                <div class="chat-partner-info">
-                    <span class="partner-name">${this._escapeHtml(otherUser.username)}</span>
-                    <span class="partner-status ${otherUser.is_online ? 'online' : 'offline'}">
-                        ${otherUser.is_online ? '🟢 Online' : '⚪ Offline'}
-                    </span>
-                </div>
-                <div class="session-info">
-                    <span class="session-status ready">🔐 Encrypted${this.forwardSecrecyEnabled ? ' + FS' : ''}</span>
-                </div>
-            `;
+    if (this.currentSession && this.elements.chatHeader) {
+        const otherUser = this.currentSession.other_user;
+        this.elements.chatHeader.innerHTML = `
+            <div class="chat-partner-info">
+                <span class="partner-name">${this._escapeHtml(otherUser.username)}</span>
+                <span class="partner-status ${otherUser.is_online ? 'online' : 'offline'}">
+                    ${otherUser.is_online ? '🟢 Online' : '⚪ Offline'}
+                </span>
+            </div>
+            <div class="session-info">
+                <span class="session-status ready">🔐 Encrypted${this.forwardSecrecyEnabled ? ' + FS' : ''}</span>
+            </div>
+        `;
+    }
+
+    // ✅ Show/hide chat actions based on session (moved outside the if block)
+    const chatActions = document.querySelector('.chat-actions');
+    if (chatActions) {
+        if (this.currentSession) {
+            chatActions.style.display = 'flex';  // ✅ POKAŻ!
+        } else {
+            chatActions.style.display = 'none';  // Ukryj
         }
     }
+}
 
     _showNotification(message, type = 'info', duration = 5000) {
         const notification = document.createElement('div');
