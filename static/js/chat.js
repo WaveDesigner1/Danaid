@@ -835,6 +835,83 @@ class ChatManager {
         const base64Pattern = /^[A-Za-z0-9+/]+=*$/;
         return base64Pattern.test(message.content.replace(/\s/g, ''));
     }
+
+    // =================
+    // POLLING FALLBACK
+    // =================
+    
+    _enablePollingFallback() {
+        if (this.pollingInterval) return;
+        
+        console.log("🔄 Enabling polling fallback");
+        
+        let lastMessageId = 0;
+        
+        this.pollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/polling/messages?last_id=${lastMessageId}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.messages && data.messages.length > 0) {
+                        for (const msgData of data.messages) {
+                            await this._handleNewMessage(msgData);
+                        }
+                        lastMessageId = data.last_id;
+                    }
+                }
+            } catch (error) {
+                console.error("❌ Polling error:", error);
+            }
+        }, 3000);
+    }
+
+    // =================
+    // MESSAGE LOADING AND CACHING
+    // =================
+    
+    async _loadMessages(sessionToken, limit = 50, offset = 0) {
+        try {
+            const response = await fetch(`/api/messages/${sessionToken}?limit=${limit}&offset=${offset}`);
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                // Clear existing messages for this session first
+                this.elements.messagesContainer.innerHTML = '';
+                
+                for (const message of data.messages) {
+                    await this._processMessage(sessionToken, message, 'history');
+                }
+                
+                console.log(`✅ Loaded ${data.messages.length} messages for session`);
+            }
+        } catch (error) {
+            console.error("❌ Failed to load messages:", error);
+            this._showNotification('Failed to load message history', 'error');
+        }
+    }
+
+    async _storeMessage(sessionToken, message) {
+        if (!this.messages.has(sessionToken)) {
+            this.messages.set(sessionToken, []);
+        }
+        
+        const sessionMessages = this.messages.get(sessionToken);
+        
+        const existingIndex = sessionMessages.findIndex(m => m.id === message.id);
+        if (existingIndex >= 0) {
+            sessionMessages[existingIndex] = message;
+        } else {
+            sessionMessages.push(message);
+            
+            if (sessionMessages.length > this.maxCachedMessages) {
+                sessionMessages.splice(0, sessionMessages.length - this.maxCachedMessages);
+            }
+        }
+        
+        sessionMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    }
     
     // ✅ DZIAŁAJĄCE FUNKCJE USUWANIA Z ORYGINALNEGO KODU
     async deleteMessage(messageId, messageElement) {
