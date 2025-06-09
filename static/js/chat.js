@@ -1280,18 +1280,23 @@ class ChatManager {
 
     // ✅ IMPROVED: Direct friend click starts chat session
     async _selectFriend(userId) {
-        const friend = this.friends.find(f => f.user_id === userId);
-        if (friend) {
-            this.currentChatPartner = friend;
-            
-            // Mark as active in UI
-            this._markFriendAsActive(userId);
-            
-            // Initialize session
-            await this._initSession(userId);
+    const friend = this.friends.find(f => f.user_id === userId);
+    if (friend) {
+        this.currentChatPartner = friend;
+        
+        // Mark as active in UI
+        this._markFriendAsActive(userId);
+        
+        // Initialize session
+        await this._initSession(userId);
+        
+        // ✅ Show chat actions when friend selected
+        const chatActions = document.querySelector('.chat-actions');
+        if (chatActions && this.currentSession) {
+            chatActions.style.display = 'flex';
         }
     }
-
+}
     _markFriendAsActive(userId) {
         // Remove active class from all friends
         document.querySelectorAll('.friend-item').forEach(item => {
