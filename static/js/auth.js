@@ -756,203 +756,134 @@ console.log('🚀 Danaid Auth System loaded - E2EE Authentication Ready - Railwa
 
 // === HYBRID LOGOUT SYSTEM ===
 
-/**
- * Hybrid Logout - próbuje JavaScript API, fallback na HTML
- */
 async function hybridLogout() {
-    console.log('🔄 Starting hybrid logout...');
+    console.log('🔄 Starting TRUE HYBRID logout...');
     
     const logoutBtn = document.getElementById('logout-btn');
     const logoutText = document.getElementById('logout-text');
-    const originalText = logoutText ? logoutText.textContent : 'Wyloguj';
+    
+    // UI feedback
+    if (logoutBtn) logoutBtn.disabled = true;
+    if (logoutText) logoutText.textContent = 'Wylogowywanie...';
     
     try {
-        // Sprawdź czy JavaScript Auth jest dostępny
+        // ✅ MECHANIZM A: JavaScript API + kontrolowane przekierowanie
+        console.log('🔄 Attempting MECHANISM A: JavaScript API...');
+        
+        // Sprawdź dostępność JavaScript auth
         if (!window.danaidAuth) {
-            console.warn('⚠️ JavaScript Auth not available, using fallback');
-            throw new Error('danaidAuth not loaded');
+            throw new Error('danaidAuth not available');
         }
         
-        if (typeof window.danaidAuth.logout !== 'function') {
-            console.warn('⚠️ logout() method not available, using fallback');
-            throw new Error('logout method not found');
+        // Wywołaj TYLKO API request bez wewnętrznego przekierowania
+        console.log('📡 Calling /api/logout...');
+        const response = await fetch('/api/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API logout failed: ${response.status}`);
         }
         
-        // Zaktualizuj UI - pokaż loading
-        if (logoutBtn) logoutBtn.disabled = true;
-        if (logoutText) logoutText.textContent = 'Wylogowywanie...';
+        const data = await response.json();
+        console.log('✅ API logout response:', data);
         
-        console.log('🔓 Attempting JavaScript logout...');
+        // Wyczyść dane przez JavaScript
+        if (typeof window.danaidAuth.clearUserData === 'function') {
+            window.danaidAuth.clearUserData();
+        } else {
+            sessionStorage.clear();
+        }
         
-        // Spróbuj mechanizm B (JavaScript API)
-        await window.danaidAuth.logout();
-
-        console.log('✅ JavaScript logout successful');
-
-        // DODAJ TO - wymuszony redirect po logout
-        console.log('🔄 Force redirect after logout...');
-        setTimeout(() => {
-            window.location.href = '/';
-        }, 100);
+        console.log('✅ MECHANISM A successful - JavaScript API logout');
+        console.log('🔄 JavaScript redirect to home...');
+        
+        // MECHANIZM A: JavaScript przekierowanie
+        window.location.href = '/';
+        
+        // Zakończ async - przekierowanie w toku
+        return new Promise(() => {}); // Never resolves
         
     } catch (error) {
-        console.warn('❌ JavaScript logout failed:', error);
-        console.log('🔄 Falling back to HTML logout...');
+        console.warn('❌ MECHANISM A failed:', error.message);
+        console.log('🔄 Falling back to MECHANISM B: HTML endpoint...');
         
-        // Przywróć UI
-        if (logoutBtn) logoutBtn.disabled = false;
-        if (logoutText) logoutText.textContent = 'Przekierowywanie...';
-        
-        // Fallback na mechanizm A (HTML)
-        setTimeout(() => {
+        // ✅ MECHANIZM B: HTML endpoint (server-side logout)
+        try {
+            // Wyczyść co się da lokalnie
+            try {
+                sessionStorage.clear();
+                console.log('✅ Local data cleared before HTML fallback');
+            } catch (clearError) {
+                console.warn('⚠️ Local clear failed:', clearError);
+            }
+            
+            if (logoutText) logoutText.textContent = 'Przekierowywanie (HTML)...';
+            
+            console.log('🔄 MECHANISM B: HTML endpoint redirect');
+            
+            // MECHANIZM B: HTML endpoint (server obsłuży logout + redirect)
             window.location.href = '/logout';
-        }, 500); // Krótkie opóźnienie dla UX
-        
-    } finally {
-        // Cleanup - przywróć UI po 3 sekundach (safety)
-        setTimeout(() => {
-            if (logoutBtn) logoutBtn.disabled = false;
-            if (logoutText) logoutText.textContent = originalText;
-        }, 3000);
+            
+            // Zakończ async - przekierowanie w toku
+            return new Promise(() => {}); // Never resolves
+            
+        } catch (fallbackError) {
+            console.error('❌ MECHANISM B also failed:', fallbackError);
+            
+            // ✅ MECHANIZM C: Emergency nuclear option
+            console.log('🚨 MECHANISM C: Emergency fallback');
+            emergencyLogout();
+            
+            return new Promise(() => {}); // Never resolves
+        }
     }
 }
 
 /**
- * Backup function - fallback w przypadku problemów z hybridLogout
+ * Emergency fallback - gdy wszystko inne zawiedzie
  */
 function emergencyLogout() {
-    console.log('🚨 Emergency logout - direct redirect');
-    window.location.href = '/logout';
-}
-
-// Globalny error handler dla logout
-function setupHybridLogout() {
-    console.log('🔧 Setting up hybrid logout...');
+    console.log('🚨 Emergency logout - clearing everything');
     
-    let logoutBtn = document.getElementById('logout-btn');
-    
-    if (logoutBtn) {
-        // Usuń stary event listener jeśli istnieje
-        logoutBtn.onclick = null;
+    try {
+        // Wyczyść wszystko
+        sessionStorage.clear();
+        localStorage.clear();
         
-        // Dodaj nowy event listener
-        logoutBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            console.log('🔴 LOGOUT BUTTON CLICKED!');
-            hybridLogout();
+        // Wyczyść cookies
+        document.cookie.split(";").forEach(function(c) { 
+            document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
         });
         
-        // Mark button as configured
-        logoutBtn._hasHybridListener = true;
-        
-        console.log('✅ Hybrid logout button configured (by ID)');
-        return true;
-        
-    } else {
-        console.warn('⚠️ Logout button #logout-btn not found, trying fallback...');
-        
-        // POPRAWIONY FALLBACK - bardziej precyzyjny
-        const allDangerButtons = document.querySelectorAll('.btn-danger');
-        console.log(`🔍 Found ${allDangerButtons.length} .btn-danger buttons`);
-        
-        let logoutButtonFound = false;
-        
-        allDangerButtons.forEach((btn, index) => {
-            const btnText = btn.textContent.trim();
-            console.log(`   Button ${index}: "${btnText}"`);
-            
-            // Sprawdź czy to przycisk wylogowania
-            if (btnText.includes('Wyloguj') && !btn._hasHybridListener) {
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    console.log('🔴 FALLBACK LOGOUT BUTTON CLICKED!');
-                    hybridLogout();
-                });
-                
-                btn._hasHybridListener = true;
-                logoutButtonFound = true;
-                
-                console.log(`✅ Hybrid logout configured on fallback button ${index}`);
-            }
-        });
-        
-        if (!logoutButtonFound) {
-            console.error('❌ No logout button found!');
-            return false;
-        }
-        
-        return true;
+    } catch (e) {
+        console.error('Emergency cleanup failed:', e);
     }
-}
-
-// POPRAWIONY Auto-setup z wielokrotnym retry
-let setupAttempts = 0;
-const maxSetupAttempts = 5;
-
-function attemptHybridLogoutSetup() {
-    setupAttempts++;
-    console.log(`🔄 Hybrid logout setup attempt ${setupAttempts}/${maxSetupAttempts}`);
     
-    const success = setupHybridLogout();
-    
-    if (!success && setupAttempts < maxSetupAttempts) {
-        // Retry po coraz dłuższym czasie
-        const delay = setupAttempts * 500; // 500ms, 1s, 1.5s, 2s, 2.5s
-        console.log(`⏰ Retrying in ${delay}ms...`);
-        
-        setTimeout(attemptHybridLogoutSetup, delay);
-    } else if (success) {
-        console.log('✅ Hybrid logout setup successful!');
-        setupLogoutErrorHandling();
-    } else {
-        console.error('❌ Failed to setup hybrid logout after all attempts');
-        
-        // EMERGENCY FALLBACK - dodaj global click handler
-        document.addEventListener('click', (e) => {
-            if (e.target.closest('.btn-danger') && 
-                e.target.textContent.includes('Wyloguj')) {
-                e.preventDefault();
-                console.log('🚨 EMERGENCY LOGOUT HANDLER!');
-                hybridLogout();
-            }
-        });
-        
-        console.log('🚨 Emergency global click handler added');
+    // Force redirect z multiple attempts
+    try {
+        window.location.replace('/');
+    } catch (e) {
+        window.location.href = '/';
     }
 }
-
-// === AUTO-SETUP Z POPRAWKAMI ===
-
-// Setup po załadowaniu DOM
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(attemptHybridLogoutSetup, 100); // Małe opóźnienie
-    });
-} else {
-    // DOM już załadowany - setup natychmiast i backup
-    setTimeout(attemptHybridLogoutSetup, 100);
-}
-
-// DODATKOWE backup setup (na wszelki wypadek)
-setTimeout(() => {
-    if (setupAttempts === 0) {
-        console.log('🔄 Force hybrid logout setup...');
-        attemptHybridLogoutSetup();
-    }
-}, 2000);
 
 /**
- * Setup error handling dla logout
+ * PODSUMOWANIE MECHANIZMÓW:
+ * 
+ * MECHANIZM A (preferowany):
+ * - JavaScript: fetch('/api/logout') 
+ * - JavaScript: sessionStorage.clear()
+ * - JavaScript: window.location.href = '/'
+ * 
+ * MECHANIZM B (fallback):
+ * - JavaScript: sessionStorage.clear() (co się da)
+ * - HTML: window.location.href = '/logout' 
+ * - Server: obsługuje logout + redirect w auth.py
+ * 
+ * MECHANIZM C (emergency):
+ * - JavaScript: clear wszystko
+ * - JavaScript: window.location.replace('/')
  */
-function setupLogoutErrorHandling() {
-    window.addEventListener('error', (event) => {
-        if (event.error && event.error.message && event.error.message.includes('logout')) {
-            console.error('🚨 Global logout error detected:', event.error);
-            emergencyLogout();
-        }
-    });
-    
-    console.log('🛡️ Logout error handling configured');
-}
-
-console.log('✅ Enhanced hybrid logout system loaded with timing fixes');
