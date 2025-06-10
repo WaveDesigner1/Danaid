@@ -427,7 +427,7 @@ def api_logout():
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
         
-        return response
+        return redirect(url_for('auth.index'))
         
     except Exception as e:
         print(f"❌ API Logout error: {e}")
