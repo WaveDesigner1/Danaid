@@ -925,6 +925,5 @@ def test_buttons():
 @login_required
 def check_admin():
     is_admin = getattr(current_user, 'is_admin', False)
-    return jsonify({'is_admin': bool(is_admin)})
-
+    return jsonify({'is_admin': bool(is_admin), 'username': current_user.username})
 
