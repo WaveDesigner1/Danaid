@@ -819,35 +819,6 @@ function emergencyLogout() {
     window.location.href = '/logout';
 }
 
-/**
- * Setup hybrid logout po załadowaniu DOM
- */
-function setupHybridLogout() {
-    const logoutBtn = document.getElementById('logout-btn');
-    
-    if (logoutBtn) {
-        // Usuń stary event listener jeśli istnieje
-        logoutBtn.onclick = null;
-        
-        // Dodaj nowy event listener
-        logoutBtn.addEventListener('click', hybridLogout);
-        
-        console.log('✅ Hybrid logout button configured');
-    } else {
-        console.warn('⚠️ Logout button not found, using emergency fallback');
-        
-        // Fallback - znajdź przycisk po klasie
-        const fallbackBtn = document.querySelector('.btn-danger');
-        if (fallbackBtn && fallbackBtn.textContent.includes('Wyloguj')) {
-            fallbackBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                hybridLogout();
-            });
-            console.log('✅ Fallback logout button configured');
-        }
-    }
-}
-
 // Globalny error handler dla logout
 function setupHybridLogout() {
     console.log('🔧 Setting up hybrid logout...');
