@@ -870,20 +870,18 @@ function emergencyLogout() {
     }
 }
 
-/**
- * PODSUMOWANIE MECHANIZMÓW:
- * 
- * MECHANIZM A (preferowany):
- * - JavaScript: fetch('/api/logout') 
- * - JavaScript: sessionStorage.clear()
- * - JavaScript: window.location.href = '/'
- * 
- * MECHANIZM B (fallback):
- * - JavaScript: sessionStorage.clear() (co się da)
- * - HTML: window.location.href = '/logout' 
- * - Server: obsługuje logout + redirect w auth.py
- * 
- * MECHANIZM C (emergency):
- * - JavaScript: clear wszystko
- * - JavaScript: window.location.replace('/')
- */
+// === GLOBAL LOGOUT HANDLER FOR INLINE ONCLICK ===
+window.handleLogoutClick = function() {
+    console.log("🔴 LOGOUT CLICKED!");
+    
+    if (typeof hybridLogout === 'function') {
+        hybridLogout();
+    } else if (window.danaidAuth) {
+        window.danaidAuth.logout();
+    } else {
+        sessionStorage.clear();
+        window.location.href = '/logout';
+    }
+};
+
+console.log("✅ Global handleLogoutClick ready");
