@@ -6,15 +6,15 @@
     <title>Panel Administratora</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
-    <!-- ZMIANA: Zunifikowany CSS zamiast admin_panel.css -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body class="admin-app">
     <header class="admin-header">
         <div class="admin-logo">Admin Panel</div>
         <nav class="admin-nav">
-            <a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a>
-            <a href="{{ url_for('admin.index') }}"><i class="fa fa-cogs"></i> Pełny Panel</a>
+            <!-- ✅ POPRAWIONE LINKI -->
+            <a href="/admin_dashboard"><i class="fa fa-dashboard"></i> Dashboard</a>
+            <a href="/flask_admin/"><i class="fa fa-cogs"></i> Pełny Panel</a>
             <a href="{{ url_for('chat.chat') }}"><i class="fa fa-comments"></i> Czat</a>
             <a href="{{ url_for('auth.logout') }}"><i class="fa fa-sign-out"></i> Wyloguj</a>
         </nav>
@@ -24,9 +24,10 @@
         <aside class="admin-sidebar">
             <div class="admin-menu">
                 <ul>
-                    <li class="active"><a href="{{ url_for('admin_panel') }}"><i class="fa fa-dashboard"></i> Dashboard</a></li>
-                    <li><a href="{{ url_for('diagnostics.index') }}"><i class="fa fa-stethoscope"></i> Diagnostyka</a></li>
-                    <li><a href="{{ url_for('webshell.index') }}"><i class="fa fa-terminal"></i> Webshell</a></li>
+                    <!-- ✅ POPRAWIONE LINKI -->
+                    <li class="active"><a href="/admin_dashboard"><i class="fa fa-dashboard"></i> Dashboard</a></li>
+                    <li><a href="/flask_admin/diagnostics/"><i class="fa fa-stethoscope"></i> Diagnostyka</a></li>
+                    <li><a href="/flask_admin/webshell/"><i class="fa fa-terminal"></i> Webshell</a></li>
                 </ul>
             </div>
         </aside>
