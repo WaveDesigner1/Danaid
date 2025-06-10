@@ -849,36 +849,119 @@ function setupHybridLogout() {
 }
 
 // Globalny error handler dla logout
-function setupLogoutErrorHandling() {
-    window.addEventListener('error', (event) => {
-        if (event.error && event.error.message && event.error.message.includes('logout')) {
-            console.error('🚨 Global logout error detected:', event.error);
-            emergencyLogout();
+function setupHybridLogout() {
+    console.log('🔧 Setting up hybrid logout...');
+    
+    let logoutBtn = document.getElementById('logout-btn');
+    
+    if (logoutBtn) {
+        // Usuń stary event listener jeśli istnieje
+        logoutBtn.onclick = null;
+        
+        // Dodaj nowy event listener
+        logoutBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('🔴 LOGOUT BUTTON CLICKED!');
+            hybridLogout();
+        });
+        
+        // Mark button as configured
+        logoutBtn._hasHybridListener = true;
+        
+        console.log('✅ Hybrid logout button configured (by ID)');
+        return true;
+        
+    } else {
+        console.warn('⚠️ Logout button #logout-btn not found, trying fallback...');
+        
+        // POPRAWIONY FALLBACK - bardziej precyzyjny
+        const allDangerButtons = document.querySelectorAll('.btn-danger');
+        console.log(`🔍 Found ${allDangerButtons.length} .btn-danger buttons`);
+        
+        let logoutButtonFound = false;
+        
+        allDangerButtons.forEach((btn, index) => {
+            const btnText = btn.textContent.trim();
+            console.log(`   Button ${index}: "${btnText}"`);
+            
+            // Sprawdź czy to przycisk wylogowania
+            if (btnText.includes('Wyloguj') && !btn._hasHybridListener) {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    console.log('🔴 FALLBACK LOGOUT BUTTON CLICKED!');
+                    hybridLogout();
+                });
+                
+                btn._hasHybridListener = true;
+                logoutButtonFound = true;
+                
+                console.log(`✅ Hybrid logout configured on fallback button ${index}`);
+            }
+        });
+        
+        if (!logoutButtonFound) {
+            console.error('❌ No logout button found!');
+            return false;
         }
-    });
+        
+        return true;
+    }
 }
 
-// === AUTO-SETUP HYBRID LOGOUT ===
+// POPRAWIONY Auto-setup z wielokrotnym retry
+let setupAttempts = 0;
+const maxSetupAttempts = 5;
+
+function attemptHybridLogoutSetup() {
+    setupAttempts++;
+    console.log(`🔄 Hybrid logout setup attempt ${setupAttempts}/${maxSetupAttempts}`);
+    
+    const success = setupHybridLogout();
+    
+    if (!success && setupAttempts < maxSetupAttempts) {
+        // Retry po coraz dłuższym czasie
+        const delay = setupAttempts * 500; // 500ms, 1s, 1.5s, 2s, 2.5s
+        console.log(`⏰ Retrying in ${delay}ms...`);
+        
+        setTimeout(attemptHybridLogoutSetup, delay);
+    } else if (success) {
+        console.log('✅ Hybrid logout setup successful!');
+        setupLogoutErrorHandling();
+    } else {
+        console.error('❌ Failed to setup hybrid logout after all attempts');
+        
+        // EMERGENCY FALLBACK - dodaj global click handler
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-danger') && 
+                e.target.textContent.includes('Wyloguj')) {
+                e.preventDefault();
+                console.log('🚨 EMERGENCY LOGOUT HANDLER!');
+                hybridLogout();
+            }
+        });
+        
+        console.log('🚨 Emergency global click handler added');
+    }
+}
+
+// === AUTO-SETUP Z POPRAWKAMI ===
 
 // Setup po załadowaniu DOM
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-        setupHybridLogout();
-        setupLogoutErrorHandling();
+        setTimeout(attemptHybridLogoutSetup, 100); // Małe opóźnienie
     });
 } else {
-    // DOM już załadowany
-    setupHybridLogout();
-    setupLogoutErrorHandling();
+    // DOM już załadowany - setup natychmiast i backup
+    setTimeout(attemptHybridLogoutSetup, 100);
 }
 
-// Backup setup po krótkiej chwili (safety)
+// DODATKOWE backup setup (na wszelki wypadek)
 setTimeout(() => {
-    if (!document.getElementById('logout-btn')?.onclick && 
-        !document.getElementById('logout-btn')?._hasHybridListener) {
-        console.log('🔄 Backup hybrid logout setup...');
-        setupHybridLogout();
+    if (setupAttempts === 0) {
+        console.log('🔄 Force hybrid logout setup...');
+        attemptHybridLogoutSetup();
     }
-}, 1000);
+}, 2000);
 
-console.log('✅ Hybrid logout system loaded - Clean Architecture');
+console.log('✅ Enhanced hybrid logout system loaded with timing fixes');
