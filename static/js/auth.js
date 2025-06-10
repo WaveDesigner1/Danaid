@@ -750,7 +750,7 @@ if (document.readyState === 'loading') {
 // Legacy compatibility dla istniejących wywołań
 window.login = (username, password, privateKey) => window.danaidAuth.login(username, password, privateKey);
 window.register = (username, password) => window.danaidAuth.register(username, password);
-window.logout = () => window.danaidAuth.logout();
+
 
 console.log('🚀 Danaid Auth System loaded - E2EE Authentication Ready - Railway Compatible');
 
