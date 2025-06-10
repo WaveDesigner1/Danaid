@@ -921,37 +921,3 @@ def test_buttons():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@chat_bp.route('/api/check_admin')
-@login_required
-def check_admin():
-    """Sprawdza czy użytkownik ma uprawnienia administratora"""
-    try:
-        print(f"🔍 check_admin endpoint wywołany dla: {current_user.username}")
-        
-        # Sprawdź czy ma atrybut is_admin
-        if hasattr(current_user, 'is_admin'):
-            is_admin = current_user.is_admin
-            print(f"✅ current_user.is_admin = {is_admin}")
-        else:
-            is_admin = False
-            print("⚠️ current_user nie ma atrybutu is_admin")
-        
-        result = {
-            'is_admin': bool(is_admin),
-            'username': current_user.username,
-            'user_id': getattr(current_user, 'user_id', 'unknown')
-        }
-        
-        print(f"📤 Zwracam: {result}")
-        return jsonify(result)
-        
-    except Exception as e:
-        print(f"❌ Błąd w check_admin: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        return jsonify({
-            'is_admin': False,
-            'username': 'error',
-            'error': str(e)
-        }), 200
