@@ -419,7 +419,7 @@ def api_logout():
             'status': 'success',
             'message': 'Logout successful',
             'code': 'logout_ok',
-            'redirect': '/'
+           
             
         })
         
