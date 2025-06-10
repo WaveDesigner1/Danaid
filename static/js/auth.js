@@ -786,8 +786,14 @@ async function hybridLogout() {
         
         // Spróbuj mechanizm B (JavaScript API)
         await window.danaidAuth.logout();
-        
+
         console.log('✅ JavaScript logout successful');
+
+        // DODAJ TO - wymuszony redirect po logout
+        console.log('🔄 Force redirect after logout...');
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 100);
         
     } catch (error) {
         console.warn('❌ JavaScript logout failed:', error);
