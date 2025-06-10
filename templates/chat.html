@@ -94,14 +94,15 @@
         </div>
     </div>
 
-    <!-- POPRAWIONE SKRYPTY -->
+    <!-- SKRYPTY -->
     <!-- Socket.IO Client Library -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     
     <!-- Konfiguracja Socket.IO -->
     <script src="/socket-config.js"></script>
     
-    <!-- POPRAWIONE ŚCIEŻKI DO JS -->
+    <!-- ŚCIEŻKI DO JS -->
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
     <script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     
