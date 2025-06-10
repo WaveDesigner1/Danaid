@@ -23,6 +23,12 @@
                     <button id="logout-btn" class="btn btn-danger" onclick="handleLogoutClick()">
                         <i class="fas fa-sign-out-alt"></i> <span id="logout-text">Wyloguj</span>
                     </button>
+
+                    <!-- ✅ PRZYCISK PANEL ADMINA (ukryty domyślnie) -->
+                    <button id="admin-panel-btn" class="btn btn-warning" style="display: none;" 
+                            onclick="window.location.href='/admin_dashboard'">
+                            <i class="fas fa-cog"></i> Panel Admina
+                    </button>
                     
                 </div>
             </div>
@@ -107,9 +113,9 @@
     <script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     
-    <!-- ✅ POPRAWIONA INICJALIZACJA z obsługą przycisków -->
+    <!-- ✅ INICJALIZACJA Z PANELEM ADMINA -->
     <script>
-        console.log("=== DANAID CHAT INICJALIZACJA (ZOPTYMALIZOWANA) ===");
+        console.log("=== DANAID CHAT INICJALIZACJA (Z PANELEM ADMINA) ===");
         
         // Sprawdź czy wszystkie moduły są załadowane
         if (typeof io === 'undefined') {
@@ -151,9 +157,18 @@
             if (usernameElement && username) {
                 usernameElement.textContent = username;
             }
+            
+            // ✅ SPRAWDŹ UPRAWNIENIA ADMINISTRATORA PO ZALOGOWANIU
+            setTimeout(() => {
+                if (typeof window.checkAndShowAdminButton === 'function') {
+                    window.checkAndShowAdminButton();
+                } else {
+                    console.warn("⚠️ Funkcja checkAndShowAdminButton nie jest dostępna - sprawdź czy chat.js się załadował");
+                }
+            }, 1500);
         }
         
-        // ✅ DODANA OBSŁUGA PRZYCISKÓW PO ZAŁADOWANIU STRONY
+        // ✅ OBSŁUGA PRZYCISKÓW PO ZAŁADOWANIU STRONY
         document.addEventListener('DOMContentLoaded', () => {
             // Dodaj obsługę przycisków czyszczenia/usuwania konwersacji
             const clearBtn = document.getElementById('clear-conversation-btn');
@@ -178,7 +193,7 @@
             console.log("✅ Obsługa przycisków konwersacji dodana");
         });
         
-        console.log("=== DANAID CHAT ZOPTYMALIZOWANY GOTOWY ===");
+        console.log("=== DANAID CHAT Z PANELEM ADMINA GOTOWY ===");
     </script>
 </body>
 </html>
