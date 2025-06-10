@@ -98,8 +98,9 @@ body {
 }
 
 .btn-danger {
-  background-color: var(--danger);
+  background-color: var(--bg-tertiary);
   color: white;
+  border: 1px solid var(--border);
 }
 
 .btn:hover {
