@@ -964,4 +964,18 @@ setTimeout(() => {
     }
 }, 2000);
 
+/**
+ * Setup error handling dla logout
+ */
+function setupLogoutErrorHandling() {
+    window.addEventListener('error', (event) => {
+        if (event.error && event.error.message && event.error.message.includes('logout')) {
+            console.error('🚨 Global logout error detected:', event.error);
+            emergencyLogout();
+        }
+    });
+    
+    console.log('🛡️ Logout error handling configured');
+}
+
 console.log('✅ Enhanced hybrid logout system loaded with timing fixes');
