@@ -418,8 +418,7 @@ def api_logout():
         response = jsonify({
             'status': 'success',
             'message': 'Logout successful',
-            'code': 'logout_ok',
-            'redirect': '/' 
+            'code': 'logout_ok'
         })
         
         # Dodaj te same headers jak w logout_page dla kompletnego czyszczenia
@@ -428,7 +427,7 @@ def api_logout():
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
         
-        return response
+        return redirect(url_for('auth.index'))
         
     except Exception as e:
         print(f"❌ API Logout error: {e}")
