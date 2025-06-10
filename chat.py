@@ -924,6 +924,11 @@ def test_buttons():
 @chat_bp.route('/api/check_admin')
 @login_required
 def check_admin():
-    is_admin = getattr(current_user, 'is_admin', False)
-    return jsonify({'is_admin': bool(is_admin), 'username': current_user.username})
-
+    try:
+        is_admin = getattr(current_user, 'is_admin', False)
+        return jsonify({
+            'is_admin': bool(is_admin),
+            'username': current_user.username
+        })
+    except Exception as e:
+        return jsonify({'is_admin': False}), 200
