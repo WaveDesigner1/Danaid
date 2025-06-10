@@ -381,6 +381,61 @@ def logout_page():
     response.headers['Expires'] = '0'
     
     return response
+
+@auth_bp.route('/api/logout', methods=['POST'])
+def api_logout():
+    """
+    API endpoint do wylogowania (dla JavaScript/AJAX)
+    Kompatybilny z funkcją logout() z auth.js
+    """
+    try:
+        print(f"🔓 API Logout request from user: {current_user.username if current_user.is_authenticated else 'Anonymous'}")
+        
+        # Wyloguj użytkownika z Flask-Login
+        if current_user.is_authenticated:
+            # Aktualizuj status online użytkownika
+            try:
+                if hasattr(current_user, 'is_online'):
+                    current_user.is_online = False
+                if hasattr(current_user, 'last_active'):
+                    current_user.last_active = datetime.utcnow()
+                db.session.commit()
+                print(f"✅ User {current_user.username} status updated to offline")
+            except Exception as e:
+                print(f"⚠️ Status update failed: {e}")
+                db.session.rollback()
+            
+            # Wyloguj z Flask-Login
+            logout_user()
+        
+        # BRUTAL SESSION CLEANUP (jak w logout_page)
+        session.clear()
+        session.permanent = False
+        
+        print("✅ API Logout successful")
+        
+        # Zwróć JSON response (dla JavaScript)
+        response = jsonify({
+            'status': 'success',
+            'message': 'Logout successful',
+            'code': 'logout_ok'
+        })
+        
+        # Dodaj te same headers jak w logout_page dla kompletnego czyszczenia
+        response.headers['Clear-Site-Data'] = '"cache", "cookies", "storage"'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        return response
+        
+    except Exception as e:
+        print(f"❌ API Logout error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Logout failed',
+            'error': str(e)
+        }), 500
 # === SESSION MANAGEMENT ===
 
 @auth_bp.route('/api/check_auth')
