@@ -1883,3 +1883,40 @@ console.log("🧪 Run 'testForwardSecrecy()' in console to test Forward Secrecy"
 console.log("🔍 Run 'chatManager.getDebugInfo()' for detailed status");
 console.log("📊 Run 'chatManager.getForwardSecrecyInfo()' for FS status");
 
+// ✅ ADMIN BUTTON FUNCTIONALITY
+async function checkAndShowAdminButton() {
+    try {
+        console.log("🔍 Sprawdzanie uprawnień administratora...");
+        
+        const response = await fetch('/api/check_admin');
+        if (response.ok) {
+            const data = await response.json();
+            
+            if (data.is_admin === true) {
+                const adminBtn = document.getElementById('admin-panel-btn');
+                if (adminBtn) {
+                    adminBtn.style.display = 'inline-block';
+                    console.log("✅ Przycisk Panel Admina wyświetlony dla:", data.username);
+                } else {
+                    console.warn("⚠️ Element admin-panel-btn nie znaleziony w DOM");
+                }
+            } else {
+                console.log("ℹ️ Użytkownik nie ma uprawnień administratora");
+            }
+        } else {
+            console.warn("⚠️ Nie udało się sprawdzić uprawnień administratora - status:", response.status);
+        }
+    } catch (error) {
+        console.error("❌ Błąd sprawdzania uprawnień administratora:", error);
+    }
+}
+
+// Dodaj funkcję do globalnego obiektu window aby była dostępna
+window.checkAndShowAdminButton = checkAndShowAdminButton;
+
+console.log("✅ chat.js loaded successfully with Forward Secrecy support + Admin functionality");
+console.log("🧪 Run 'testForwardSecrecy()' in console to test Forward Secrecy");
+console.log("🔍 Run 'chatManager.getDebugInfo()' for detailed status");
+console.log("📊 Run 'chatManager.getForwardSecrecyInfo()' for FS status");
+console.log("👑 Run 'checkAndShowAdminButton()' to manually check admin status");
+
