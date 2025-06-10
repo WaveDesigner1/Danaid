@@ -437,6 +437,19 @@ def check_modernization_status(app):
             print(f"❌ Błąd sprawdzania modernizacji: {e}")
             return {'error': str(e)}
 
+        @chat_bp.route('/api/check_admin')
+        @login_required
+        def check_admin():
+            """Sprawdza uprawnienia administratora"""
+            try:
+                is_admin = getattr(current_user, 'is_admin', False)
+                return jsonify({
+                    'is_admin': bool(is_admin),
+                    'username': current_user.username
+                })
+            except Exception as e:
+                return jsonify({'is_admin': False, 'error': str(e)}), 200
+
 if __name__ == '__main__':
     # Dla development
     app, socketio = create_app()
