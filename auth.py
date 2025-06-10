@@ -418,7 +418,7 @@ def api_logout():
         response = jsonify({
             'status': 'success',
             'message': 'Logout successful',
-            'code': 'logout_ok'
+            'code': 'logout_ok',
             'redirect': '/' 
         })
         
