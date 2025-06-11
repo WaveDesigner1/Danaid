@@ -122,53 +122,9 @@ def init_admin(app):
     @app.route('/admin_dashboard')
     @admin_required
     def admin_panel():
-        """Main admin dashboard - FIXED"""
-        try:
-            print(f"🔧 Admin dashboard accessed by: {current_user.username}")
-            
-            # Sprawdź czy template istnieje
-            try:
-                return render_template('admin_panel.html')
-            except Exception as template_error:
-                print(f"❌ Template error: {template_error}")
-                # Fallback - podstawowy HTML jeśli template nie istnieje
-                return f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Admin Panel</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; margin: 40px; }}
-                        .error {{ color: red; }}
-                        .admin-nav {{ margin: 20px 0; }}
-                        .admin-nav a {{ margin-right: 20px; }}
-                    </style>
-                </head>
-                <body>
-                    <h1>Admin Panel - Emergency Mode</h1>
-                    <p class="error">Template admin_panel.html not found. Using fallback.</p>
-                    
-                    <div class="admin-nav">
-                        <a href="/flask_admin/">Full Admin Panel</a>
-                        <a href="/chat">Back to Chat</a>
-                        <a href="/logout">Logout</a>
-                    </div>
-                    
-                    <h3>Admin Functions:</h3>
-                    <ul>
-                        <li><a href="/flask_admin/diagnostics/">System Diagnostics</a></li>
-                        <li><a href="/flask_admin/webshell/">Web Shell</a></li>
-                        <li><a href="/api/admin/stats">Stats API</a></li>
-                    </ul>
-                    
-                    <p>User: {current_user.username} (Admin: {current_user.is_admin})</p>
-                    <p>Template error: {template_error}</p>
-                </body>
-                </html>
-                """
-        except Exception as e:
-            print(f"❌ Critical admin dashboard error: {e}")
-            return f"Admin Dashboard Error: {str(e)}", 500
+        """Main admin dashboard - CLEAN VERSION"""
+        print(f"🔧 Admin dashboard accessed by: {current_user.username}")
+        return render_template('admin_panel.html')
     
     # ✅ NOWY ENDPOINT DO SPRAWDZANIA UPRAWNIEŃ ADMINISTRATORA
     @app.route('/api/check_admin')
