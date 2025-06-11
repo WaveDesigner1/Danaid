@@ -63,13 +63,13 @@ class DiagnosticsView(BaseView):
                 'db_status': self._get_db_status()
             }
             
-            response = make_response(render_template('admin/diagnostics.html', diagnostics=diagnostics))
+            response = make_response(render_template('diagnostics.html', diagnostics=diagnostics))
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
             return response
         except Exception as e:
             print(f"❌ Diagnostics error: {e}")
             traceback.print_exc()
-            return render_template('admin/diagnostics.html', error=str(e))
+            return render_template('diagnostics.html', error=str(e))
     
     def _get_db_status(self):
         """Pobiera status bazy danych"""
