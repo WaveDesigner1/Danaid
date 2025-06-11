@@ -14,9 +14,22 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(128), nullable=False)
     public_key = db.Column(db.Text, nullable=False)
     user_id = db.Column(db.String(6), unique=True, nullable=False)
-    is_admin = db.Column(db.Boolean, default=False)
-    is_online = db.Column(db.Boolean, default=False)
-    last_active = db.Column(db.DateTime, default=datetime.utcnow)
+    # ✅ FIXED: Explicit default value for is_admin
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    is_online = db.Column(db.Boolean, default=False, nullable=False)
+    last_active = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
+    
+    def __init__(self, **kwargs):
+        """Enhanced constructor with proper is_admin handling"""
+        super(User, self).__init__(**kwargs)
+        
+        # Ensure is_admin has a default value
+        if not hasattr(self, 'is_admin') or self.is_admin is None:
+            self.is_admin = False
+            
+        # Ensure is_online has a default value  
+        if not hasattr(self, 'is_online') or self.is_online is None:
+            self.is_online = False
     
     def set_password(self, password):
         """Ustawia hasło z walidacją"""
@@ -47,6 +60,22 @@ class User(db.Model, UserMixin):
         timestamp = str(int(time.time()))[-3:]
         user_id = ''.join([str(secrets.randbelow(10)) for _ in range(3)]) + timestamp
         self.user_id = user_id
+    
+    # ✅ PROPERTY dla is_admin z fallback 
+    @property 
+    def is_admin_safe(self):
+        """Safe property that always returns a boolean"""
+        return getattr(self, 'is_admin', False) is True
+    
+    def make_admin(self):
+        """Nadaje uprawnienia administratora"""
+        self.is_admin = True
+        print(f"👑 User {self.username} granted admin privileges")
+    
+    def revoke_admin(self):
+        """Odbiera uprawnienia administratora"""
+        self.is_admin = False
+        print(f"👤 Admin privileges revoked from {self.username}")
         
     def update_last_active(self):
         """Aktualizuje czas ostatniej aktywności"""
@@ -106,6 +135,9 @@ class User(db.Model, UserMixin):
             db.session.rollback()
             print(f"Błąd podczas usuwania znajomego: {e}")
             return False
+    
+    def __repr__(self):
+        return f'<User {self.username} (admin: {self.is_admin})>'
 
 class ChatSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
