@@ -7,182 +7,6 @@
     
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
-    <style>
-        /* ✅ DODATKOWE STYLE DLA PANELU ADMINA */
-        .admin-app {
-            background: #1a1a1a;
-            color: #ffffff;
-            min-height: 100vh;
-        }
-        
-        .admin-header {
-            background: #2d2d2d;
-            padding: 15px 20px;
-            border-bottom: 2px solid #ff9800;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .admin-logo {
-            font-size: 24px;
-            font-weight: bold;
-            color: #ff9800;
-        }
-        
-        .admin-nav a {
-            color: #ffffff;
-            text-decoration: none;
-            margin: 0 15px;
-            padding: 8px 12px;
-            border-radius: 4px;
-            transition: background 0.3s;
-        }
-        
-        .admin-nav a:hover {
-            background: #444444;
-            text-decoration: none;
-            color: #ff9800;
-        }
-        
-        .admin-main {
-            display: flex;
-            min-height: calc(100vh - 70px);
-        }
-        
-        .admin-sidebar {
-            width: 250px;
-            background: #2d2d2d;
-            padding: 20px 0;
-        }
-        
-        .admin-content {
-            flex: 1;
-            padding: 30px;
-            background: #1a1a1a;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        
-        .stat-card {
-            background: #2d2d2d;
-            border-radius: 8px;
-            padding: 20px;
-            text-align: center;
-            border-left: 4px solid #ff9800;
-            transition: transform 0.3s;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-5px);
-        }
-        
-        .stat-icon {
-            font-size: 48px;
-            color: #ff9800;
-            margin-bottom: 15px;
-        }
-        
-        .stat-value {
-            font-size: 36px;
-            font-weight: bold;
-            color: #ffffff;
-            margin-bottom: 10px;
-        }
-        
-        .stat-label {
-            font-size: 14px;
-            color: #cccccc;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .card {
-            background: #2d2d2d;
-            border: none;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-        }
-        
-        .card-header {
-            background: #444444;
-            border-bottom: 1px solid #555555;
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .card-header h3 {
-            margin: 0;
-            color: #ffffff;
-        }
-        
-        .admin-menu ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        
-        .admin-menu li {
-            margin: 5px 0;
-        }
-        
-        .admin-menu a {
-            display: block;
-            padding: 12px 20px;
-            color: #cccccc;
-            text-decoration: none;
-            transition: all 0.3s;
-        }
-        
-        .admin-menu li.active a,
-        .admin-menu a:hover {
-            background: #444444;
-            color: #ff9800;
-            border-right: 3px solid #ff9800;
-        }
-        
-        .error-message {
-            background: #d32f2f;
-            color: white;
-            padding: 15px;
-            border-radius: 4px;
-            margin: 20px 0;
-        }
-        
-        .loading {
-            opacity: 0.7;
-            pointer-events: none;
-        }
-        
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            border-radius: 4px;
-            color: white;
-            z-index: 1000;
-            max-width: 400px;
-            animation: slideIn 0.3s ease;
-        }
-        
-        .notification-success { background: #4caf50; }
-        .notification-error { background: #f44336; }
-        .notification-warning { background: #ff9800; }
-        .notification-info { background: #2196f3; }
-        
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-    </style>
 </head>
 <body class="admin-app">
     <header class="admin-header">
@@ -191,7 +15,7 @@
         </div>
         <nav class="admin-nav">
             <a href="/admin_dashboard"><i class="fa fa-dashboard"></i> Dashboard</a>
-            <a href="/flask_admin/"><i class="fa fa-cogs"></i> Pełny Panel</a>
+            <a href="/flask_admin/" target="_blank"><i class="fa fa-cogs"></i> Pełny Panel</a>
             <a href="/chat"><i class="fa fa-comments"></i> Czat</a>
             <a href="/logout"><i class="fa fa-sign-out"></i> Wyloguj</a>
         </nav>
@@ -207,18 +31,23 @@
                         </a>
                     </li>
                     <li>
-                        <a href="/flask_admin/diagnostics/">
+                        <a href="/flask_admin/diagnostics/" target="_blank">
                             <i class="fa fa-stethoscope"></i> Diagnostyka
                         </a>
                     </li>
                     <li>
-                        <a href="/flask_admin/webshell/">
+                        <a href="/flask_admin/webshell/" target="_blank">
                             <i class="fa fa-terminal"></i> Webshell
                         </a>
                     </li>
                     <li>
                         <a href="/api/admin/debug" target="_blank">
                             <i class="fa fa-bug"></i> Debug API
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/db-debug" target="_blank">
+                            <i class="fa fa-database"></i> DB Debug
                         </a>
                     </li>
                 </ul>
@@ -239,7 +68,7 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <!-- ✅ ERROR HANDLING -->
+                    <!-- ERROR HANDLING -->
                     <div id="error-container" style="display: none;">
                         <div class="error-message">
                             <h4><i class="fa fa-exclamation-triangle"></i> Błąd</h4>
@@ -250,13 +79,13 @@
                         </div>
                     </div>
                     
-                    <!-- ✅ LOADING STATE -->
+                    <!-- LOADING STATE -->
                     <div id="loading-container" style="display: none; text-align: center; padding: 40px;">
                         <i class="fa fa-spinner fa-spin fa-3x" style="color: #ff9800;"></i>
                         <p style="margin-top: 20px;">Ładowanie danych...</p>
                     </div>
                     
-                    <!-- ✅ MAIN STATS GRID -->
+                    <!-- MAIN STATS GRID -->
                     <div class="stats-grid" id="stats-grid">
                         <div class="stat-card">
                             <div class="stat-icon">
@@ -288,12 +117,13 @@
                         </div>
                     </div>
                     
-                    <!-- ✅ SYSTEM INFO -->
+                    <!-- SYSTEM INFO -->
                     <div style="margin-top: 30px;">
                         <h4><i class="fa fa-info-circle"></i> Informacje systemowe</h4>
                         <div id="system-info" style="background: #2d2d2d; padding: 15px; border-radius: 4px; margin-top: 10px;">
                             <p id="last-update">Ostatnia aktualizacja: -</p>
                             <p id="admin-user">Administrator: Loading...</p>
+                            <p id="template-loaded">Template: admin_panel.html ✅</p>
                         </div>
                     </div>
                 </div>
@@ -301,13 +131,12 @@
         </main>
     </div>
 
-    <!-- ✅ NOTIFICATIONS CONTAINER -->
+    <!-- NOTIFICATIONS CONTAINER -->
     <div id="notifications-container"></div>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
     <script>
-        // ✅ ENHANCED ERROR HANDLING & LOADING STATES
+        // NAPRAWIONY ADMIN PANEL JAVASCRIPT
         let isLoading = false;
         
         function showLoading() {
@@ -335,7 +164,7 @@
             document.getElementById('stats-grid').style.display = 'grid';
         }
         
-        // ✅ ENHANCED STATS LOADING
+        // NAPRAWIONE ŁADOWANIE STATYSTYK
         function loadStats() {
             if (isLoading) {
                 console.log('Already loading stats, skipping...');
@@ -361,7 +190,13 @@
                 console.log(`📡 Response status: ${response.status}`);
                 
                 if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    if (response.status === 403) {
+                        throw new Error('Brak uprawnień administratora');
+                    } else if (response.status === 500) {
+                        throw new Error('Błąd serwera - sprawdź logi');
+                    } else {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
                 }
                 return response.json();
             })
@@ -375,7 +210,7 @@
                 if (result.status === 'success' && result.data) {
                     const stats = result.data;
                     
-                    // Update stats
+                    // Update stats with fallbacks
                     document.getElementById('users-count').textContent = stats.users_count || 0;
                     document.getElementById('sessions-count').textContent = stats.sessions_count || 0;
                     document.getElementById('messages-count').textContent = stats.messages_count || 0;
@@ -399,14 +234,17 @@
             });
         }
         
-        // ✅ ADMIN USER INFO
+        // ADMIN USER INFO
         function loadAdminInfo() {
-            fetch('/api/check_admin')
+            fetch('/api/check_admin?' + new Date().getTime())
             .then(response => response.json())
             .then(data => {
                 if (data.username) {
                     document.getElementById('admin-user').textContent = 
                         `Administrator: ${data.username} (ID: ${data.user_id || 'N/A'})`;
+                } else {
+                    document.getElementById('admin-user').textContent = 
+                        'Administrator: Błąd pobierania danych';
                 }
             })
             .catch(error => {
@@ -416,14 +254,14 @@
             });
         }
         
-        // ✅ DEBUG FUNCTION
+        // DEBUG FUNCTION
         function runDebug() {
             console.log('🐛 Running admin debug...');
             
             Promise.all([
-                fetch('/api/admin/debug').then(r => r.json()),
-                fetch('/api/check_admin').then(r => r.json()),
-                fetch('/check_session').then(r => r.json())
+                fetch('/api/admin/debug').then(r => r.json()).catch(e => ({error: e.message})),
+                fetch('/api/check_admin').then(r => r.json()).catch(e => ({error: e.message})),
+                fetch('/check_session').then(r => r.json()).catch(e => ({error: e.message}))
             ])
             .then(([debug, admin, session]) => {
                 console.log('🔍 Debug Results:');
@@ -439,7 +277,7 @@
             });
         }
         
-        // ✅ NOTIFICATIONS
+        // NOTIFICATIONS
         function showNotification(message, type = 'info', duration = 5000) {
             const notification = document.createElement('div');
             notification.className = `notification notification-${type}`;
@@ -462,15 +300,20 @@
             }, duration);
         }
         
-        // ✅ EVENT LISTENERS
+        // EVENT LISTENERS
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 Admin panel initialized');
+            console.log('🚀 Admin panel initialized (FIXED VERSION)');
             
-            // Load initial data
-            loadStats();
-            loadAdminInfo();
+            // Load initial data with error handling
+            try {
+                loadStats();
+                loadAdminInfo();
+            } catch (error) {
+                console.error('❌ Initial load error:', error);
+                showError('Błąd inicjalizacji panelu');
+            }
             
-            // Button event listeners
+            // Button event listeners with null checks
             const refreshBtn = document.getElementById('refresh-stats');
             if (refreshBtn) {
                 refreshBtn.addEventListener('click', function() {
@@ -500,28 +343,16 @@
                 }
             }, 30000);
             
-            // Keyboard shortcuts
-            document.addEventListener('keydown', function(e) {
-                if (e.ctrlKey && e.key === 'r') {
-                    e.preventDefault();
-                    loadStats();
-                }
-                if (e.key === 'F5') {
-                    e.preventDefault();
-                    loadStats();
-                }
-            });
-            
-            console.log('✅ Admin panel ready');
+            console.log('✅ Admin panel ready (FIXED VERSION)');
         });
         
-        // ✅ GLOBAL ERROR HANDLER
+        // GLOBAL ERROR HANDLER
         window.addEventListener('error', function(e) {
             console.error('💥 Global error:', e.error);
             showNotification('Wystąpił nieoczekiwany błąd', 'error');
         });
         
-        // ✅ GLOBAL FUNCTIONS (for console debugging)
+        // GLOBAL FUNCTIONS
         window.adminDebug = {
             loadStats: loadStats,
             loadAdminInfo: loadAdminInfo, 
@@ -529,8 +360,7 @@
             showNotification: showNotification
         };
         
-        console.log('✅ Admin panel JavaScript loaded');
-        console.log('🔧 Available debug functions: window.adminDebug');
+        console.log('✅ Admin panel JavaScript loaded (FIXED VERSION)');
     </script>
 </body>
 </html>
