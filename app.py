@@ -1,4 +1,4 @@
-# ✅ FIXED VERSION - app.py with Socket.IO integration
+# ✅ FIXED VERSION - app.py with Socket.IO integration and Enhanced Admin Support
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, Response, session
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_required
@@ -41,9 +41,9 @@ def load_user(user_id):
         print(f"Błąd ładowania użytkownika: {e}")
         return None
 
-# 🆕 NOWY SYSTEM MIGRACJI (zgodny z nową architekturą)
+# 🆕 ENHANCED ADMIN MIGRATION SYSTEM
 def apply_migrations(app):
-    """Automatyczne migracje bazy danych - ZMODERNIZOWANE"""
+    """Automatyczne migracje bazy danych - ENHANCED z is_admin support"""
     with app.app_context():
         try:
             inspector = inspect(db.engine)
@@ -54,6 +54,10 @@ def apply_migrations(app):
                           'ALTER TABLE "user" ADD COLUMN is_online BOOLEAN DEFAULT FALSE')
             apply_migration(inspector, 'user', 'last_active', 
                           'ALTER TABLE "user" ADD COLUMN last_active TIMESTAMP')
+            
+            # ✅ KLUCZOWA MIGRACJA: is_admin column - ENHANCED
+            apply_migration(inspector, 'user', 'is_admin', 
+                          'ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN DEFAULT FALSE NOT NULL')
             
             # === MIGRACJE TABELI CHAT_SESSION ===
             # STARY SYSTEM (backward compatibility)
@@ -83,6 +87,9 @@ def apply_migrations(app):
             if 'friend_request' not in existing_tables:
                 create_friend_request_table()
             
+            # ✅ ENHANCED: ADMIN MANAGEMENT
+            create_first_admin_if_needed()
+            
             print("✅ Migracje zakończone pomyślnie")
             
         except Exception as e:
@@ -90,7 +97,7 @@ def apply_migrations(app):
             db.session.rollback()
 
 def apply_migration(inspector, table, column, sql_statement):
-    """Wykonuje pojedynczą migrację, jeśli jest potrzebna"""
+    """Wykonuje pojedynczą migrację, jeśli jest potrzebna - ENHANCED"""
     if table in inspector.get_table_names():
         columns = [c['name'] for c in inspector.get_columns(table)]
         if column not in columns:
@@ -99,6 +106,14 @@ def apply_migration(inspector, table, column, sql_statement):
                 db.session.execute(text(sql_statement))
                 db.session.commit()
                 print(f"  ✅ Kolumna {column} dodana pomyślnie")
+                
+                # ✅ SPECJALNE PRZYPADKI PO DODANIU KOLUMNY
+                if table == 'user' and column == 'is_admin':
+                    # Ustaw wszystkim użytkownikom is_admin na False jeśli NULL
+                    db.session.execute(text('UPDATE "user" SET is_admin = FALSE WHERE is_admin IS NULL'))
+                    db.session.commit()
+                    print(f"  ✅ Updated NULL is_admin values to FALSE")
+                    
             except Exception as e:
                 print(f"  ❌ Błąd podczas dodawania kolumny {column}: {e}")
                 db.session.rollback()
@@ -175,6 +190,110 @@ def create_friend_request_table():
         print(f"  ❌ Błąd podczas tworzenia tabeli FriendRequest: {e}")
         db.session.rollback()
 
+# ✅ ENHANCED ADMIN MANAGEMENT FUNCTIONS
+def create_first_admin_if_needed():
+    """Tworzy pierwszego administratora jeśli brak adminów w systemie - ENHANCED"""
+    try:
+        # Sprawdź czy kolumna is_admin istnieje
+        inspector = inspect(db.engine)
+        user_columns = [c['name'] for c in inspector.get_columns('user')]
+        
+        if 'is_admin' not in user_columns:
+            print("⚠️ Kolumna is_admin nie istnieje - zostanie dodana przez migrację")
+            return
+        
+        admin_count = User.query.filter_by(is_admin=True).count()
+        if admin_count == 0:
+            print("👑 No admins found, checking if we should create one...")
+            
+            # Sprawdź czy istnieje użytkownik o nazwie 'admin'
+            admin_user = User.query.filter_by(username='admin').first()
+            if admin_user:
+                admin_user.is_admin = True
+                db.session.commit()
+                print(f"✅ User 'admin' granted admin privileges")
+            else:
+                # Sprawdź czy istnieje jakikolwiek użytkownik (nadaj pierwszemu admin)
+                first_user = User.query.first()
+                if first_user:
+                    first_user.is_admin = True
+                    db.session.commit()
+                    print(f"✅ First user '{first_user.username}' granted admin privileges")
+                else:
+                    print("ℹ️ No users in system yet - admin will be created during registration")
+        else:
+            print(f"✅ Found {admin_count} admin(s) in system")
+                    
+    except Exception as e:
+        print(f"❌ Error creating first admin: {e}")
+        db.session.rollback()
+
+def debug_admin_users():
+    """Debug function to check admin users - ENHANCED"""
+    try:
+        all_users = User.query.all()
+        print("\n🔍 ADMIN DEBUG - All users:")
+        for user in all_users:
+            is_admin_attr = hasattr(user, 'is_admin')
+            is_admin_value = getattr(user, 'is_admin', 'NO_ATTR')
+            print(f"  User: {user.username} | has_is_admin: {is_admin_attr} | is_admin: {is_admin_value}")
+        
+        admin_users = User.query.filter_by(is_admin=True).all()
+        print(f"\n👑 Found {len(admin_users)} admin users:")
+        for admin in admin_users:
+            print(f"  Admin: {admin.username} (ID: {admin.id}, user_id: {admin.user_id})")
+            
+        return len(admin_users)
+    except Exception as e:
+        print(f"❌ Debug admin users error: {e}")
+        return 0
+
+def make_user_admin(username):
+    """Makes a user admin by username - ENHANCED"""
+    try:
+        user = User.query.filter_by(username=username).first()
+        if user:
+            user.is_admin = True
+            db.session.commit()
+            print(f"✅ User '{username}' is now admin")
+            return True
+        else:
+            print(f"❌ User '{username}' not found")
+            return False
+    except Exception as e:
+        print(f"❌ Error making user admin: {e}")
+        db.session.rollback()
+        return False
+
+def revoke_user_admin(username):
+    """Revokes admin privileges from user - NEW"""
+    try:
+        user = User.query.filter_by(username=username).first()
+        if user:
+            user.is_admin = False
+            db.session.commit()
+            print(f"✅ Admin privileges revoked from '{username}'")
+            return True
+        else:
+            print(f"❌ User '{username}' not found")
+            return False
+    except Exception as e:
+        print(f"❌ Error revoking admin: {e}")
+        db.session.rollback()
+        return False
+
+def list_all_admins():
+    """Lists all admin users - NEW"""
+    try:
+        admins = User.query.filter_by(is_admin=True).all()
+        print(f"\n👑 Current admins ({len(admins)}):")
+        for admin in admins:
+            print(f"  - {admin.username} (ID: {admin.user_id})")
+        return admins
+    except Exception as e:
+        print(f"❌ Error listing admins: {e}")
+        return []
+
 # Główna funkcja tworząca aplikację
 def create_app():
     app = Flask(__name__)
@@ -218,12 +337,13 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(chat_bp)  # ✅ Teraz zawiera wszystkie endpointy
     
-    # Inicjalizacja panelu admina
+    # ✅ ENHANCED: Inicjalizacja panelu admina z lepszym error handling
     try:
         init_admin(app)
         print("✅ Panel administracyjny zainicjalizowany")
     except Exception as e:
         print(f"⚠️ Błąd inicjalizacji panelu admina: {e}")
+        traceback.print_exc()
     
     # ✅ FIXED: SOCKET.IO INTEGRATION - Teraz prawidłowo zintegrowane
     try:
@@ -237,7 +357,7 @@ def create_app():
     except Exception as e:
         print(f"⚠️ Socket.IO initialization warning: {e}")
  
-    # 🔄 URUCHOMIENIE MIGRACJI
+    # 🔄 URUCHOMIENIE MIGRACJI - ENHANCED
     apply_migrations(app)
 
     # Socket.IO konfiguracja dla frontendu
@@ -265,7 +385,7 @@ def create_app():
         js_content = f"window._socketConfig = {json.dumps(config)};"
         return Response(js_content, mimetype='application/javascript')
 
-    # 🆕 NOWY DEBUG ENDPOINT z więcej informacji
+    # 🆕 ENHANCED DEBUG ENDPOINT z admin info
     @app.route('/db-debug')
     def db_debug():
         try:
@@ -283,6 +403,19 @@ def create_app():
                     columns = inspector.get_columns(table)
                     table_info[table] = [col['name'] for col in columns]
             
+            # ✅ ADMIN INFO
+            admin_info = {}
+            try:
+                admin_count = User.query.filter_by(is_admin=True).count()
+                admins = User.query.filter_by(is_admin=True).all()
+                admin_info = {
+                    'admin_count': admin_count,
+                    'admins': [{'username': a.username, 'user_id': a.user_id} for a in admins],
+                    'has_is_admin_column': 'is_admin' in table_info.get('user', [])
+                }
+            except Exception as e:
+                admin_info = {'error': str(e)}
+            
             # Bezpieczny connection string
             safe_connection = str(db.engine.url)
             if ":" in safe_connection and "@" in safe_connection:
@@ -299,11 +432,13 @@ def create_app():
                 "tables": tables,
                 "table_columns": table_info,
                 "connection_string": safe_connection,
+                "admin_info": admin_info,  # ✅ ADDED
                 "modernization_status": {
                     "dual_encryption": 'encrypted_keys_json' in table_info.get('chat_session', []),
                     "friends_system": 'friend' in tables,
                     "enhanced_security": 'is_encrypted' in table_info.get('message', []),
-                    "socket_io_integrated": hasattr(app, 'socketio')  # ✅ ADDED
+                    "socket_io_integrated": hasattr(app, 'socketio'),
+                    "admin_system": 'is_admin' in table_info.get('user', [])  # ✅ ADDED
                 }
             })
         except Exception as e:
@@ -312,6 +447,48 @@ def create_app():
                 "message": str(e),
                 "error_type": type(e).__name__
             }), 500
+    
+    # ✅ ADMIN MANAGEMENT ENDPOINTS
+    @app.route('/api/admin/manage')
+    @login_required
+    def admin_manage():
+        """Admin management endpoint"""
+        if not getattr(current_user, 'is_admin', False):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        try:
+            return jsonify({
+                'status': 'success',
+                'admin_functions': {
+                    'debug_admin_users': '/api/admin/debug-users',
+                    'list_admins': '/api/admin/list',
+                    'make_admin': '/api/admin/make-admin',
+                    'revoke_admin': '/api/admin/revoke-admin'
+                },
+                'current_admin': {
+                    'username': current_user.username,
+                    'user_id': current_user.user_id
+                }
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/admin/debug-users')
+    @login_required
+    def api_debug_admin_users():
+        """API endpoint for admin user debugging"""
+        if not getattr(current_user, 'is_admin', False):
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        try:
+            admin_count = debug_admin_users()  # This prints to console
+            return jsonify({
+                'status': 'success',
+                'message': f'Debug info printed to console. Found {admin_count} admins.',
+                'admin_count': admin_count
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
     
     # 🔄 ZMODERNIZOWANA INICJALIZACJA BAZY DANYCH
     with app.app_context():
@@ -395,9 +572,9 @@ def create_app():
     # 🔄 RETURN TUPLE dla nowej architektury
     return app, socketio
 
-# 🆕 HELPER DO SPRAWDZANIA STATUSU MODERNIZACJI
+# 🆕 HELPER DO SPRAWDZANIA STATUSU MODERNIZACJI - ENHANCED
 def check_modernization_status(app):
-    """Sprawdza status modernizacji aplikacji"""
+    """Sprawdza status modernizacji aplikacji - ENHANCED"""
     with app.app_context():
         try:
             inspector = inspect(db.engine)
@@ -408,7 +585,8 @@ def check_modernization_status(app):
                 'friends_system': False,
                 'enhanced_security': False,
                 'all_tables': False,
-                'socket_io_integrated': False  # ✅ ADDED
+                'socket_io_integrated': False,
+                'admin_system': False  # ✅ ADDED
             }
             
             # Sprawdź dual encryption
@@ -424,6 +602,11 @@ def check_modernization_status(app):
                 columns = [c['name'] for c in inspector.get_columns('message')]
                 checks['enhanced_security'] = 'is_encrypted' in columns
             
+            # ✅ Sprawdź admin system
+            if 'user' in tables:
+                columns = [c['name'] for c in inspector.get_columns('user')]
+                checks['admin_system'] = 'is_admin' in columns
+            
             # Sprawdź wszystkie tabele
             expected = ['user', 'chat_session', 'message', 'friend', 'friend_request']
             checks['all_tables'] = all(table in tables for table in expected)
@@ -437,18 +620,27 @@ def check_modernization_status(app):
             print(f"❌ Błąd sprawdzania modernizacji: {e}")
             return {'error': str(e)}
 
-        @chat_bp.route('/api/check_admin')
-        @login_required
-        def check_admin():
-            """Sprawdza uprawnienia administratora"""
-            try:
-                is_admin = getattr(current_user, 'is_admin', False)
-                return jsonify({
-                    'is_admin': bool(is_admin),
-                    'username': current_user.username
-                })
-            except Exception as e:
-                return jsonify({'is_admin': False, 'error': str(e)}), 200
+# ✅ CONSOLE ADMIN MANAGEMENT FUNCTIONS (for manual use)
+def console_make_admin(username):
+    """Console function to make user admin"""
+    from main import create_app
+    app, socketio = create_app()
+    with app.app_context():
+        return make_user_admin(username)
+
+def console_list_admins():
+    """Console function to list all admins"""
+    from main import create_app
+    app, socketio = create_app()
+    with app.app_context():
+        return list_all_admins()
+
+def console_debug_users():
+    """Console function to debug admin users"""
+    from main import create_app
+    app, socketio = create_app()
+    with app.app_context():
+        return debug_admin_users()
 
 if __name__ == '__main__':
     # Dla development
@@ -457,5 +649,16 @@ if __name__ == '__main__':
     # Sprawdź status modernizacji
     status = check_modernization_status(app)
     print(f"🔍 Status modernizacji: {status}")
+    
+    # ✅ Admin info przy starcie
+    with app.app_context():
+        try:
+            print("\n" + "="*50)
+            print("🔍 ADMIN SYSTEM STATUS")
+            print("="*50)
+            debug_admin_users()
+            print("="*50)
+        except Exception as e:
+            print(f"⚠️ Admin check failed: {e}")
     
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)
