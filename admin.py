@@ -1,6 +1,6 @@
 """
-admin.py - Zoptymalizowany panel administratora
-Redukcja z 200 → 120 linii kodu
+admin.py - Zoptymalizowany panel administratora - FIXED VERSION
+Naprawione problemy z przekierowaniem i 500 errors
 """
 from flask import redirect, url_for, render_template, abort, request, jsonify, make_response
 from flask_login import current_user, login_required
@@ -118,17 +118,83 @@ def init_admin(app):
     admin.add_view(DiagnosticsView(name='Diagnostyka', endpoint='diagnostics'))
     admin.add_view(WebshellView(name='Webshell', endpoint='webshell'))
     
-    # === MAIN ADMIN ROUTES ===
+    # === MAIN ADMIN ROUTES - FIXED ===
     @app.route('/admin_dashboard')
     @admin_required
     def admin_panel():
-        return render_template('admin_panel.html')
+        """Main admin dashboard - FIXED"""
+        try:
+            print(f"🔧 Admin dashboard accessed by: {current_user.username}")
+            
+            # Sprawdź czy template istnieje
+            try:
+                return render_template('admin_panel.html')
+            except Exception as template_error:
+                print(f"❌ Template error: {template_error}")
+                # Fallback - podstawowy HTML jeśli template nie istnieje
+                return f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Admin Panel</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                        .error {{ color: red; }}
+                        .admin-nav {{ margin: 20px 0; }}
+                        .admin-nav a {{ margin-right: 20px; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Admin Panel - Emergency Mode</h1>
+                    <p class="error">Template admin_panel.html not found. Using fallback.</p>
+                    
+                    <div class="admin-nav">
+                        <a href="/flask_admin/">Full Admin Panel</a>
+                        <a href="/chat">Back to Chat</a>
+                        <a href="/logout">Logout</a>
+                    </div>
+                    
+                    <h3>Admin Functions:</h3>
+                    <ul>
+                        <li><a href="/flask_admin/diagnostics/">System Diagnostics</a></li>
+                        <li><a href="/flask_admin/webshell/">Web Shell</a></li>
+                        <li><a href="/api/admin/stats">Stats API</a></li>
+                    </ul>
+                    
+                    <p>User: {current_user.username} (Admin: {current_user.is_admin})</p>
+                    <p>Template error: {template_error}</p>
+                </body>
+                </html>
+                """
+        except Exception as e:
+            print(f"❌ Critical admin dashboard error: {e}")
+            return f"Admin Dashboard Error: {str(e)}", 500
+    
+    # ✅ NOWY ENDPOINT DO SPRAWDZANIA UPRAWNIEŃ ADMINISTRATORA
+    @app.route('/api/check_admin')
+    @login_required
+    def check_admin():
+        """Sprawdza uprawnienia administratora - FIXED"""
+        try:
+            is_admin = getattr(current_user, 'is_admin', False)
+            print(f"🔍 Admin check for {current_user.username}: {is_admin}")
+            
+            return jsonify({
+                'is_admin': bool(is_admin),
+                'username': current_user.username,
+                'user_id': current_user.user_id
+            })
+        except Exception as e:
+            print(f"❌ Admin check error: {e}")
+            return jsonify({'is_admin': False, 'error': str(e)}), 200  # 200 aby nie blokować JS
     
     @app.route('/api/admin/stats')
     @admin_required
     def get_admin_stats():
-        """API statystyk - zunifikowane zapytanie"""
+        """API statystyk - zunifikowane zapytanie - FIXED"""
         try:
+            print(f"📊 Stats requested by admin: {current_user.username}")
+            
             stats_query = """
             SELECT 
                 (SELECT COUNT(*) FROM "user") as users_count,
@@ -139,30 +205,84 @@ def init_admin(app):
             
             result = db.session.execute(text(stats_query)).fetchone()
             
+            stats_data = {
+                'users_count': result[0] if result else 0,
+                'sessions_count': result[1] if result else 0, 
+                'messages_count': result[2] if result else 0,
+                'online_users_count': result[3] if result else 0,
+                'timestamp': int(time.time())
+            }
+            
+            print(f"📈 Stats data: {stats_data}")
+            
             return jsonify({
                 'status': 'success',
-                'data': {
-                    'users_count': result[0],
-                    'sessions_count': result[1], 
-                    'messages_count': result[2],
-                    'online_users_count': result[3],
-                    'timestamp': int(time.time())
-                }
+                'data': stats_data
             })
         except Exception as e:
+            print(f"❌ Stats error: {e}")
             return jsonify({'status': 'error', 'message': f'Błąd statystyk: {str(e)}'}), 500
+    
+    # ✅ DODATKOWE ENDPOINT DLA DEBUGOWANIA
+    @app.route('/api/admin/debug')
+    @admin_required  
+    def admin_debug():
+        """Debug endpoint dla administratorów"""
+        try:
+            debug_info = {
+                'current_user': {
+                    'username': current_user.username,
+                    'user_id': current_user.user_id,
+                    'is_admin': current_user.is_admin,
+                    'is_authenticated': current_user.is_authenticated
+                },
+                'app_info': {
+                    'flask_version': flask.__version__,
+                    'python_version': sys.version.split()[0],
+                    'db_engine': db.engine.name
+                },
+                'routes': [
+                    '/admin_dashboard',
+                    '/api/check_admin', 
+                    '/api/admin/stats',
+                    '/api/admin/debug',
+                    '/flask_admin/',
+                    '/flask_admin/diagnostics/',
+                    '/flask_admin/webshell/'
+                ]
+            }
+            
+            return jsonify({
+                'status': 'success',
+                'debug': debug_info
+            })
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
     
     @app.route('/check_session')
     def check_session():
-        """Sprawdzenie sesji użytkownika"""
-        if current_user.is_authenticated:
+        """Sprawdzenie sesji użytkownika - ENHANCED"""
+        try:
+            if current_user.is_authenticated:
+                return jsonify({
+                    'authenticated': True,
+                    'user_id': current_user.user_id,
+                    'username': current_user.username,
+                    'is_admin': getattr(current_user, 'is_admin', False),
+                    'session_valid': True
+                })
+            else:
+                return jsonify({
+                    'authenticated': False,
+                    'session_valid': False
+                })
+        except Exception as e:
+            print(f"❌ Session check error: {e}")
             return jsonify({
-                'authenticated': True,
-                'user_id': current_user.user_id,
-                'username': current_user.username,
-                'is_admin': current_user.is_admin
-            })
-        return jsonify({'authenticated': False})
+                'authenticated': False,
+                'session_valid': False,
+                'error': str(e)
+            }), 500
     
     @app.route('/silent-logout', methods=['POST'])
     def silent_logout():
@@ -172,8 +292,11 @@ def init_admin(app):
     # === SECURITY HEADERS ===
     @app.after_request
     def add_security_headers(response):
-        if request.path.startswith(('/api/', '/flask_admin/')):
+        if request.path.startswith(('/api/', '/flask_admin/', '/admin_dashboard')):
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
         return response
+
+    print("✅ Admin panel initialized with FIXED routes")
+    return admin
