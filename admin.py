@@ -126,7 +126,7 @@ class WebshellView(BaseView):
                 else:
                     result = "Niedozwolona komenda. Dozwolone: " + ", ".join(allowed_commands)
         
-        response = make_response(render_template('admin/webshell.html', result=result, command=command))
+        response = make_response(render_template('webshell.html', result=result, command=command))
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         return response
 
