@@ -758,20 +758,12 @@ def delete_session(session_token):
         # Znajdź drugiego użytkownika przed usunięciem
         other_user = _get_other_user(session)
         
-        # Usuń wszystkie wiadomości
+        # ✅ FIZYCZNE USUNIĘCIE
         Message.query.filter_by(session_id=session.id).delete()
-        
-        # Oznacz sesję jako nieaktywną (nie usuwaj fizycznie dla audytu)
-        session.is_active = False
-        # Dodaj pola jeśli istnieją w modelu:
-        if hasattr(session, 'deleted_at'):
-            session.deleted_at = datetime.utcnow()
-        if hasattr(session, 'deleted_by_user_id'):
-            session.deleted_by_user_id = current_user.id
-        
+        db.session.delete(session)
         db.session.commit()
         
-        logger.info(f"User {current_user.username} deleted session {session_token[:8]}... with {messages_count} messages")
+        logger.info(f"User {current_user.username} PHYSICALLY deleted session {session_token[:8]}... with {messages_count} messages")
         
         # Powiadom drugiego użytkownika Socket.IO
         try:
@@ -780,23 +772,23 @@ def delete_session(session_token):
                 current_app.socketio.emit('session_deleted', {
                     'session_token': session_token,
                     'deleted_by': current_user.username,
-                    'message': 'Rozmowa została usunięta'
+                    'message': 'Rozmowa została TRWALE USUNIĘTA'
                 }, room=f"user_{other_user.id}")
         except Exception as e:
             logger.error(f"Socket.IO delete notification failed: {e}")
         
         return jsonify({
             'status': 'success',
-            'message': 'Session deleted successfully',
+            'message': 'Session permanently deleted from database',
             'messages_deleted': messages_count,
-            'session_token': session_token
+            'session_token': session_token,
+            'deletion_type': 'permanent'
         })
         
     except Exception as e:
         db.session.rollback()
         logger.error(f"Delete session error: {e}")
         return jsonify({'error': str(e)}), 500
-
 
 @chat_bp.route('/api/messages/cleanup', methods=['POST'])
 @login_required
