@@ -913,3 +913,50 @@ def test_buttons():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@chat_bp.route('/api/session/switch/<session_token>', methods=['POST'])
+@login_required
+def switch_to_session(session_token):
+    try:
+        session = ChatSession.query.filter_by(session_token=session_token).first()
+        if not session or (session.initiator_id != current_user.id and session.recipient_id != current_user.id):
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Oznacz jako przeczytane i zwróć dane
+        other_user = _get_other_user(session)
+        unread_count = Message.query.filter_by(session_id=session.id, sender_id=other_user.id, read=False).update({'read': True})
+        session.last_activity = datetime.utcnow()
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'session': {
+                'id': session.id,
+                'token': session.session_token,
+                'other_user': {
+                    'id': other_user.id,
+                    'user_id': other_user.user_id,
+                    'username': other_user.username,
+                    'is_online': getattr(other_user, 'is_online', False)
+                }
+            },
+            'unread_cleared': unread_count
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# 2. ULEPSZONA FUNKCJA emit_message_notification
+def emit_message_notification(session_token, message_data, recipient_id):
+    try:
+        from flask import current_app
+        if hasattr(current_app, 'socketio'):
+            current_app.socketio.emit('message', {
+                'type': 'new_message',
+                'session_token': session_token,
+                'message': message_data,
+                'auto_switch': True  # ← KLUCZOWA FLAGA
+            }, room=f"user_{recipient_id}")
+            return True
+    except Exception as e:
+        logger.error(f"Socket.IO emit failed: {e}")
+    return False
