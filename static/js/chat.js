@@ -1284,7 +1284,7 @@ class ChatManager {
                 
                 e.preventDefault();
                 // ✅ FIX: Correct dataset attribute access
-                const userId = item.dataset.userUserId;
+                const userId = item.dataset.userId;
                 this._selectFriend(userId);
             });
         });
