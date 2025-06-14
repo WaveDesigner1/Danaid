@@ -1,887 +1,727 @@
 /**
- * auth.js - Danaid Chat Authentication System
- * Dostosowany do istniejących formularzy HTML
- * Kompatybilny z Railway deployment
+ * auth.js - Refactored Authentication Frontend - MODULAR VERSION
+ * Clean, unified authentication system with CryptoManager integration
  */
 
+// Authentication System Class
 class DanaidAuthSystem {
     constructor() {
-        this.apiBase = '/api';
-        this.userPrivateKey = null;
-        this.userPublicKey = null;
-        this.isInitialized = false;
-        this.keyPair = null;
+        this.currentUser = null;
+        this.isAuthenticated = false;
+        this.authCheckInterval = null;
+        this.cryptoManager = null;
+        this.cryptoAvailable = false;
         
-        // Konfiguracja kryptograficzna
-        this.RSA_CONFIG = {
-            name: "RSA-OAEP",
-            modulusLength: 2048,
-            publicExponent: new Uint8Array([1, 0, 1]),
-            hash: "SHA-256"
-        };
-        
-        this.SIGNING_CONFIG = {
-            name: "RSASSA-PKCS1-v1_5",
-            modulusLength: 2048,
-            publicExponent: new Uint8Array([1, 0, 1]),
-            hash: "SHA-256"
-        };
-        
-        console.log('🔐 Danaid Auth System initialized');
+        // Initialize on load
+        this.init();
     }
 
+    // Initialization
     async init() {
-        console.log('🔄 Initializing authentication system...');
+        console.log("Initializing Danaid Auth System - Modular Version");
         
+        // Check CryptoManager availability
         try {
-            // Sprawdź wsparcie Web Crypto API
-            if (!window.crypto || !window.crypto.subtle) {
-                throw new Error('Web Crypto API not supported');
-            }
-            
-            // Sprawdź czy użytkownik jest już zalogowany
-            await this.checkAuthStatus();
-            console.log('✅ User already authenticated');
-            
-        } catch (error) {
-            console.log('⚠️ Not authenticated:', error.message);
-        }
-        
-        this.isInitialized = true;
-        this.setupEventHandlers();
-        this.createDownloadModal();
-        console.log('✅ Authentication system ready');
-    }
-
-    // === MODAL DO POBIERANIA KLUCZA ===
-    
-    createDownloadModal() {
-        // Sprawdź czy modal już istnieje
-        if (document.getElementById('key-download-modal')) {
-            return;
-        }
-
-        const modalHTML = `
-            <div id="key-download-modal" style="
-                display: none;
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background-color: rgba(0, 0, 0, 0.8);
-                z-index: 1000;
-                justify-content: center;
-                align-items: center;
-            ">
-                <div style="
-                    background-color: #444444;
-                    border-radius: 8px;
-                    padding: 30px;
-                    max-width: 500px;
-                    width: 90%;
-                    text-align: center;
-                    color: #FFFFFF;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-                ">
-                    <h2 style="color: #FF9800; margin-bottom: 20px;">🎉 Rejestracja zakończona!</h2>
-                    
-                    <div style="
-                        background-color: rgba(255, 193, 7, 0.1);
-                        border: 1px solid #FFC107;
-                        border-radius: 4px;
-                        padding: 20px;
-                        margin: 20px 0;
-                        text-align: left;
-                    ">
-                        <h3 style="color: #FFC107; margin-top: 0;">⚠️ WAŻNE - Pobierz swój klucz prywatny</h3>
-                        <p>Twój klucz prywatny zostanie teraz pobrany. <strong>To jedyna okazja!</strong></p>
-                        <ul style="margin: 10px 0; padding-left: 20px;">
-                            <li>Zachowaj ten plik w bezpiecznym miejscu</li>
-                            <li>Będzie potrzebny przy każdym logowaniu</li>
-                            <li>Bez niego nie będziesz mógł się zalogować</li>
-                            <li>Nigdy nie udostępniaj go nikomu</li>
-                        </ul>
-                    </div>
-                    
-                    <button id="download-key-btn" style="
-                        background-color: #FF9800;
-                        color: #333333;
-                        border: none;
-                        padding: 15px 30px;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        font-size: 16px;
-                        font-weight: bold;
-                        margin: 10px;
-                        transition: background-color 0.3s;
-                    ">📥 Pobierz klucz prywatny</button>
-                    
-                    <button id="continue-to-login-btn" style="
-                        background-color: #4CAF50;
-                        color: white;
-                        border: none;
-                        padding: 15px 30px;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        font-size: 16px;
-                        font-weight: bold;
-                        margin: 10px;
-                        transition: background-color 0.3s;
-                        display: none;
-                    ">✅ Przejdź do logowania</button>
-                    
-                    <p id="download-status" style="
-                        margin-top: 15px;
-                        font-size: 14px;
-                        color: #FFC107;
-                    "></p>
-                </div>
-            </div>
-        `;
-        
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-        
-        // Event listenery dla modalu
-        document.getElementById('download-key-btn').addEventListener('click', () => {
-            this.downloadStoredKey();
-        });
-        
-        document.getElementById('continue-to-login-btn').addEventListener('click', () => {
-            this.hideDownloadModal();
-            window.location.href = '/';
-        });
-        
-        console.log('✅ Download modal created');
-    }
-    
-    showDownloadModal(privateKeyPEM, username) {
-        // Zapisz klucz do pobrania
-        this.pendingDownload = {
-            privateKeyPEM: privateKeyPEM,
-            username: username
-        };
-        
-        const modal = document.getElementById('key-download-modal');
-        const downloadBtn = document.getElementById('download-key-btn');
-        const continueBtn = document.getElementById('continue-to-login-btn');
-        const status = document.getElementById('download-status');
-        
-        // Reset stanu
-        downloadBtn.style.display = 'inline-block';
-        continueBtn.style.display = 'none';
-        status.textContent = 'Kliknij przycisk powyżej, aby pobrać swój klucz prywatny.';
-        
-        modal.style.display = 'flex';
-    }
-    
-    hideDownloadModal() {
-        const modal = document.getElementById('key-download-modal');
-        modal.style.display = 'none';
-        this.pendingDownload = null;
-    }
-    
-    downloadStoredKey() {
-        if (!this.pendingDownload) {
-            console.error('No pending download');
-            return;
-        }
-        
-        const { privateKeyPEM, username } = this.pendingDownload;
-        
-        // Pobierz plik
-        this.downloadPrivateKey(privateKeyPEM, username);
-        
-        // Aktualizuj UI
-        const downloadBtn = document.getElementById('download-key-btn');
-        const continueBtn = document.getElementById('continue-to-login-btn');
-        const status = document.getElementById('download-status');
-        
-        downloadBtn.style.display = 'none';
-        continueBtn.style.display = 'inline-block';
-        status.innerHTML = `
-            <span style="color: #4CAF50;">✅ Klucz pobrany: ${username}_private_key.pem</span><br>
-            <small>Sprawdź folder Downloads i zachowaj plik w bezpiecznym miejscu.</small>
-        `;
-        
-        console.log('✅ Key download completed');
-    }
-
-    // === GENEROWANIE KLUCZY RSA ===
-    
-    async generateKeyPair() {
-        console.log('🔑 Generating RSA key pair...');
-        
-        try {
-            this.keyPair = await crypto.subtle.generateKey(
-                this.RSA_CONFIG,
-                true, // extractable
-                ["encrypt", "decrypt"]
-            );
-            
-            console.log('✅ RSA key pair generated successfully');
-            return this.keyPair;
-            
-        } catch (error) {
-            console.error('❌ Key generation failed:', error);
-            throw new Error('Failed to generate cryptographic keys: ' + error.message);
-        }
-    }
-
-    async generateSigningKeyPair() {
-        console.log('🔑 Generating RSA signing key pair...');
-        
-        try {
-            const signingKeyPair = await crypto.subtle.generateKey(
-                this.SIGNING_CONFIG,
-                true, // extractable
-                ["sign", "verify"]
-            );
-            
-            console.log('✅ RSA signing key pair generated');
-            return signingKeyPair;
-            
-        } catch (error) {
-            console.error('❌ Signing key generation failed:', error);
-            throw new Error('Failed to generate signing keys: ' + error.message);
-        }
-    }
-
-    // === EKSPORT KLUCZY DO PEM ===
-    
-    async exportPublicKeyToPEM(publicKey) {
-        try {
-            const exported = await crypto.subtle.exportKey("spki", publicKey);
-            return this.arrayBufferToPEM(exported, 'PUBLIC KEY');
-        } catch (error) {
-            console.error('❌ Public key export failed:', error);
-            throw new Error('Failed to export public key');
-        }
-    }
-
-    async exportPrivateKeyToPEM(privateKey) {
-        try {
-            const exported = await crypto.subtle.exportKey("pkcs8", privateKey);
-            return this.arrayBufferToPEM(exported, 'PRIVATE KEY');
-        } catch (error) {
-            console.error('❌ Private key export failed:', error);
-            throw new Error('Failed to export private key');
-        }
-    }
-
-    // === IMPORT KLUCZY Z PEM ===
-    
-    async importPrivateKeyFromPEM(pemData) {
-        try {
-            console.log('🔑 Importing private key from PEM...');
-            const binaryData = this.pemToBinary(pemData);
-            
-            const privateKey = await crypto.subtle.importKey(
-                "pkcs8",
-                binaryData,
-                this.SIGNING_CONFIG,
-                false,
-                ["sign"]
-            );
-            
-            console.log('✅ Private key imported successfully');
-            return privateKey;
-            
-        } catch (error) {
-            console.error('❌ Private key import failed:', error);
-            throw new Error('Invalid private key format: ' + error.message);
-        }
-    }
-
-    // === PODPISYWANIE CYFROWE ===
-    
-    async signPassword(password, privateKey) {
-        try {
-            console.log('🔏 Signing password with private key...');
-            
-            const encoder = new TextEncoder();
-            const data = encoder.encode(password);
-            
-            const signature = await crypto.subtle.sign(
-                "RSASSA-PKCS1-v1_5",
-                privateKey,
-                data
-            );
-            
-            const signatureBase64 = this.arrayBufferToBase64(signature);
-            console.log('✅ Password signed successfully');
-            
-            return signatureBase64;
-            
-        } catch (error) {
-            console.error('❌ Password signing failed:', error);
-            throw new Error('Failed to sign password: ' + error.message);
-        }
-    }
-
-    // === REJESTRACJA ===
-    
-    async register(username, password) {
-        try {
-            console.log('📝 Starting registration for:', username);
-            
-            // Walidacja danych
-            if (!username || !password) {
-                throw new Error('Username and password are required');
-            }
-            
-            if (password.length < 8) {
-                throw new Error('Password must be at least 8 characters long');
-            }
-            
-            if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/.test(password)) {
-                throw new Error('Password must contain uppercase, lowercase, number and special character');
-            }
-            
-            // Generuj pary kluczy
-            const encryptionKeyPair = await this.generateKeyPair();
-            const signingKeyPair = await this.generateSigningKeyPair();
-            
-            // Eksportuj klucze do PEM
-            const publicKeyPEM = await this.exportPublicKeyToPEM(encryptionKeyPair.publicKey);
-            const privateKeyPEM = await this.exportPrivateKeyToPEM(signingKeyPair.privateKey);
-            
-            // Wyślij żądanie rejestracji
-            const response = await this.makeRequest('/register', {
-                method: 'POST',
-                body: JSON.stringify({
-                    username: username,
-                    password: password,
-                    public_key: publicKeyPEM
-                })
-            });
-            
-            if (response.status === 'success') {
-                console.log('✅ Registration successful, user_id:', response.user_id);
+            if (typeof CryptoManager !== 'undefined') {
+                this.cryptoManager = new CryptoManager();
                 
-                // Pokaż modal do pobierania klucza
-                this.showDownloadModal(privateKeyPEM, username);
+                // Verify crypto actually works
+                const initResult = await this.cryptoManager.initializeCrypto();
+                this.cryptoAvailable = initResult;
                 
-                return {
-                    success: true,
-                    user_id: response.user_id,
-                    message: 'Registration successful!',
-                    privateKey: privateKeyPEM
-                };
+                if (this.cryptoAvailable) {
+                    console.log("CryptoManager initialized successfully");
+                } else {
+                    console.warn("CryptoManager initialization failed - proceeding without crypto features");
+                }
             } else {
-                throw new Error(response.error || 'Registration failed');
+                console.warn("CryptoManager not available - crypto features disabled");
+                this.cryptoAvailable = false;
             }
-            
         } catch (error) {
-            console.error('❌ Registration failed:', error);
-            throw error;
+            console.error("CryptoManager initialization error:", error);
+            this.cryptoAvailable = false;
+        }
+        
+        // Check current authentication status
+        await this.checkAuthStatus();
+        
+        // Set up periodic auth check
+        this.setupAuthCheck();
+        
+        // Initialize page-specific handlers
+        this.initPageHandlers();
+    }
+
+    initPageHandlers() {
+        const path = window.location.pathname;
+        
+        if (path === '/' || path.includes('index')) {
+            this.initLoginPage();
+        } else if (path.includes('register')) {
+            this.initRegisterPage();
+        } else if (path.includes('chat')) {
+            this.initChatPage();
         }
     }
 
-    // === LOGOWANIE ===
-    
-    async login(username, password, privateKeyPEM) {
+    // Authentication Status
+    async checkAuthStatus() {
         try {
-            console.log('🔐 Starting login for:', username);
-            
+            const response = await fetch('/api/check_auth', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.currentUser = {
+                    id: data.id,
+                    user_id: data.user_id,
+                    username: data.username,
+                    is_admin: data.is_admin,
+                    public_key: data.public_key
+                };
+                this.isAuthenticated = true;
+                console.log("User authenticated:", this.currentUser.username);
+                return true;
+            } else {
+                this.currentUser = null;
+                this.isAuthenticated = false;
+                return false;
+            }
+        } catch (error) {
+            console.error("Auth check error:", error);
+            this.currentUser = null;
+            this.isAuthenticated = false;
+            return false;
+        }
+    }
+
+    setupAuthCheck() {
+        // Check auth status every 5 minutes
+        this.authCheckInterval = setInterval(() => {
+            this.checkAuthStatus();
+        }, 300000);
+    }
+
+    // Login Page Handlers
+    initLoginPage() {
+        console.log("Initializing login page");
+
+        // Login form handler
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.addEventListener('submit', (e) => this.handleLogin(e));
+        }
+
+        // Private key file handler
+        const privateKeyFile = document.getElementById('privateKeyFile');
+        if (privateKeyFile) {
+            privateKeyFile.addEventListener('change', (e) => this.handlePrivateKeyFile(e));
+        }
+
+        // Check if already authenticated
+        if (this.isAuthenticated) {
+            window.location.href = '/chat';
+        }
+    }
+
+    async handleLogin(event) {
+        event.preventDefault();
+
+        const submitButton = document.getElementById('loginSubmit');
+        const statusDiv = document.getElementById('loginStatus');
+        
+        // Disable submit button
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = 'Logging in...';
+        }
+
+        try {
+            // Get form data
+            const formData = new FormData(event.target);
+            const username = formData.get('username');
+            const password = formData.get('password');
+
             if (!username || !password) {
                 throw new Error('Username and password are required');
             }
-            
-            if (!privateKeyPEM) {
-                throw new Error('Private key is required for authentication');
+
+            // Prepare login data
+            const loginData = {
+                username: username,
+                password: password
+            };
+
+            // Add digital signature if crypto available
+            try {
+                if (window.userPrivateKey && this.cryptoAvailable && this.cryptoManager) {
+                    const signature = await this.cryptoManager.signPassword(password, window.userPrivateKey);
+                    loginData.signature = signature;
+                    console.log("Digital signature added to login");
+                }
+            } catch (sigError) {
+                console.warn("Failed to add digital signature:", sigError);
+                // Continue without signature
             }
-            
-            // Import klucza prywatnego
-            const privateKey = await this.importPrivateKeyFromPEM(privateKeyPEM);
-            
-            // Podpisz hasło
-            const signature = await this.signPassword(password, privateKey);
-            
-            // Wyślij żądanie logowania
-            const response = await this.makeRequest('/login', {
+
+            // Send login request
+            const response = await fetch('/api/login', {
                 method: 'POST',
-                body: JSON.stringify({
-                    username: username,
-                    password: password,
-                    signature: signature
-                })
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify(loginData)
             });
-            
-            if (response.status === 'success') {
-                console.log('✅ Login successful');
+
+            const result = await response.json();
+
+            if (response.ok && result.status === 'success') {
+                this.showStatus(statusDiv, 'Login successful! Redirecting...', 'success');
                 
-                // Zapisz klucz prywatny w sessionStorage
-                sessionStorage.setItem('user_private_key_pem', privateKeyPEM);
-                sessionStorage.setItem('user_id', response.user_id);
-                sessionStorage.setItem('username', username);
-                sessionStorage.setItem('is_admin', response.is_admin);
-                sessionStorage.setItem('isLoggedIn', 'true');
-                this.userPrivateKey = privateKey;
-                
-                // Przekieruj do chatu
+                // Update auth state
+                this.currentUser = {
+                    id: result.id,
+                    user_id: result.user_id,
+                    username: result.username,
+                    is_admin: result.is_admin
+                };
+                this.isAuthenticated = true;
+
+                // Redirect to chat
                 setTimeout(() => {
                     window.location.href = '/chat';
                 }, 1000);
-                
-                return response;
-                
+
             } else {
-                throw new Error(response.error || 'Login failed');
+                throw new Error(result.error || 'Login failed');
             }
-            
+
         } catch (error) {
-            console.error('❌ Login failed:', error);
-            throw error;
+            console.error('Login error:', error);
+            this.showStatus(statusDiv, `Login failed: ${error.message}`, 'error');
+        } finally {
+            // Re-enable submit button
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Zaloguj się';
+            }
         }
     }
 
-    // === WYLOGOWANIE ===
-    
-    async logout() {
-        try {
-            console.log('👋 Logging out...');
-            
-            // Wyślij żądanie wylogowania
-            await this.makeRequest('/api/logout', {
-                method: 'POST'
-            });
-            
-            // Wyczyść dane lokalne
-            this.clearUserData();
-            
-            console.log('✅ Logout successful');
-            window.location.href = '/';
-            
-        } catch (error) {
-            console.error('❌ Logout error:', error);
-            // Mimo błędu, wyczyść dane i przekieruj
-            this.clearUserData();
-            window.location.href = '/';
-        }
-    }
-
-    clearUserData() {
-        // Wyczyść sessionStorage
-        sessionStorage.removeItem('user_private_key_pem');
-        sessionStorage.removeItem('user_id');
-        sessionStorage.removeItem('username');
-        sessionStorage.removeItem('is_admin');
-        
-        // Wyczyść zmienne
-        this.userPrivateKey = null;
-        this.userPublicKey = null;
-        this.keyPair = null;
-        
-        console.log('🧹 User data cleared');
-    }
-
-    // === SPRAWDZANIE STATUSU AUTORYZACJI ===
-    
-    async checkAuthStatus() {
-        try {
-            const response = await this.makeRequest('/check_auth');
-            console.log('✅ Auth status:', response);
-            return response;
-        } catch (error) {
-            console.log('⚠️ Auth check failed:', error);
-            throw error;
-        }
-    }
-
-    // === POBIERANIE KLUCZA PRYWATNEGO ===
-    
-    downloadPrivateKey(privateKeyPEM, username) {
-        const blob = new Blob([privateKeyPEM], { type: 'application/x-pem-file' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${username}_private_key.pem`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        URL.revokeObjectURL(url);
-        
-        console.log('💾 Private key downloaded:', a.download);
-    }
-
-    // === OBSŁUGA PLIKÓW PEM ===
-    
-    async readFileAsPEM(file) {
-        return new Promise((resolve, reject) => {
+    handlePrivateKeyFile(event) {
+        const file = event.target.files[0];
+        if (file) {
             const reader = new FileReader();
-            
-            reader.onload = (event) => {
-                const content = event.target.result;
-                
-                // Walidacja formatu PEM
-                if (!content.includes('-----BEGIN') || !content.includes('-----END')) {
-                    reject(new Error('Invalid PEM file format'));
-                    return;
+            reader.onload = (e) => {
+                try {
+                    window.userPrivateKey = e.target.result;
+                    console.log("Private key loaded for digital signatures");
+                    
+                    // Load key if crypto available
+                    if (this.cryptoAvailable && this.cryptoManager) {
+                        try {
+                            this.cryptoManager.loadPrivateKey(e.target.result);
+                        } catch (cryptoError) {
+                            console.warn("Failed to load key into crypto manager:", cryptoError);
+                        }
+                    }
+                    
+                    // Show success indicator
+                    const indicator = document.getElementById('keyLoadIndicator');
+                    if (indicator) {
+                        indicator.textContent = 'Private key loaded successfully';
+                        indicator.className = 'key-indicator success';
+                        indicator.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error("Failed to load private key:", error);
+                    
+                    // Show error indicator
+                    const indicator = document.getElementById('keyLoadIndicator');
+                    if (indicator) {
+                        indicator.textContent = 'Failed to load private key';
+                        indicator.className = 'key-indicator error';
+                        indicator.style.display = 'block';
+                    }
                 }
-                
-                resolve(content);
             };
-            
-            reader.onerror = () => {
-                reject(new Error('Failed to read file'));
-            };
-            
             reader.readAsText(file);
-        });
-    }
-
-    // === ŻĄDANIA API ===
-    
-    async makeRequest(endpoint, options = {}) {
-        const url = `${this.apiBase}${endpoint}`;
-        
-        const defaultOptions = {
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            credentials: 'same-origin',
-        };
-
-        const finalOptions = {
-            ...defaultOptions,
-            ...options,
-            headers: {
-                ...defaultOptions.headers,
-                ...options.headers,
-            },
-        };
-
-        try {
-            console.log(`📡 API Request: ${options.method || 'GET'} ${url}`);
-            const response = await fetch(url, finalOptions);
-            
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.error || `HTTP ${response.status}`);
-            }
-
-            return data;
-            
-        } catch (error) {
-            console.error(`❌ API Error for ${endpoint}:`, error);
-            throw error;
         }
     }
 
-    // === UI HELPERS ===
-    
-    showMessage(message, isError = false, elementId = 'login-status') {
-        console.log(isError ? 'Error:' : 'Success:', message);
-        
-        const targetElement = document.getElementById(elementId) || 
-                            document.getElementById('status') ||
-                            document.getElementById('login-status');
-        
-        if (targetElement) {
-            targetElement.textContent = message;
-            targetElement.style.display = 'block';
-            targetElement.style.color = isError ? '#f44336' : '#4caf50';
-            targetElement.style.backgroundColor = isError ? 'rgba(244, 67, 54, 0.1)' : 'rgba(76, 175, 80, 0.1)';
-            targetElement.style.border = `1px solid ${isError ? '#f44336' : '#4caf50'}`;
-            targetElement.style.padding = '10px';
-            targetElement.style.borderRadius = '4px';
-            targetElement.style.marginTop = '10px';
-            
-            // Auto-hide po 5 sekundach
-            setTimeout(() => {
-                targetElement.style.display = 'none';
-            }, 5000);
-        } else {
-            // Fallback na alert
-            alert((isError ? 'Error: ' : 'Success: ') + message);
-        }
-    }
+    // Registration Page Handlers
+    initRegisterPage() {
+        console.log("Initializing registration page");
 
-    // === EVENT HANDLERS ===
-    
-    setupEventHandlers() {
-        console.log('🔧 Setting up event handlers...');
-        
-        // === LOGOWANIE ===
-        const loginButton = document.getElementById('login-button');
-        if (loginButton) {
-            loginButton.addEventListener('click', (e) => this.handleLogin(e));
-            console.log('✅ Login button handler attached');
-        }
-        
-        // === REJESTRACJA ===
+        // Registration form handler
         const registerForm = document.getElementById('registerForm');
         if (registerForm) {
             registerForm.addEventListener('submit', (e) => this.handleRegister(e));
-            console.log('✅ Register form handler attached');
         }
-        
-        console.log('✅ Event handlers setup complete');
-    }
 
-    async handleLogin(e) {
-        e.preventDefault();
-        
-        const username = document.getElementById('username')?.value;
-        const password = document.getElementById('password')?.value;
-        const pemFile = document.getElementById('pem-file')?.files[0];
-        const loginButton = document.getElementById('login-button');
-        
-        if (!username || !password) {
-            this.showMessage('Please enter username and password', true);
-            return;
-        }
-        
-        if (!pemFile) {
-            this.showMessage('Please select your private key file (.pem)', true);
-            return;
-        }
-        
-        const originalText = loginButton?.textContent || 'Zaloguj się';
-        
-        try {
-            if (loginButton) {
-                loginButton.disabled = true;
-                loginButton.textContent = 'Logowanie...';
-            }
-            
-            // Wczytaj klucz prywatny z pliku
-            const privateKeyPEM = await this.readFileAsPEM(pemFile);
-            
-            // Wykonaj logowanie
-            await this.login(username, password, privateKeyPEM);
-            
-            this.showMessage('Login successful! Redirecting to chat...');
-            
-        } catch (error) {
-            this.showMessage(error.message, true);
-        } finally {
-            if (loginButton) {
-                loginButton.disabled = false;
-                loginButton.textContent = originalText;
-            }
+        // Show crypto status info
+        if (!this.cryptoAvailable) {
+            this.showCryptoUnavailableMessage();
         }
     }
 
-    async handleRegister(e) {
-        e.preventDefault();
+    showCryptoUnavailableMessage() {
+        const registerForm = document.getElementById('registerForm');
+        if (!registerForm) return;
+
+        const warningDiv = document.createElement('div');
+        warningDiv.className = 'form-group';
+        warningDiv.innerHTML = `
+            <div class="crypto-warning" style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                <strong>Crypto Not Available</strong><br>
+                RSA key generation is not available in this browser. 
+                You can still register, but advanced crypto features will be limited.
+            </div>
+        `;
         
-        const username = document.getElementById('username')?.value;
-        const password = document.getElementById('password')?.value;
-        const submitButton = e.target.querySelector('button[type="submit"]');
-        
+        registerForm.insertBefore(warningDiv, registerForm.firstChild);
+    }
+
+    // Registration form validation
+    validateRegistrationForm(username, password) {
+        // Check empty fields
         if (!username || !password) {
-            this.showMessage('Please fill in all fields', true, 'status');
+            return { valid: false, error: 'All fields are required' };
+        }
+
+        // Validate username format
+        if (!/^[a-zA-Z0-9_-]{3,20}$/.test(username)) {
+            return { valid: false, error: 'Username must be 3-20 characters long and contain only letters, numbers, underscores, or hyphens' };
+        }
+
+        // Validate password length
+        if (password.length < 8) {
+            return { valid: false, error: 'Password must be at least 8 characters long' };
+        }
+
+        // Check for uppercase letter
+        if (!/[A-Z]/.test(password)) {
+            return { valid: false, error: 'Password must contain at least one uppercase letter' };
+        }
+
+        // Check for lowercase letter
+        if (!/[a-z]/.test(password)) {
+            return { valid: false, error: 'Password must contain at least one lowercase letter' };
+        }
+
+        // Check for digit
+        if (!/[0-9]/.test(password)) {
+            return { valid: false, error: 'Password must contain at least one digit' };
+        }
+
+        // Check for special character
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+            return { valid: false, error: 'Password must contain at least one special character' };
+        }
+
+        return { valid: true };
+    }
+
+    async handleRegister(event) {
+        event.preventDefault();
+
+        const submitButton = event.target.querySelector('button[type="submit"], input[type="submit"]');
+        const statusDiv = document.getElementById('status');
+        
+        // Get form data
+        const formData = new FormData(event.target);
+        const username = formData.get('username');
+        const password = formData.get('password');
+
+        // Validate form data FIRST
+        const validation = this.validateRegistrationForm(username, password);
+        if (!validation.valid) {
+            this.showStatus(statusDiv, validation.error, 'error');
             return;
         }
-        
-        const originalText = submitButton?.textContent || 'Zarejestruj się';
-        
-        try {
-            if (submitButton) {
-                submitButton.disabled = true;
-                submitButton.textContent = 'Generowanie kluczy...';
+
+        // Disable submit button
+        if (submitButton) {
+            submitButton.disabled = true;
+            if (submitButton.tagName === 'BUTTON') {
+                submitButton.textContent = 'Registering...';
+            } else {
+                submitButton.value = 'Registering...';
             }
+        }
+
+        try {
+            let publicKey = null;
+            let privateKey = null;
             
-            const result = await this.register(username, password);
-            
-            this.showMessage('Registration successful! Please download your private key.', false, 'status');
-            
+            // Generate RSA keys if crypto available
+            if (this.cryptoAvailable && this.cryptoManager) {
+                try {
+                    this.showStatus(statusDiv, 'Generating RSA keys...', 'info');
+                    
+                    const keyPair = await this.cryptoManager.generateKeyPair();
+                    if (keyPair && keyPair.publicKey && keyPair.privateKey) {
+                        publicKey = keyPair.publicKey;
+                        privateKey = keyPair.privateKey;
+                        
+                        this.showStatus(statusDiv, 'RSA keys generated, registering...', 'info');
+                    }
+                } catch (keyError) {
+                    console.warn('Key generation failed during registration:', keyError);
+                    this.showStatus(statusDiv, 'Key generation failed, registering without keys...', 'warning');
+                }
+            }
+
+            // Prepare registration data
+            const registrationData = {
+                username: username,
+                password: password
+            };
+
+            // Add public key if generated
+            if (publicKey) {
+                registrationData.public_key = publicKey;
+            }
+
+            // Send registration request
+            const response = await fetch('/api/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify(registrationData)
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.status === 'success') {
+                this.showStatus(statusDiv, 'Registration successful!', 'success');
+                
+                // Show download modal if keys were generated
+                if (privateKey && publicKey) {
+                    this.showDownloadModal(privateKey, publicKey);
+                } else {
+                    // Redirect if no keys
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                }
+
+            } else {
+                throw new Error(result.error || 'Registration failed');
+            }
+
         } catch (error) {
-            this.showMessage(error.message, true, 'status');
+            console.error('Registration error:', error);
+            this.showStatus(statusDiv, `Registration failed: ${error.message}`, 'error');
         } finally {
+            // Re-enable submit button
             if (submitButton) {
                 submitButton.disabled = false;
-                submitButton.textContent = originalText;
+                if (submitButton.tagName === 'BUTTON') {
+                    submitButton.textContent = 'Zarejestruj się';
+                } else {
+                    submitButton.value = 'Zarejestruj się';
+                }
             }
         }
     }
 
-    // === UTILITY FUNCTIONS ===
-    
-    arrayBufferToBase64(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary);
-    }
+    // Modal with download button
+    showDownloadModal(privateKey, publicKey) {
+        // Create modal
+        const modal = document.createElement('div');
+        modal.className = 'download-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(51, 51, 51, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
 
-    base64ToArrayBuffer(base64) {
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
-        return bytes.buffer;
-    }
+        modal.innerHTML = `
+            <div class="modal-content" style="
+                background: #2a2a2a;
+                color:rgb(179, 179, 179);
+                padding: 30px;
+                border-radius: 8px;
+                text-align: center;
+                max-width: 400px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                border: 1px solid #444444;
+            ">
+                <h3 style="color: #FF9800; margin-bottom: 20px;">Klucze RSA wygenerowane!</h3>
+                <p style="margin-bottom: 20px; color: #CCCCCC;">
+                    Klucz publiczny został zapisany na serwerze.<br>
+                    <strong style="color: #FF9800;">Pobierz klucz prywatny</strong> - będziesz go potrzebować do logowania.
+                </p>
+                <button id="downloadPrivateKey" class="btn btn-primary" style="
+                    background: #FF9800;
+                    color: #333333;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    margin-right: 10px;
+                    font-weight: bold;
+                    transition: background-color 0.3s, transform 0.2s;
+                ">
+                    Pobierz klucz prywatny
+                </button>
+                <button id="skipDownload" class="btn btn-secondary" style="
+                    background: #666666;
+                    color: #FFFFFF;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    transition: background-color 0.3s;
+                ">
+                    Pomiń
+                </button>
+            </div>
+        `;
 
-    pemToBinary(pem) {
-        const lines = pem.split('\n');
-        const base64 = lines.slice(1, -1).join('').replace(/\s/g, '');
-        return this.base64ToArrayBuffer(base64);
-    }
+        // Add hover effects
+        const styleSheet = document.createElement('style');
+        styleSheet.textContent = `
+            #downloadPrivateKey:hover {
+                background: #F57C00 !important;
+                transform: translateY(-2px);
+            }
+            
+            #skipDownload:hover {
+                background: #777777 !important;
+            }
+        `;
+        document.head.appendChild(styleSheet);
 
-    arrayBufferToPEM(buffer, label) {
-        const base64 = this.arrayBufferToBase64(buffer);
-        const chunks = base64.match(/.{1,64}/g) || [];
-        return `-----BEGIN ${label}-----\n${chunks.join('\n')}\n-----END ${label}-----`;
-    }
-}
+        document.body.appendChild(modal);
 
-// === GLOBALNA INICJALIZACJA ===
-
-window.danaidAuth = new DanaidAuthSystem();
-
-// Auto-inicjalizacja po załadowaniu DOM
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        window.danaidAuth.init();
-    });
-} else {
-    window.danaidAuth.init();
-}
-
-// Legacy compatibility dla istniejących wywołań
-window.login = (username, password, privateKey) => window.danaidAuth.login(username, password, privateKey);
-window.register = (username, password) => window.danaidAuth.register(username, password);
-
-
-console.log('🚀 Danaid Auth System loaded - E2EE Authentication Ready - Railway Compatible');
-
-// === HYBRID LOGOUT SYSTEM ===
-
-async function hybridLogout() {
-    console.log('🔄 Starting TRUE HYBRID logout...');
-    
-    const logoutBtn = document.getElementById('logout-btn');
-    const logoutText = document.getElementById('logout-text');
-    
-    // UI feedback
-    if (logoutBtn) logoutBtn.disabled = true;
-    if (logoutText) logoutText.textContent = 'Wylogowywanie...';
-    
-    try {
-        // ✅ MECHANIZM A: JavaScript API + kontrolowane przekierowanie
-        console.log('🔄 Attempting MECHANISM A: JavaScript API...');
-        
-        // Sprawdź dostępność JavaScript auth
-        if (!window.danaidAuth) {
-            throw new Error('danaidAuth not available');
-        }
-        
-        // Wywołaj TYLKO API request bez wewnętrznego przekierowania
-        console.log('📡 Calling /api/logout...');
-        const response = await fetch('/api/logout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin'
+        // Event handlers
+        document.getElementById('downloadPrivateKey').addEventListener('click', () => {
+            this.downloadPrivateKey(privateKey);
+            this.closeModalAndRedirect(modal);
         });
-        
-        if (!response.ok) {
-            throw new Error(`API logout failed: ${response.status}`);
+
+        document.getElementById('skipDownload').addEventListener('click', () => {
+            this.closeModalAndRedirect(modal);
+        });
+
+        // Click outside modal
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                this.closeModalAndRedirect(modal);
+            }
+        });
+    }
+
+    downloadPrivateKey(privateKey) {
+        const blob = new Blob([privateKey], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'danaid_private_key.pem';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    closeModalAndRedirect(modal) {
+        modal.remove();
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 500);
+    }
+
+    // Chat Page Handlers
+    initChatPage() {
+        console.log("Initializing chat page authentication");
+
+        // Check authentication
+        if (!this.isAuthenticated) {
+            console.log("Not authenticated, redirecting to login");
+            window.location.href = '/';
+            return;
         }
-        
-        const data = await response.json();
-        console.log('✅ API logout response:', data);
-        
-        // Wyczyść dane przez JavaScript
-        if (typeof window.danaidAuth.clearUserData === 'function') {
-            window.danaidAuth.clearUserData();
-        } else {
-            sessionStorage.clear();
+
+        // Setup logout handler
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => this.handleLogout());
         }
-        
-        console.log('✅ MECHANISM A successful - JavaScript API logout');
-        console.log('🔄 JavaScript redirect to home...');
-        
-        // MECHANIZM A: JavaScript przekierowanie
-        window.location.href = '/';
-        
-        // Zakończ async - przekierowanie w toku
-        return new Promise(() => {}); // Never resolves
-        
-    } catch (error) {
-        console.warn('❌ MECHANISM A failed:', error.message);
-        console.log('🔄 Falling back to MECHANISM B: HTML endpoint...');
-        
-        // ✅ MECHANIZM B: HTML endpoint (server-side logout)
+
+        // Display user info
+        this.displayUserInfo();
+    }
+
+    displayUserInfo() {
+        if (!this.currentUser) return;
+
+        // Update username display
+        const usernameElements = document.querySelectorAll('.current-username');
+        usernameElements.forEach(element => {
+            element.textContent = this.currentUser.username;
+        });
+
+        // Update user ID display
+        const userIdElements = document.querySelectorAll('.current-user-id');
+        userIdElements.forEach(element => {
+            element.textContent = this.currentUser.user_id;
+        });
+
+        // Show admin indicator if applicable
+        if (this.currentUser.is_admin) {
+            const adminElements = document.querySelectorAll('.admin-indicator');
+            adminElements.forEach(element => {
+                element.style.display = 'inline-block';
+            });
+        }
+    }
+
+    // Logout Handling
+    async handleLogout() {
         try {
-            // Wyczyść co się da lokalnie
-            try {
-                sessionStorage.clear();
-                console.log('✅ Local data cleared before HTML fallback');
-            } catch (clearError) {
-                console.warn('⚠️ Local clear failed:', clearError);
+            console.log("Initiating logout");
+
+            // Send logout request
+            const response = await fetch('/api/logout', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.status === 'success') {
+                console.log("Logout successful");
+                
+                // Clear auth state
+                this.currentUser = null;
+                this.isAuthenticated = false;
+                
+                // Clear crypto manager if available
+                if (this.cryptoAvailable && this.cryptoManager) {
+                    try {
+                        this.cryptoManager.clear();
+                    } catch (error) {
+                        console.warn("Failed to clear crypto manager:", error);
+                    }
+                }
+                
+                // Clear any stored keys
+                delete window.userPrivateKey;
+                delete window.generatedKeys;
+                
+                // Clear auth check interval
+                if (this.authCheckInterval) {
+                    clearInterval(this.authCheckInterval);
+                }
+                
+                // Redirect to login
+                window.location.href = '/';
+
+            } else {
+                throw new Error(result.message || 'Logout failed');
             }
-            
-            if (logoutText) logoutText.textContent = 'Przekierowywanie (HTML)...';
-            
-            console.log('🔄 MECHANISM B: HTML endpoint redirect');
-            
-            // MECHANIZM B: HTML endpoint (server obsłuży logout + redirect)
-            window.location.href = '/logout';
-            
-            // Zakończ async - przekierowanie w toku
-            return new Promise(() => {}); // Never resolves
-            
-        } catch (fallbackError) {
-            console.error('❌ MECHANISM B also failed:', fallbackError);
-            
-            // ✅ MECHANIZM C: Emergency nuclear option
-            console.log('🚨 MECHANISM C: Emergency fallback');
-            emergencyLogout();
-            
-            return new Promise(() => {}); // Never resolves
+
+        } catch (error) {
+            console.error('Logout error:', error);
+            // Force redirect even if logout request fails
+            window.location.href = '/';
         }
     }
+
+    // Utility Methods
+    showStatus(element, message, type) {
+        if (!element) return;
+
+        element.textContent = message;
+        element.className = `status-message ${type}`;
+        element.style.display = 'block';
+
+        // Auto-hide after 5 seconds for success messages
+        if (type === 'success') {
+            setTimeout(() => {
+                element.style.display = 'none';
+            }, 5000);
+        }
+    }
+
+    // Public API
+    getCurrentUser() {
+        return this.currentUser;
+    }
+
+    isUserAuthenticated() {
+        return this.isAuthenticated;
+    }
+
+    async refreshAuth() {
+        return await this.checkAuthStatus();
+    }
+
+    getCryptoManager() {
+        return this.cryptoAvailable ? this.cryptoManager : null;
+    }
+
+    getCryptoStatus() {
+        return {
+            available: this.cryptoAvailable,
+            manager: !!this.cryptoManager,
+            stats: this.cryptoAvailable && this.cryptoManager ? 
+                this.cryptoManager.getStats() : null
+        };
+    }
 }
 
-/**
- * Emergency fallback - gdy wszystko inne zawiedzie
- */
-function emergencyLogout() {
-    console.log('🚨 Emergency logout - clearing everything');
-    
-    try {
-        // Wyczyść wszystko
-        sessionStorage.clear();
-        localStorage.clear();
-        
-        // Wyczyść cookies
-        document.cookie.split(";").forEach(function(c) { 
-            document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
-        });
-        
-    } catch (e) {
-        console.error('Emergency cleanup failed:', e);
-    }
-    
-    // Force redirect z multiple attempts
-    try {
-        window.location.replace('/');
-    } catch (e) {
-        window.location.href = '/';
-    }
-}
+// Global Initialization
 
-// === GLOBAL LOGOUT HANDLER FOR INLINE ONCLICK ===
-window.handleLogoutClick = function() {
-    console.log("🔴 LOGOUT CLICKED!");
-    
-    if (typeof hybridLogout === 'function') {
-        hybridLogout();
-    } else if (window.danaidAuth) {
-        window.danaidAuth.logout();
-    } else {
-        sessionStorage.clear();
-        window.location.href = '/logout';
-    }
+// Create global auth system instance
+window.authSystem = new DanaidAuthSystem();
+
+// Utility functions for backward compatibility
+window.checkAuth = function() {
+    return window.authSystem.checkAuthStatus();
 };
 
-console.log("✅ Global handleLogoutClick ready");
+window.logout = function() {
+    return window.authSystem.handleLogout();
+};
+
+window.getCurrentUser = function() {
+    return window.authSystem.getCurrentUser();
+};
+
+window.checkCryptoStatus = function() {
+    const status = window.authSystem.getCryptoStatus();
+    console.log('Crypto Status:', status);
+    return status;
+};
+
+// Auto-initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log("Auth system ready - Modular version with proper validation order");
+    });
+} else {
+    console.log("Auth system ready - Modular version with proper validation order");
+}
+
+console.log("Danaid Auth System loaded successfully - Registration flow fixed");

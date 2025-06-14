@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Danaid - Bezpieczny Czat</title>
-    <!-- POPRAWIONE ŚCIEŻKI CSS -->
+    <!-- CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
@@ -20,21 +20,25 @@
                         <i class="fas fa-user-plus"></i> Dodaj
                     </button>
 
-                    <button id="logout-btn" class="btn btn-danger" onclick="handleLogoutClick()">
+                    <button id="logout-btn" class="btn btn-danger">
                         <i class="fas fa-sign-out-alt"></i> <span id="logout-text">Wyloguj</span>
                     </button>
 
-                    <!-- ✅ PRZYCISK PANEL ADMINA (ukryty domyślnie) -->
+                    <!-- Przycisk Panel Admina (ukryty domyślnie) -->
                     <button id="admin-panel-btn" class="btn btn-warning" style="display: none;" 
                             onclick="window.location.href='/admin_dashboard'">
                             <i class="fas fa-cog"></i> Panel Admina
                     </button>
-                    
                 </div>
             </div>
             
+            <!-- Status połączenia -->
+            <div id="connection-status" class="connection-status disconnected">
+                Łączenie...
+            </div>
+            
             <div class="friends-section">
-                <div class="friend-requests" onclick="window.chatManager?._showFriendRequestsModal();">
+                <div class="friend-requests" id="friend-requests-btn">
                     <i class="fas fa-user-plus"></i> Zaproszenia
                     <span id="friend-request-count" class="friend-request-count">0</span>
                 </div>
@@ -52,30 +56,27 @@
             <div id="chat-header" class="chat-header">
                 <div class="chat-partner-info">
                     <h2>Wybierz rozmowę</h2>
-                    <span class="chat-status"></span>
-                </div>
-    
-               <!-- ✅ POPRAWIONE: Przyciski akcji z właściwymi ID -->
-                <div id="chat-actions" class="chat-actions" style="display: none;">
-                    <button id="clear-conversation-btn" class="btn btn-secondary" title="Wyczyść konwersację (Ctrl+Delete)">
-                        <i class="fas fa-broom"></i> <span>Wyczyść</span>
-                    </button>
-                    <button id="delete-conversation-btn" class="btn btn-danger" title="Usuń całą konwersację (Ctrl+Shift+Delete)">
-                        <i class="fas fa-trash"></i> <span>Usuń</span>
-                    </button>
+                    <span class="chat-status">Wybierz znajomego, aby rozpocząć rozmowę</span>
                 </div>
             </div>
+
+            <!-- Wskaźnik pisania -->
+            <div id="typing-indicator" class="typing-indicator" style="display: none;">
+                Ktoś pisze...
+            </div>
+
             <!-- Obszar wiadomości -->
             <div id="messages" class="messages-container">
-                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
-                    <i class="fas fa-comments" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i>
+                <div class="welcome-message">
+                    <i class="fas fa-comments"></i>
                     <p>Wybierz znajomego, aby rozpocząć rozmowę</p>
                 </div>
             </div>
 
             <!-- Pole wprowadzania wiadomości -->
             <div class="message-input-container">
-                <textarea id="message-input" class="message-input" placeholder="Napisz wiadomość..." rows="1"></textarea>
+                <textarea id="message-input" class="message-input" 
+                         placeholder="Napisz wiadomość..." rows="1"></textarea>
                 <button id="send-button" class="send-button">
                     <i class="fas fa-paper-plane"></i>
                 </button>
@@ -83,117 +84,125 @@
         </div>
     </div>
 
-    <!-- Modal dodawania znajomych -->
-    <div id="add-friend-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Dodaj znajomego</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="friend-username-input">Nazwa użytkownika:</label>
-                    <input type="text" id="friend-username-input" placeholder="Wpisz nazwę użytkownika" />
-                </div>
-                <button id="send-friend-request-btn" class="btn btn-primary">Wyślij zaproszenie</button>
-                <div id="friend-request-status" style="display: none; margin-top: 10px;"></div>
-            </div>
-        </div>
-    </div>
+    <!-- Container na powiadomienia -->
+    <div id="notifications-container"></div>
 
-    <!-- SKRYPTY -->
+    <!-- SKRYPTY MODULARNEGO SYSTEMU -->
     <!-- Socket.IO Client Library -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     
-    <!-- Konfiguracja Socket.IO -->
-    <script src="/socket-config.js"></script>
+    <!-- Event Bus - musi być pierwszy -->
+    <script src="{{ url_for('static', filename='js/utils/EventBus.js') }}"></script>
     
-    <!-- ŚCIEŻKI DO JS -->
-    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/crypto.js') }}"></script>
+    <!-- Data Models -->
+    <script src="{{ url_for('static', filename='js/models/User.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/models/Message.js') }}"></script>
+    
+    <!-- Core Managers -->
+    <script src="{{ url_for('static', filename='js/core/CryptoManager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/SocketManager.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/UIManager.js') }}"></script>
+    
+    <!-- Main Engine -->
+    <script src="{{ url_for('static', filename='js/core/ChatEngine.js') }}"></script>
+    
+    <!-- Main Entry Point -->
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
     
-    <!-- ✅ INICJALIZACJA Z PANELEM ADMINA -->
+    <!-- Minimalna inicjalizacja -->
     <script>
-        console.log("=== DANAID CHAT INICJALIZACJA (Z PANELEM ADMINA) ===");
+        console.log("DANAID MODULAR CHAT SYSTEM");
         
-        // Sprawdź czy wszystkie moduły są załadowane
-        if (typeof io === 'undefined') {
-            console.error("❌ Socket.IO client library nie załadowana");
-            alert("Błąd ładowania Socket.IO. Odśwież stronę.");
-        } else {
-            console.log("✅ Socket.IO client library załadowana");
+        // Walidacja modułów
+        const requiredModules = [
+            'EventBus', 'Events', 'User', 'Session', 'Friend', 'Message',
+            'CryptoManager', 'SocketManager', 'UIManager', 'ChatEngine'
+        ];
+        
+        const missingModules = requiredModules.filter(module => 
+            typeof window[module] === 'undefined'
+        );
+        
+        if (missingModules.length > 0) {
+            console.error("Brakujące moduły:", missingModules);
+            alert("Błąd ładowania modułów: " + missingModules.join(', '));
         }
         
-        // Sprawdź moduły po krótkim opóźnieniu (daj czas na załadowanie)
-        setTimeout(() => {
-            if (typeof window.cryptoManager === 'undefined') {
-                console.error("❌ CryptoManager nie załadowany po timeout");
-                alert("Błąd ładowania modułu kryptograficznego. Odśwież stronę.");
-            } else {
-                console.log("✅ CryptoManager załadowany (po timeout)");
-            }
-    
-            if (typeof window.chatManager === 'undefined') {
-                console.log("ℹ️ ChatManager zostanie załadowany przez chat.js");
-            } else {
-                console.log("✅ ChatManager załadowany");
-            }
-        }, 500);
+        // Walidacja Socket.IO
+        if (typeof io === 'undefined') {
+            console.error("Socket.IO nie załadowany");
+            alert("Błąd ładowania Socket.IO. Odśwież stronę.");
+        }
         
         // Sprawdź sesję użytkownika
-        const isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true' || 
-                          localStorage.getItem('isLoggedIn') === 'true';
-        
-        if (!isLoggedIn) {
-            console.warn("⚠️ Użytkownik nie jest zalogowany");
-            window.location.href = '/';
-        } else {
-            console.log("✅ Użytkownik jest zalogowany");
+        const checkAuth = () => {
+            const sessionAuth = sessionStorage.getItem('isLoggedIn') === 'true';
+            const localAuth = localStorage.getItem('isLoggedIn') === 'true';
             
-            // Ustaw nazwę użytkownika w interfejsie
-            const usernameElement = document.getElementById('username');
-            const username = sessionStorage.getItem('username');
-            if (usernameElement && username) {
-                usernameElement.textContent = username;
+            if (!sessionAuth && !localAuth) {
+                fetch('/api/check_auth')
+                    .then(response => {
+                        if (!response.ok) window.location.href = '/';
+                    })
+                    .catch(() => window.location.href = '/');
+            } else {
+                // Ustaw nazwę użytkownika
+                const username = sessionStorage.getItem('username');
+                const usernameElement = document.getElementById('username');
+                if (usernameElement && username) {
+                    usernameElement.textContent = username;
+                }
+            }
+        };
+        
+        // Globalne funkcje dla kompatybilności z templates
+        window.handleLogoutClick = function() {
+            if (window.eventBus && window.Events) {
+                eventBus.emit(Events.AUTH_LOGOUT);
+            } else if (window.chatEngine) {
+                chatEngine.handleLogout();
+            } else {
+                // Fallback
+                fetch('/api/logout', { method: 'POST' })
+                    .then(() => window.location.href = '/')
+                    .catch(() => window.location.href = '/');
+            }
+        };
+
+        // Friend requests button event listener (clean approach)
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM załadowany, uruchamianie systemu");
+            checkAuth();
+            
+            // Friend requests button - delegate to UIManager via EventBus
+            const friendRequestsBtn = document.getElementById('friend-requests-btn');
+            if (friendRequestsBtn) {
+                friendRequestsBtn.addEventListener('click', () => {
+                    // Wait for chatEngine to initialize, then show modal
+                    if (window.chatEngine && window.chatEngine.ui) {
+                        window.chatEngine.ui.showFriendRequestsModal();
+                    } else {
+                        console.warn('ChatEngine not ready yet');
+                    }
+                });
             }
             
-            // ✅ SPRAWDŹ UPRAWNIENIA ADMINISTRATORA PO ZALOGOWANIU
+            // Sprawdź uprawnienia administratora
             setTimeout(() => {
                 if (typeof window.checkAndShowAdminButton === 'function') {
                     window.checkAndShowAdminButton();
-                } else {
-                    console.warn("⚠️ Funkcja checkAndShowAdminButton nie jest dostępna - sprawdź czy chat.js się załadował");
                 }
             }, 1500);
-        }
-        
-        // ✅ OBSŁUGA PRZYCISKÓW PO ZAŁADOWANIU STRONY
-        document.addEventListener('DOMContentLoaded', () => {
-            // Dodaj obsługę przycisków czyszczenia/usuwania konwersacji
-            const clearBtn = document.getElementById('clear-conversation-btn');
-            const deleteBtn = document.getElementById('delete-conversation-btn');
-            
-            if (clearBtn) {
-                clearBtn.addEventListener('click', () => {
-                    if (window.chatManager) {
-                        window.chatManager.clearSessionMessages();
-                    }
-                });
-            }
-            
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', () => {
-                    if (window.chatManager) {
-                        window.chatManager.deleteSession();
-                    }
-                });
-            }
-            
-            console.log("✅ Obsługa przycisków konwersacji dodana");
         });
-        
-        console.log("=== DANAID CHAT Z PANELEM ADMINA GOTOWY ===");
+
+        // Utility function
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        console.log("Chat system initialization complete");
     </script>
 </body>
 </html>

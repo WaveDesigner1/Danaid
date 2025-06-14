@@ -1,48 +1,73 @@
+"""
+models.py - Refactored Database Models
+Clean, optimized SQLAlchemy models with proper relationships
+"""
+
 import json
+import secrets
+import time
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-import secrets
-import time
 
+# Initialize database
 db = SQLAlchemy()
 
+# ================================================
+# USER MODEL
+# ================================================
+
 class User(db.Model, UserMixin):
+    """
+    User model with authentication and admin capabilities
+    """
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     public_key = db.Column(db.Text, nullable=False)
     user_id = db.Column(db.String(6), unique=True, nullable=False)
-    # ✅ FIXED: Explicit default value for is_admin
+    
+    # Status fields
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     is_online = db.Column(db.Boolean, default=False, nullable=False)
     last_active = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
     
+    # Relationships
+    initiated_sessions = db.relationship('ChatSession', foreign_keys='ChatSession.initiator_id', backref='initiator')
+    received_sessions = db.relationship('ChatSession', foreign_keys='ChatSession.recipient_id', backref='recipient')
+    sent_messages = db.relationship('Message', backref='sender')
+    
     def __init__(self, **kwargs):
-        """Enhanced constructor with proper is_admin handling"""
+        """Initialize user with default values"""
         super(User, self).__init__(**kwargs)
         
-        # Ensure is_admin has a default value
         if not hasattr(self, 'is_admin') or self.is_admin is None:
             self.is_admin = False
             
-        # Ensure is_online has a default value  
         if not hasattr(self, 'is_online') or self.is_online is None:
             self.is_online = False
     
+    # ================================================
+    # PASSWORD MANAGEMENT
+    # ================================================
+    
     def set_password(self, password):
-        """Ustawia hasło z walidacją"""
+        """Set password with validation"""
         if len(password) < 8:
-            raise ValueError("Hasło musi mieć co najmniej 8 znaków")
+            raise ValueError("Password must be at least 8 characters")
         self.password_hash = generate_password_hash(password)
         
     def check_password(self, password):
-        """Sprawdza hasło"""
+        """Verify password"""
         return check_password_hash(self.password_hash, password)
-        
+    
+    # ================================================
+    # USER ID GENERATION
+    # ================================================
+    
     def generate_user_id(self):
-        """Generuje unikalny 6-cyfrowy identyfikator użytkownika"""
+        """Generate unique 6-digit user ID"""
         if self.user_id:
             return
             
@@ -56,55 +81,59 @@ class User(db.Model, UserMixin):
                 return
             attempts += 1
             
-        # Fallback z timestamp
+        # Fallback with timestamp
         timestamp = str(int(time.time()))[-3:]
         user_id = ''.join([str(secrets.randbelow(10)) for _ in range(3)]) + timestamp
         self.user_id = user_id
     
-    # ✅ PROPERTY dla is_admin z fallback 
-    @property 
-    def is_admin_safe(self):
-        """Safe property that always returns a boolean"""
-        return getattr(self, 'is_admin', False) is True
+    # ================================================
+    # ADMIN MANAGEMENT
+    # ================================================
     
     def make_admin(self):
-        """Nadaje uprawnienia administratora"""
+        """Grant admin privileges"""
         self.is_admin = True
-        print(f"👑 User {self.username} granted admin privileges")
-    
+        
     def revoke_admin(self):
-        """Odbiera uprawnienia administratora"""
+        """Remove admin privileges"""
         self.is_admin = False
-        print(f"👤 Admin privileges revoked from {self.username}")
+        
+    # ================================================
+    # ACTIVITY TRACKING
+    # ================================================
         
     def update_last_active(self):
-        """Aktualizuje czas ostatniej aktywności"""
+        """Update last activity timestamp"""
         self.last_active = datetime.utcnow()
         db.session.commit()
         
+    # ================================================
+    # FRIENDS SYSTEM
+    # ================================================
+    
     def get_friends(self):
-        """Pobiera listę znajomych użytkownika"""
+        """Get list of user's friends"""
         try:
             friend_records = Friend.query.filter_by(user_id=self.id).all()
             friend_ids = [friend.friend_id for friend in friend_records]
             return User.query.filter(User.id.in_(friend_ids)).all() if friend_ids else []
         except Exception as e:
-            print(f"Błąd podczas pobierania znajomych: {e}")
+            print(f"Error fetching friends: {e}")
             return []
 
     def is_friend_with(self, user_id):
-        """Sprawdza czy użytkownik jest znajomym"""
+        """Check if user is friends with another user"""
         try:
             return Friend.query.filter(
                 ((Friend.user_id == self.id) & (Friend.friend_id == user_id)) |
                 ((Friend.user_id == user_id) & (Friend.friend_id == self.id))
             ).first() is not None
         except Exception as e:
-            print(f"Błąd podczas sprawdzania relacji znajomości: {e}")
+            print(f"Error checking friendship: {e}")
             return False
 
     def add_friend(self, friend_id):
-        """Dodaje użytkownika do znajomych"""
+        """Add user as friend"""
         try:
             existing = Friend.query.filter_by(user_id=self.id, friend_id=friend_id).first()
             if existing:
@@ -119,11 +148,11 @@ class User(db.Model, UserMixin):
             return True
         except Exception as e:
             db.session.rollback()
-            print(f"Błąd podczas dodawania znajomego: {e}")
+            print(f"Error adding friend: {e}")
             return False
 
     def remove_friend(self, friend_id):
-        """Usuwa użytkownika ze znajomych"""
+        """Remove user from friends"""
         try:
             Friend.query.filter(
                 ((Friend.user_id == self.id) & (Friend.friend_id == friend_id)) |
@@ -133,41 +162,53 @@ class User(db.Model, UserMixin):
             return True
         except Exception as e:
             db.session.rollback()
-            print(f"Błąd podczas usuwania znajomego: {e}")
+            print(f"Error removing friend: {e}")
             return False
     
     def __repr__(self):
         return f'<User {self.username} (admin: {self.is_admin})>'
 
+# ================================================
+# CHAT SESSION MODEL
+# ================================================
+
 class ChatSession(db.Model):
+    """
+    Chat session model with dual encryption support
+    """
     id = db.Column(db.Integer, primary_key=True)
     session_token = db.Column(db.String(64), unique=True, nullable=False)
     initiator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    
+    # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_activity = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
+    
+    # Status
     is_active = db.Column(db.Boolean, default=True)
     
-    # NOWY SYSTEM: Dual encryption support - klucze dla każdego użytkownika osobno
+    # NEW SYSTEM: Dual encryption support
     encrypted_keys_json = db.Column(db.Text, nullable=True)
     key_generator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     key_acknowledged = db.Column(db.Boolean, default=False)
     
-    # STARY SYSTEM: Backward compatibility
+    # OLD SYSTEM: Backward compatibility
     encrypted_session_key = db.Column(db.Text, nullable=True)
     
     # Relationships
-    initiator = db.relationship('User', foreign_keys=[initiator_id])
-    recipient = db.relationship('User', foreign_keys=[recipient_id])
     key_generator = db.relationship('User', foreign_keys=[key_generator_id])
     messages = db.relationship('Message', backref='session', lazy='dynamic')
     
-    # NOWE METODY - Dual encryption
+    # ================================================
+    # DUAL ENCRYPTION METHODS
+    # ================================================
+    
     def get_encrypted_key_for_user(self, user_id):
-        """Pobiera zaszyfrowany klucz dla konkretnego użytkownika (NOWY SYSTEM)"""
+        """Get encrypted key for specific user (NEW SYSTEM)"""
         if not self.encrypted_keys_json:
-            # Fallback do starego systemu
+            # Fallback to old system
             if self.encrypted_session_key:
                 return self.encrypted_session_key
             return None
@@ -178,43 +219,55 @@ class ChatSession(db.Model):
             return None
     
     def set_encrypted_keys(self, keys_dict, generator_id):
-        """Ustawia klucze dla wszystkich użytkowników sesji (NOWY SYSTEM)"""
+        """Set keys for all session users (NEW SYSTEM)"""
         self.encrypted_keys_json = json.dumps(keys_dict)
         self.key_generator_id = generator_id
         self.last_activity = datetime.utcnow()
     
     def has_key_for_user(self, user_id):
-        """Sprawdza czy użytkownik ma klucz"""
+        """Check if user has encryption key"""
         return self.get_encrypted_key_for_user(user_id) is not None
     
     def clear_keys(self):
-        """Czyści wszystkie klucze szyfrowania (bezpieczeństwo przy wylogowaniu)"""
+        """Clear all encryption keys (security on logout)"""
         self.encrypted_keys_json = None
         self.key_generator_id = None
         self.key_acknowledged = False
-        # Zachowaj backward compatibility
+        # Maintain backward compatibility
         self.encrypted_session_key = None
     
-    # STARE METODY - Backward compatibility
+    # ================================================
+    # LEGACY COMPATIBILITY
+    # ================================================
+    
     def has_key(self):
-        """Sprawdza czy sesja ma klucz (backward compatibility)"""
+        """Check if session has key (backward compatibility)"""
         return (self.encrypted_keys_json is not None) or (self.encrypted_session_key is not None)
 
+# ================================================
+# MESSAGE MODEL
+# ================================================
+
 class Message(db.Model):
+    """
+    Message model with encryption support
+    """
     id = db.Column(db.Integer, primary_key=True)
     session_id = db.Column(db.Integer, db.ForeignKey('chat_session.id'), nullable=False)
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    content = db.Column(db.Text, nullable=False)  # Zaszyfrowana wiadomość
-    iv = db.Column(db.String(64), nullable=False)  # Wektor inicjalizacyjny
+    
+    # Content
+    content = db.Column(db.Text, nullable=False)  # Encrypted message
+    iv = db.Column(db.String(64), nullable=False)  # Initialization vector
+    
+    # Metadata
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     read = db.Column(db.Boolean, default=False)
-    is_encrypted = db.Column(db.Boolean, default=True)  # NOWE: znacznik szyfrowania
-    
-    sender = db.relationship('User')
+    is_encrypted = db.Column(db.Boolean, default=True)  # Encryption flag
     
     @classmethod
     def get_unread_count(cls, user_id):
-        """Pobiera liczbę nieprzeczytanych wiadomości dla użytkownika"""
+        """Get unread message count for user"""
         sessions = ChatSession.query.filter(
             (ChatSession.recipient_id == user_id) &
             (ChatSession.is_active == True) &
@@ -232,8 +285,14 @@ class Message(db.Model):
             (cls.read == False)
         ).count()
 
+# ================================================
+# FRIEND MODELS
+# ================================================
+
 class Friend(db.Model):
-    """Model relacji znajomości"""
+    """
+    Friend relationship model
+    """
     __tablename__ = 'friend'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -252,7 +311,9 @@ class Friend(db.Model):
         return f'<Friend {self.user_id} -> {self.friend_id}>'
 
 class FriendRequest(db.Model):
-    """Model zaproszeń do znajomych"""
+    """
+    Friend request model
+    """
     __tablename__ = 'friend_request'
     
     id = db.Column(db.Integer, primary_key=True)
@@ -271,3 +332,5 @@ class FriendRequest(db.Model):
     
     def __repr__(self):
         return f'<FriendRequest {self.from_user_id} -> {self.to_user_id} [{self.status}]>'
+    
+    

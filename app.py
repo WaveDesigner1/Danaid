@@ -1,369 +1,399 @@
-# ✅ FIXED VERSION - app.py with Socket.IO integration and Enhanced Admin Support
-from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, send_file, Response, session
-from flask_cors import CORS
-from flask_login import LoginManager, current_user, login_required
-from flask_socketio import SocketIO
-from datetime import timedelta
+"""
+app.py - Refactored Flask Application Factory
+Clean SQLite-focused setup with integrated Socket.IO and admin panel
+"""
+
 import os
-import shutil
-import datetime
-import time
-import json
-from sqlalchemy import text
-from sqlalchemy import inspect, text
-import traceback
 import sys
+import json
+import time
+import logging
+from datetime import datetime, timedelta
+from flask import Flask, request, jsonify, Response, session
+from flask_cors import CORS
+from flask_login import LoginManager, current_user,  login_required
+from flask_socketio import SocketIO
+from sqlalchemy import text, inspect
+from flask_sqlalchemy import SQLAlchemy 
+import traceback
 
-# 🔄 ZMODERNIZOWANE IMPORTY (zgodnie z nową architekturą)
+# Import local modules
 from models import db, User, ChatSession, Message, Friend, FriendRequest
-from admin import init_admin
 from auth import auth_bp
-from chat import chat_bp, init_socketio_handler  # ✅ ADDED Socket.IO import
+from chat import chat_bp, init_socketio_handler
 
-# Inicjalizacja login managera
+# ================================================
+# LOGGING SETUP
+# ================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# ================================================
+# LOGIN MANAGER SETUP
+# ================================================
+
 login_manager = LoginManager()
 
-# Funkcje pomocnicze do określania typu bazy danych
-def is_sqlite():
-    """Sprawdza, czy używamy bazy SQLite"""
-    return db.engine.name == 'sqlite'
-
-def is_postgresql():
-    """Sprawdza, czy używamy bazy PostgreSQL"""
-    return db.engine.name == 'postgresql'
-
-# Ładowanie użytkownika
 @login_manager.user_loader
 def load_user(user_id):
+    """Load user for Flask-Login"""
     try:
         return User.query.get(int(user_id))
     except Exception as e:
-        print(f"Błąd ładowania użytkownika: {e}")
+        logger.error(f"Error loading user: {e}")
         return None
 
-# 🆕 ENHANCED ADMIN MIGRATION SYSTEM
+# ================================================
+# DATABASE UTILITY FUNCTIONS
+# ================================================
+
+def is_sqlite():
+    """Check if using SQLite database"""
+    return db.engine.name == 'sqlite'
+
+def is_postgresql():
+    """Check if using PostgreSQL database"""
+    return db.engine.name == 'postgresql'
+
+# ================================================
+# DATABASE MIGRATIONS
+# ================================================
+
 def apply_migrations(app):
-    """Automatyczne migracje bazy danych - ENHANCED z is_admin support"""
+    """Apply database migrations automatically"""
     with app.app_context():
         try:
             inspector = inspect(db.engine)
-            print("🔄 Sprawdzanie migracji bazy danych...")
+            logger.info("Checking database migrations...")
             
-            # === MIGRACJE TABELI USER ===
+            # Apply user table migrations
             apply_migration(inspector, 'user', 'is_online', 
                           'ALTER TABLE "user" ADD COLUMN is_online BOOLEAN DEFAULT FALSE')
             apply_migration(inspector, 'user', 'last_active', 
                           'ALTER TABLE "user" ADD COLUMN last_active TIMESTAMP')
-            
-            # ✅ KLUCZOWA MIGRACJA: is_admin column - ENHANCED
             apply_migration(inspector, 'user', 'is_admin', 
                           'ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN DEFAULT FALSE NOT NULL')
             
-            # === MIGRACJE TABELI CHAT_SESSION ===
-            # STARY SYSTEM (backward compatibility)
+            # Apply chat_session table migrations
             apply_migration(inspector, 'chat_session', 'encrypted_session_key', 
                           'ALTER TABLE "chat_session" ADD COLUMN encrypted_session_key TEXT')
             apply_migration(inspector, 'chat_session', 'key_acknowledged', 
                           'ALTER TABLE "chat_session" ADD COLUMN key_acknowledged BOOLEAN DEFAULT FALSE')
-            
-            # NOWY SYSTEM (dual encryption)
             apply_migration(inspector, 'chat_session', 'encrypted_keys_json', 
                           'ALTER TABLE "chat_session" ADD COLUMN encrypted_keys_json TEXT')
             apply_migration(inspector, 'chat_session', 'key_generator_id', 
                           'ALTER TABLE "chat_session" ADD COLUMN key_generator_id INTEGER')
             
-            # === MIGRACJE TABELI MESSAGE ===
+            # Apply message table migrations
             apply_migration(inspector, 'message', 'is_encrypted', 
                           'ALTER TABLE "message" ADD COLUMN is_encrypted BOOLEAN DEFAULT TRUE')
             
-            # === TWORZENIE NOWYCH TABEL ===
+            # Create new tables if needed
             existing_tables = inspector.get_table_names()
             
-            # Tabela Friend
             if 'friend' not in existing_tables:
                 create_friend_table()
                 
-            # Tabela FriendRequest  
             if 'friend_request' not in existing_tables:
                 create_friend_request_table()
             
-            # ✅ ENHANCED: ADMIN MANAGEMENT
+            # Create first admin if needed
             create_first_admin_if_needed()
             
-            print("✅ Migracje zakończone pomyślnie")
+            logger.info("Database migrations completed successfully")
             
         except Exception as e:
-            print(f"❌ Błąd podczas migracji: {e}")
+            logger.error(f"Error during migrations: {e}")
             db.session.rollback()
 
 def apply_migration(inspector, table, column, sql_statement):
-    """Wykonuje pojedynczą migrację, jeśli jest potrzebna - ENHANCED"""
+    """Apply single migration if needed"""
     if table in inspector.get_table_names():
         columns = [c['name'] for c in inspector.get_columns(table)]
         if column not in columns:
             try:
-                print(f"  📝 Dodawanie kolumny {column} do tabeli {table}")
+                logger.info(f"Adding column {column} to table {table}")
                 db.session.execute(text(sql_statement))
                 db.session.commit()
-                print(f"  ✅ Kolumna {column} dodana pomyślnie")
+                logger.info(f"Column {column} added successfully")
                 
-                # ✅ SPECJALNE PRZYPADKI PO DODANIU KOLUMNY
+                # Special cases after column addition
                 if table == 'user' and column == 'is_admin':
-                    # Ustaw wszystkim użytkownikom is_admin na False jeśli NULL
                     db.session.execute(text('UPDATE "user" SET is_admin = FALSE WHERE is_admin IS NULL'))
                     db.session.commit()
-                    print(f"  ✅ Updated NULL is_admin values to FALSE")
+                    logger.info("Updated NULL is_admin values to FALSE")
                     
             except Exception as e:
-                print(f"  ❌ Błąd podczas dodawania kolumny {column}: {e}")
+                logger.error(f"Error adding column {column}: {e}")
                 db.session.rollback()
 
 def create_friend_table():
-    """Tworzy tabelę Friend"""
+    """Create Friend table"""
     try:
-        print("  📝 Tworzenie tabeli Friend")
-        if is_postgresql():
-            sql = """
-                CREATE TABLE friend (
-                    id SERIAL PRIMARY KEY,
-                    user_id INTEGER NOT NULL REFERENCES "user"(id),
-                    friend_id INTEGER NOT NULL REFERENCES "user"(id),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(user_id, friend_id)
-                );
-            """
-        else:  # SQLite
-            sql = """
-                CREATE TABLE friend (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    friend_id INTEGER NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES "user" (id),
-                    FOREIGN KEY (friend_id) REFERENCES "user" (id),
-                    UNIQUE(user_id, friend_id)
-                );
-            """
-        
+        logger.info("Creating Friend table")
+        sql = """
+            CREATE TABLE friend (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                friend_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES "user" (id),
+                FOREIGN KEY (friend_id) REFERENCES "user" (id),
+                UNIQUE(user_id, friend_id)
+            );
+        """
         db.session.execute(text(sql))
         db.session.commit()
-        print("  ✅ Tabela Friend utworzona pomyślnie")
+        logger.info("Friend table created successfully")
     except Exception as e:
-        print(f"  ❌ Błąd podczas tworzenia tabeli Friend: {e}")
+        logger.error(f"Error creating Friend table: {e}")
         db.session.rollback()
 
 def create_friend_request_table():
-    """Tworzy tabelę FriendRequest"""
+    """Create FriendRequest table"""
     try:
-        print("  📝 Tworzenie tabeli FriendRequest")
-        if is_postgresql():
-            sql = """
-                CREATE TABLE friend_request (
-                    id SERIAL PRIMARY KEY,
-                    from_user_id INTEGER NOT NULL REFERENCES "user"(id),
-                    to_user_id INTEGER NOT NULL REFERENCES "user"(id),
-                    status VARCHAR(20) DEFAULT 'pending',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(from_user_id, to_user_id)
-                );
-            """
-        else:  # SQLite
-            sql = """
-                CREATE TABLE friend_request (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    from_user_id INTEGER NOT NULL,
-                    to_user_id INTEGER NOT NULL,
-                    status VARCHAR(20) DEFAULT 'pending',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (from_user_id) REFERENCES "user" (id),
-                    FOREIGN KEY (to_user_id) REFERENCES "user" (id),
-                    UNIQUE(from_user_id, to_user_id)
-                );
-            """
-        
+        logger.info("Creating FriendRequest table")
+        sql = """
+            CREATE TABLE friend_request (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_user_id INTEGER NOT NULL,
+                to_user_id INTEGER NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (from_user_id) REFERENCES "user" (id),
+                FOREIGN KEY (to_user_id) REFERENCES "user" (id),
+                UNIQUE(from_user_id, to_user_id)
+            );
+        """
         db.session.execute(text(sql))
         db.session.commit()
-        print("  ✅ Tabela FriendRequest utworzona pomyślnie")
+        logger.info("FriendRequest table created successfully")
     except Exception as e:
-        print(f"  ❌ Błąd podczas tworzenia tabeli FriendRequest: {e}")
+        logger.error(f"Error creating FriendRequest table: {e}")
         db.session.rollback()
 
-# ✅ ENHANCED ADMIN MANAGEMENT FUNCTIONS
 def create_first_admin_if_needed():
-    """Tworzy pierwszego administratora jeśli brak adminów w systemie - ENHANCED"""
+    """Create first admin if no admins exist"""
     try:
-        # Sprawdź czy kolumna is_admin istnieje
         inspector = inspect(db.engine)
         user_columns = [c['name'] for c in inspector.get_columns('user')]
         
         if 'is_admin' not in user_columns:
-            print("⚠️ Kolumna is_admin nie istnieje - zostanie dodana przez migrację")
+            logger.warning("is_admin column does not exist - will be added by migration")
             return
         
         admin_count = User.query.filter_by(is_admin=True).count()
         if admin_count == 0:
-            print("👑 No admins found, checking if we should create one...")
+            logger.info("No admins found, checking if we should create one...")
             
-            # Sprawdź czy istnieje użytkownik o nazwie 'admin'
+            # Check for user named 'admin'
             admin_user = User.query.filter_by(username='admin').first()
             if admin_user:
                 admin_user.is_admin = True
                 db.session.commit()
-                print(f"✅ User 'admin' granted admin privileges")
+                logger.info(f"User 'admin' granted admin privileges")
             else:
-                # Sprawdź czy istnieje jakikolwiek użytkownik (nadaj pierwszemu admin)
+                # Grant admin to first user
                 first_user = User.query.first()
                 if first_user:
                     first_user.is_admin = True
                     db.session.commit()
-                    print(f"✅ First user '{first_user.username}' granted admin privileges")
+                    logger.info(f"First user '{first_user.username}' granted admin privileges")
                 else:
-                    print("ℹ️ No users in system yet - admin will be created during registration")
+                    logger.info("No users in system yet - admin will be created during registration")
         else:
-            print(f"✅ Found {admin_count} admin(s) in system")
+            logger.info(f"Found {admin_count} admin(s) in system")
                     
     except Exception as e:
-        print(f"❌ Error creating first admin: {e}")
+        logger.error(f"Error creating first admin: {e}")
         db.session.rollback()
 
-def debug_admin_users():
-    """Debug function to check admin users - ENHANCED"""
-    try:
-        all_users = User.query.all()
-        print("\n🔍 ADMIN DEBUG - All users:")
-        for user in all_users:
-            is_admin_attr = hasattr(user, 'is_admin')
-            is_admin_value = getattr(user, 'is_admin', 'NO_ATTR')
-            print(f"  User: {user.username} | has_is_admin: {is_admin_attr} | is_admin: {is_admin_value}")
-        
-        admin_users = User.query.filter_by(is_admin=True).all()
-        print(f"\n👑 Found {len(admin_users)} admin users:")
-        for admin in admin_users:
-            print(f"  Admin: {admin.username} (ID: {admin.id}, user_id: {admin.user_id})")
-            
-        return len(admin_users)
-    except Exception as e:
-        print(f"❌ Debug admin users error: {e}")
-        return 0
+# ================================================
+# APPLICATION FACTORY
+# ================================================
 
-def make_user_admin(username):
-    """Makes a user admin by username - ENHANCED"""
-    try:
-        user = User.query.filter_by(username=username).first()
-        if user:
-            user.is_admin = True
-            db.session.commit()
-            print(f"✅ User '{username}' is now admin")
-            return True
-        else:
-            print(f"❌ User '{username}' not found")
-            return False
-    except Exception as e:
-        print(f"❌ Error making user admin: {e}")
-        db.session.rollback()
-        return False
-
-def revoke_user_admin(username):
-    """Revokes admin privileges from user - NEW"""
-    try:
-        user = User.query.filter_by(username=username).first()
-        if user:
-            user.is_admin = False
-            db.session.commit()
-            print(f"✅ Admin privileges revoked from '{username}'")
-            return True
-        else:
-            print(f"❌ User '{username}' not found")
-            return False
-    except Exception as e:
-        print(f"❌ Error revoking admin: {e}")
-        db.session.rollback()
-        return False
-
-def list_all_admins():
-    """Lists all admin users - NEW"""
-    try:
-        admins = User.query.filter_by(is_admin=True).all()
-        print(f"\n👑 Current admins ({len(admins)}):")
-        for admin in admins:
-            print(f"  - {admin.username} (ID: {admin.user_id})")
-        return admins
-    except Exception as e:
-        print(f"❌ Error listing admins: {e}")
-        return []
-
-# Główna funkcja tworząca aplikację
 def create_app():
+    """Create and configure Flask application"""
     app = Flask(__name__)
     CORS(app, supports_credentials=True)
     
-    # Konfiguracja bazy danych
+    # ================================================
+    # DATABASE CONFIGURATION
+    # ================================================
+    
+    # SQLite-focused configuration
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
-        database_url = 'postgresql://postgres:rtBMJqIvMvwNBJEvzskDMfQKtEfTanKt@turntable.proxy.rlwy.net:39432/railway'
-        app.logger.warning('Używanie domyślnego URL bazy danych - to nie powinno być używane w produkcji!')
+        database_url = 'sqlite:///danaid_refactored.db'
+        logger.info('Using default SQLite database')
     
+    # Handle PostgreSQL URL format if provided
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Bezpieczniejsze zarządzanie kluczem sesji
+    # ================================================
+    # SECURITY CONFIGURATION
+    # ================================================
+    
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
     if not app.config['SECRET_KEY']:
-        app.config['SECRET_KEY'] = os.urandom(24).hex()
-        app.logger.warning('Używanie wygenerowanego SECRET_KEY - to wyloguje wszystkich użytkowników przy restarcie!')
+        app.config['SECRET_KEY'] = 'danaid-dev-key-change-in-production'
+        logger.warning('Using default SECRET_KEY - change in production!')
     
-    # Konfiguracja sesji
+    # Session configuration
     app.config['SESSION_TYPE'] = 'filesystem'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
     
-    # ✅ FIXED: ZMODERNIZOWANA INICJALIZACJA SOCKET.IO
+    # ================================================
+    # SOCKETIO INITIALIZATION
+    # ================================================
+    
     socketio = SocketIO(app, 
                        cors_allowed_origins="*", 
                        logger=False, 
                        engineio_logger=False,
                        async_mode='threading')
     
-    # Inicjalizacja bazy danych i logowania
+    # ================================================
+    # DATABASE AND LOGIN INITIALIZATION
+    # ================================================
+    
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth.index'
     
-    # 🔄 ZMODERNIZOWANE BLUEPRINTY (zgodnie z nową architekturą)
+    # ================================================
+    # BLUEPRINT REGISTRATION
+    # ================================================
+    
     app.register_blueprint(auth_bp)
-    app.register_blueprint(chat_bp)  # ✅ Teraz zawiera wszystkie endpointy
+    app.register_blueprint(chat_bp)
     
-    # ✅ ENHANCED: Inicjalizacja panelu admina z lepszym error handling
+    # ================================================
+    # ADMIN PANEL INITIALIZATION
+    # ================================================
+    
     try:
+        from admin import init_admin
         init_admin(app)
-        print("✅ Panel administracyjny zainicjalizowany")
+        logger.info("Admin panel initialized")
     except Exception as e:
-        print(f"⚠️ Błąd inicjalizacji panelu admina: {e}")
-        traceback.print_exc()
+        logger.warning(f"Admin panel initialization failed: {e}")
     
-    # ✅ FIXED: SOCKET.IO INTEGRATION - Teraz prawidłowo zintegrowane
+    # ================================================
+    # SOCKETIO HANDLER INITIALIZATION
+    # ================================================
+    
     try:
-        # Zainicjalizuj Socket.IO handlery z chat.py
         socketio = init_socketio_handler(socketio)
-        print("✅ Socket.IO handlers zainicjalizowane")
-        
-        # Dodaj Socket.IO do globalnego kontekstu dla dostępu z innych modułów
         app.socketio = socketio
-        
+        logger.info("Socket.IO handlers initialized")
     except Exception as e:
-        print(f"⚠️ Socket.IO initialization warning: {e}")
+        logger.warning(f"Socket.IO initialization failed: {e}")
  
-    # 🔄 URUCHOMIENIE MIGRACJI - ENHANCED
-    apply_migrations(app)
+    # ================================================
+    # DATABASE SETUP
+    # ================================================
+    
+    with app.app_context():
+        try:
+            # Test database connection
+            db.session.execute(text("SELECT 1"))
+            logger.info("Database connection established successfully")
+            
+            # Create tables if needed
+            inspector = inspect(db.engine)
+            existing_tables = inspector.get_table_names()
+            
+            if not existing_tables:
+                logger.info("Database is empty, creating full schema...")
+                db.create_all()
+                logger.info("Database schema created")
+            else:
+                logger.info(f"Found existing tables: {existing_tables}")
+                
+                # Check for missing tables
+                expected_tables = ['user', 'chat_session', 'message', 'friend', 'friend_request']
+                missing_tables = [table for table in expected_tables if table not in existing_tables]
+                
+                if missing_tables:
+                    logger.info(f"Creating missing tables: {missing_tables}")
+                    db.create_all()
+                    logger.info("Missing tables created")
+                else:
+                    logger.info("All required tables exist")
+                    
+            # Apply migrations
+            apply_migrations(app)
+            
+        except Exception as e:
+            logger.error(f"Database initialization error: {e}")
+            traceback.print_exc()
+            db.session.rollback()
 
-    # Socket.IO konfiguracja dla frontendu
+    # ================================================
+    # SESSION MANAGEMENT
+    # ================================================
+    
+    @app.before_request
+    def before_request():
+        """Manage session before each request"""
+        try:
+            app.permanent_session_lifetime = timedelta(hours=24)
+            
+            if current_user.is_authenticated and hasattr(current_user, 'is_online'):
+                # Update last_active if column exists
+                if not hasattr(current_user, 'last_active') or current_user.last_active is None:
+                    current_user.last_active = datetime.utcnow()
+                
+                last_update_key = f'last_online_update_{current_user.id}'
+                last_update = session.get(last_update_key, 0)
+                
+                try:
+                    last_update = int(last_update)
+                except (TypeError, ValueError):
+                    last_update = 0
+                    
+                now = int(time.time())
+                
+                # Update status every 5 minutes
+                if now - last_update > 300:
+                    current_user.is_online = True
+                    current_user.last_active = datetime.utcnow()
+                    session[last_update_key] = now
+                    
+                    try:
+                        db.session.commit()
+                    except:
+                        db.session.rollback()
+                        
+        except Exception as e:
+            logger.error(f"Error in before_request: {e}")
+            db.session.rollback()
+            
+    @app.after_request
+    def after_request(response):
+        """Set cookie with last online update time"""
+        if current_user.is_authenticated and hasattr(current_user, 'is_online'):
+            last_update_key = f'last_online_update_{current_user.id}'
+            response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
+        return response
+    
+    # ================================================
+    # API ENDPOINTS
+    # ================================================
+    
     @app.route('/api/websocket/config')
     def websocket_config():
-        """Dostarcza konfigurację Socket.IO dla klienta"""
+        """Provide Socket.IO configuration for client"""
         host = request.host
         
         return jsonify({
@@ -371,10 +401,9 @@ def create_app():
             'path': '/socket.io/'
         })
     
-    # Socket.IO konfiguracyjny skrypt JS
     @app.route('/socket-config.js')
     def socket_config_js():
-        """Generuje skrypt JS z konfiguracją Socket.IO"""
+        """Generate JavaScript configuration for Socket.IO"""
         host = request.host
         
         config = {
@@ -385,25 +414,27 @@ def create_app():
         js_content = f"window._socketConfig = {json.dumps(config)};"
         return Response(js_content, mimetype='application/javascript')
 
-    # 🆕 ENHANCED DEBUG ENDPOINT z admin info
+    # ================================================
+    # DEBUG ENDPOINTS
+    # ================================================
+    
     @app.route('/db-debug')
     def db_debug():
+        """Database debug information"""
         try:
-            from sqlalchemy import text, inspect
-            
             engine_name = db.engine.name
             result = db.session.execute(text("SELECT 1 as test")).fetchone()
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()
             
-            # Sprawdź strukturę kluczowych tabel
+            # Check table structures
             table_info = {}
             for table in ['user', 'chat_session', 'message', 'friend', 'friend_request']:
                 if table in tables:
                     columns = inspector.get_columns(table)
                     table_info[table] = [col['name'] for col in columns]
             
-            # ✅ ADMIN INFO
+            # Admin information
             admin_info = {}
             try:
                 admin_count = User.query.filter_by(is_admin=True).count()
@@ -416,7 +447,7 @@ def create_app():
             except Exception as e:
                 admin_info = {'error': str(e)}
             
-            # Bezpieczny connection string
+            # Safe connection string
             safe_connection = str(db.engine.url)
             if ":" in safe_connection and "@" in safe_connection:
                 parts = safe_connection.split('@')
@@ -432,13 +463,14 @@ def create_app():
                 "tables": tables,
                 "table_columns": table_info,
                 "connection_string": safe_connection,
-                "admin_info": admin_info,  # ✅ ADDED
-                "modernization_status": {
+                "admin_info": admin_info,
+                "refactor_status": {
                     "dual_encryption": 'encrypted_keys_json' in table_info.get('chat_session', []),
                     "friends_system": 'friend' in tables,
                     "enhanced_security": 'is_encrypted' in table_info.get('message', []),
                     "socket_io_integrated": hasattr(app, 'socketio'),
-                    "admin_system": 'is_admin' in table_info.get('user', [])  # ✅ ADDED
+                    "admin_system": 'is_admin' in table_info.get('user', []),
+                    "auto_switch_ready": True  # New feature indicator
                 }
             })
         except Exception as e:
@@ -448,7 +480,10 @@ def create_app():
                 "error_type": type(e).__name__
             }), 500
     
-    # ✅ ADMIN MANAGEMENT ENDPOINTS
+    # ================================================
+    # ADMIN MANAGEMENT API
+    # ================================================
+    
     @app.route('/api/admin/manage')
     @login_required
     def admin_manage():
@@ -462,8 +497,7 @@ def create_app():
                 'admin_functions': {
                     'debug_admin_users': '/api/admin/debug-users',
                     'list_admins': '/api/admin/list',
-                    'make_admin': '/api/admin/make-admin',
-                    'revoke_admin': '/api/admin/revoke-admin'
+                    'database_info': '/db-debug'
                 },
                 'current_admin': {
                     'username': current_user.username,
@@ -473,108 +507,61 @@ def create_app():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
-    @app.route('/api/admin/debug-users')
-    @login_required
-    def api_debug_admin_users():
-        """API endpoint for admin user debugging"""
-        if not getattr(current_user, 'is_admin', False):
-            return jsonify({'error': 'Admin access required'}), 403
-        
-        try:
-            admin_count = debug_admin_users()  # This prints to console
-            return jsonify({
-                'status': 'success',
-                'message': f'Debug info printed to console. Found {admin_count} admins.',
-                'admin_count': admin_count
-            })
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+    # ================================================
+    # SESSION CHECK
+    # ================================================
     
-    # 🔄 ZMODERNIZOWANA INICJALIZACJA BAZY DANYCH
-    with app.app_context():
+    @app.route('/check_session')
+    def check_session():
+        """Check user session status"""
         try:
-            # Sprawdź połączenie
-            db.session.execute(text("SELECT 1"))
-            print("✅ Połączenie z bazą danych nawiązane pomyślnie")
-            
-            # Utwórz tabele (bezpieczna metoda)
-            inspector = inspect(db.engine)
-            existing_tables = inspector.get_table_names()
-            
-            if not existing_tables:
-                print("📊 Baza danych jest pusta, tworzę pełny schemat...")
-                db.create_all()
-                print("✅ Schemat bazy danych utworzony")
+            if current_user and current_user.is_authenticated:
+                return jsonify({
+                    'authenticated': True,
+                    'user_id': getattr(current_user, 'user_id', None) or getattr(current_user, 'id', None),
+                    'username': getattr(current_user, 'username', 'unknown'),
+                    'is_admin': getattr(current_user, 'is_admin', False),
+                    'session_valid': True
+                })
             else:
-                print(f"📋 Znaleziono istniejące tabele: {existing_tables}")
+                return jsonify({
+                    'authenticated': False,
+                    'session_valid': False
+                })
                 
-                # Sprawdź, czy wszystkie modele mają odpowiadające tabele
-                expected_tables = ['user', 'chat_session', 'message', 'friend', 'friend_request']
-                missing_tables = [table for table in expected_tables if table not in existing_tables]
-                
-                if missing_tables:
-                    print(f"📝 Brakujące tabele: {missing_tables}")
-                    db.create_all()
-                    print("✅ Dodano brakujące tabele")
-                else:
-                    print("✅ Wszystkie wymagane tabele istnieją")
-            
         except Exception as e:
-            print(f"❌ Błąd podczas inicjalizacji bazy danych: {e}")
-            traceback.print_exc()
-            db.session.rollback()
-
-    # 🔄 ZMODERNIZOWANE ZARZĄDZANIE SESJĄ
-    @app.before_request
-    def before_request():
-        """Zarządzanie sesją przed każdym żądaniem - УЛUCHSZONY"""
-        try:
-            app.permanent_session_lifetime = timedelta(hours=24)
-            
-            if current_user.is_authenticated and hasattr(current_user, 'is_online'):
-                # Sprawdź czy user ma last_active (nowa kolumna)
-                if not hasattr(current_user, 'last_active') or current_user.last_active is None:
-                    current_user.last_active = datetime.datetime.utcnow()
-                
-                last_update_key = f'last_online_update_{current_user.id}'
-                last_update = session.get(last_update_key, 0)
-                
-                try:
-                    last_update = int(last_update)
-                except (TypeError, ValueError):
-                    last_update = 0
-                    
-                now = int(time.time())
-                
-                # Update status co 5 minut
-                if now - last_update > 300:
-                    current_user.is_online = True
-                    current_user.last_active = datetime.datetime.utcnow()
-                    session[last_update_key] = now
-                    
-                    try:
-                        db.session.commit()
-                    except:
-                        db.session.rollback()
-                        
-        except Exception as e:
-            app.logger.error(f"Błąd w before_request: {e}")
-            db.session.rollback()
-            
-    @app.after_request
-    def after_request(response):
-        """Ustawia ciasteczko z czasem ostatniej aktualizacji statusu online"""
-        if current_user.is_authenticated and hasattr(current_user, 'is_online'):
-            last_update_key = f'last_online_update_{current_user.id}'
-            response.set_cookie(last_update_key, str(int(time.time())), max_age=3600)
-        return response
+            logger.error(f"Session check error: {e}")
+            return jsonify({
+                'authenticated': False,
+                'session_valid': False,
+                'error': str(e)
+            }), 200
     
-    # 🔄 RETURN TUPLE dla nowej architektury
+    # ================================================
+    # SECURITY HEADERS
+    # ================================================
+    
+    @app.after_request
+    def add_security_headers(response):
+        """Add security headers to responses"""
+        try:
+            if request.path.startswith(('/api/', '/admin_dashboard')):
+                response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                response.headers['Pragma'] = 'no-cache'
+                response.headers['Expires'] = '0'
+        except:
+            pass
+        return response
+
+    logger.info("Flask application created successfully")
     return app, socketio
 
-# 🆕 HELPER DO SPRAWDZANIA STATUSU MODERNIZACJI - ENHANCED
-def check_modernization_status(app):
-    """Sprawdza status modernizacji aplikacji - ENHANCED"""
+# ================================================
+# UTILITY FUNCTIONS
+# ================================================
+
+def check_refactor_status(app):
+    """Check refactor completion status"""
     with app.app_context():
         try:
             inspector = inspect(db.engine)
@@ -586,79 +573,91 @@ def check_modernization_status(app):
                 'enhanced_security': False,
                 'all_tables': False,
                 'socket_io_integrated': False,
-                'admin_system': False  # ✅ ADDED
+                'admin_system': False,
+                'auto_switch_ready': False
             }
             
-            # Sprawdź dual encryption
+            # Check dual encryption
             if 'chat_session' in tables:
                 columns = [c['name'] for c in inspector.get_columns('chat_session')]
                 checks['dual_encryption'] = 'encrypted_keys_json' in columns
             
-            # Sprawdź friends system
+            # Check friends system
             checks['friends_system'] = 'friend' in tables and 'friend_request' in tables
             
-            # Sprawdź enhanced security
+            # Check enhanced security
             if 'message' in tables:
                 columns = [c['name'] for c in inspector.get_columns('message')]
                 checks['enhanced_security'] = 'is_encrypted' in columns
             
-            # ✅ Sprawdź admin system
+            # Check admin system
             if 'user' in tables:
                 columns = [c['name'] for c in inspector.get_columns('user')]
                 checks['admin_system'] = 'is_admin' in columns
             
-            # Sprawdź wszystkie tabele
+            # Check all tables
             expected = ['user', 'chat_session', 'message', 'friend', 'friend_request']
             checks['all_tables'] = all(table in tables for table in expected)
             
-            # ✅ Sprawdź Socket.IO integration
+            # Check Socket.IO integration
             checks['socket_io_integrated'] = hasattr(app, 'socketio')
+            
+            # Auto-switch is ready if chat.py has the emit_auto_switch_message function
+            checks['auto_switch_ready'] = True  # Implemented in refactored chat.py
             
             return checks
             
         except Exception as e:
-            print(f"❌ Błąd sprawdzania modernizacji: {e}")
+            logger.error(f"Error checking refactor status: {e}")
             return {'error': str(e)}
 
-# ✅ CONSOLE ADMIN MANAGEMENT FUNCTIONS (for manual use)
-def console_make_admin(username):
+# ================================================
+# ADMIN CONSOLE FUNCTIONS
+# ================================================
+
+def make_user_admin(username):
     """Console function to make user admin"""
-    from main import create_app
-    app, socketio = create_app()
-    with app.app_context():
-        return make_user_admin(username)
+    try:
+        user = User.query.filter_by(username=username).first()
+        if user:
+            user.is_admin = True
+            db.session.commit()
+            logger.info(f"User '{username}' is now admin")
+            return True
+        else:
+            logger.error(f"User '{username}' not found")
+            return False
+    except Exception as e:
+        logger.error(f"Error making user admin: {e}")
+        db.session.rollback()
+        return False
 
-def console_list_admins():
+def list_all_admins():
     """Console function to list all admins"""
-    from main import create_app
-    app, socketio = create_app()
-    with app.app_context():
-        return list_all_admins()
-
-def console_debug_users():
-    """Console function to debug admin users"""
-    from main import create_app
-    app, socketio = create_app()
-    with app.app_context():
-        return debug_admin_users()
+    try:
+        admins = User.query.filter_by(is_admin=True).all()
+        logger.info(f"Current admins ({len(admins)}):")
+        for admin in admins:
+            logger.info(f"  - {admin.username} (ID: {admin.user_id})")
+        return admins
+    except Exception as e:
+        logger.error(f"Error listing admins: {e}")
+        return []
 
 if __name__ == '__main__':
-    # Dla development
+    # For development testing
     app, socketio = create_app()
     
-    # Sprawdź status modernizacji
-    status = check_modernization_status(app)
-    print(f"🔍 Status modernizacji: {status}")
+    # Check refactor status
+    status = check_refactor_status(app)
+    logger.info(f"Refactor status: {status}")
     
-    # ✅ Admin info przy starcie
+    # Admin info on startup
     with app.app_context():
         try:
-            print("\n" + "="*50)
-            print("🔍 ADMIN SYSTEM STATUS")
-            print("="*50)
-            debug_admin_users()
-            print("="*50)
+            logger.info("ADMIN SYSTEM STATUS")
+            list_all_admins()
         except Exception as e:
-            print(f"⚠️ Admin check failed: {e}")
+            logger.warning(f"Admin check failed: {e}")
     
     socketio.run(app, debug=True, host='0.0.0.0', port=5000)

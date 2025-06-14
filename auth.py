@@ -1,10 +1,8 @@
-# auth.py - Kompletny system autoryzacji dla Danaid Chat
-# Bezpieczne logowanie, rejestracja i zarządzanie sesjami
+"""
+auth.py - Refactored Authentication System - FIXED VERSION
+Clean, secure authentication with SQLite support
+"""
 
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
-from flask_login import login_user, login_required, logout_user, current_user
-from werkzeug.security import check_password_hash, generate_password_hash
-from models import User, db
 import re
 import secrets
 import hashlib
@@ -12,19 +10,24 @@ import base64
 from datetime import datetime, timedelta
 from functools import wraps
 
-# Utwórz Blueprint
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
+from flask_login import login_user, login_required, logout_user, current_user
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from models import User, db
+
+# Blueprint Setup
 auth_bp = Blueprint('auth', __name__)
 
-# === SECURITY CONSTANTS ===
-SESSION_TIMEOUT = 3600  # 1 hour
-SESSION_ABSOLUTE_TIMEOUT = 28800  # 8 hours
+# Security Constants
+SESSION_TIMEOUT = 3600          # 1 hour
+SESSION_ABSOLUTE_TIMEOUT = 28800 # 8 hours
 MAX_SESSIONS_PER_USER = 5
-RSA_AVAILABLE = True  # Set to False if RSA verification is not available
+RSA_VERIFICATION_ENABLED = False  # Disabled for simplicity in local dev
 
-# === HELPER FUNCTIONS ===
-
+# Helper Functions
 def generate_user_id():
-    """Generuje unikalny 6-cyfrowy ID użytkownika"""
+    """Generate unique 6-digit user ID"""
     import random
     while True:
         user_id = f"{random.randint(100000, 999999)}"
@@ -32,15 +35,15 @@ def generate_user_id():
             return user_id
 
 def generate_secure_session_id():
-    """Generuje bezpieczny identyfikator sesji"""
+    """Generate secure session identifier"""
     return secrets.token_urlsafe(32)
 
 def hash_session_id(session_id):
-    """Hashuje ID sesji do przechowywania w bazie"""
+    """Hash session ID for database storage"""
     return hashlib.sha256(session_id.encode()).hexdigest()
 
 def validate_password_strength(password):
-    """Waliduje siłę hasła"""
+    """Validate password strength"""
     if len(password) < 8:
         return False, "Password must be at least 8 characters long"
     
@@ -59,7 +62,7 @@ def validate_password_strength(password):
     return True, "Password is strong"
 
 def validate_rsa_public_key(public_key_pem):
-    """Waliduje format klucza publicznego RSA"""
+    """Validate RSA public key format"""
     try:
         if not public_key_pem.strip():
             return False, "Public key cannot be empty"
@@ -70,7 +73,7 @@ def validate_rsa_public_key(public_key_pem):
         if not public_key_pem.endswith('-----END PUBLIC KEY-----'):
             return False, "Invalid public key format - must end with PEM footer"
         
-        # Basic length check (RSA 2048-bit key should be around 450 characters)
+        # Basic length check
         if len(public_key_pem) < 200 or len(public_key_pem) > 1000:
             return False, "Public key length is suspicious"
         
@@ -80,43 +83,26 @@ def validate_rsa_public_key(public_key_pem):
         return False, f"Public key validation error: {str(e)}"
 
 def verify_password_signature(password, signature_base64, public_key_pem):
-    """
-    Weryfikuje podpis cyfrowy hasła (jeśli RSA jest dostępne)
-    """
-    if not RSA_AVAILABLE:
-        return True  # Skip verification if RSA is not available
+    """Verify RSA signature (simplified for local dev)"""
+    if not RSA_VERIFICATION_ENABLED:
+        return True  # Skip verification in local development
     
+    # In production, implement actual RSA signature verification
     try:
-        # This is a placeholder - implement actual RSA signature verification
-        # You would need to use cryptography library here
-        # For now, we'll return True to maintain compatibility
-        
-        # Example implementation (requires cryptography library):
-        # from cryptography.hazmat.primitives import hashes, serialization
-        # from cryptography.hazmat.primitives.asymmetric import rsa, padding
-        
-        # Load public key
-        # public_key = serialization.load_pem_public_key(public_key_pem.encode())
-        
-        # Verify signature
-        # signature = base64.b64decode(signature_base64)
-        # password_bytes = password.encode('utf-8')
-        # public_key.verify(signature, password_bytes, padding.PKCS1v15(), hashes.SHA256())
-        
         return True
-        
     except Exception as e:
-        print(f"❌ RSA signature verification failed: {e}")
+        print(f"RSA signature verification failed: {e}")
         return False
 
+# Session Validation Decorator
 def validate_session_security(f):
-    """Decorator do walidacji bezpieczeństwa sesji"""
+    """Decorator for session security validation"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
             return jsonify({'error': 'Authentication required'}), 401
         
-        # Sprawdź timeout sesji
+        # Check session timeout
         if 'last_activity' in session:
             try:
                 last_activity = datetime.fromisoformat(session['last_activity'])
@@ -125,12 +111,11 @@ def validate_session_security(f):
                     logout_user()
                     return jsonify({'error': 'Session expired'}), 401
             except (ValueError, TypeError):
-                # Invalid datetime format, clear session
                 session.clear()
                 logout_user()
                 return jsonify({'error': 'Invalid session'}), 401
         
-        # Sprawdź absolute timeout
+        # Check absolute timeout
         if 'session_start' in session:
             try:
                 session_start = datetime.fromisoformat(session['session_start'])
@@ -143,24 +128,18 @@ def validate_session_security(f):
                 logout_user()
                 return jsonify({'error': 'Invalid session'}), 401
         
-        # Aktualizuj ostatnią aktywność
+        # Update last activity
         session['last_activity'] = datetime.utcnow().isoformat()
         session.permanent = True
         
         return f(*args, **kwargs)
     return decorated_function
 
-def cleanup_old_user_sessions(user_id):
-    """Czyści stare sesje użytkownika (placeholder - implement with session tracking table)"""
-    # TODO: Implement with user_sessions table for proper session tracking
-    # For now, this is a placeholder
-    pass
-
-# === MAIN ROUTES ===
-
+# Route Handlers
 @auth_bp.route('/')
 def index():
-    # Sprawdź sesję zamiast current_user
+    """Main landing page"""
+    # Check session instead of current_user for better reliability
     if session.get('user_id') or session.get('username'):
         return redirect(url_for('chat.chat'))
     
@@ -168,32 +147,24 @@ def index():
 
 @auth_bp.route('/register')
 def register_page():
-    """
-    Strona rejestracji
-    """
+    """Registration page"""
     try:
-        # Jeśli użytkownik jest już zalogowany, przekieruj do czatu
         if current_user.is_authenticated:
             return redirect('/chat')
         
         return render_template('register.html')
         
     except Exception as e:
-        print(f"❌ Register page error: {e}")
+        print(f"Register page error: {e}")
         try:
             return render_template('register.html')
         except:
             return "Error loading registration page", 500
 
-
-
-# === AUTHENTICATION API ===
-
+# Authentication API
 @auth_bp.route('/api/register', methods=['POST'])
 def register():
-    """
-    Rejestracja nowego użytkownika z kluczem publicznym RSA
-    """
+    """User registration API"""
     try:
         if not request.is_json:
             return jsonify({'error': 'Content-Type must be application/json'}), 400
@@ -202,56 +173,57 @@ def register():
         if not data:
             return jsonify({'error': 'Invalid JSON data'}), 400
         
-        # Pobierz dane z requestu
+        # Extract data
         username = data.get('username', '').strip()
         password = data.get('password', '')
         public_key = data.get('public_key', '').strip()
         
-        print(f"🔐 Registration attempt for user: {username}")
+        print(f"Registration attempt for user: {username}")
         
-        # Walidacja wymaganych pól
-        if not all([username, password, public_key]):
-            return jsonify({'error': 'Missing required fields: username, password, and public_key'}), 400
+        # Validate required fields
+        if not username or not password:
+            return jsonify({'error': 'Missing required fields: username and password'}), 400
         
-        # Walidacja username
+        # Validate username format
         if not re.match(r'^[a-zA-Z0-9_-]{3,20}$', username):
             return jsonify({'error': 'Username must be 3-20 characters long and contain only letters, numbers, underscores, or hyphens'}), 400
         
-        # Sprawdź czy username już istnieje
+        # Check if username exists
         existing_user = User.query.filter_by(username=username).first()
         if existing_user:
-            print(f"❌ Registration failed: Username {username} already exists")
+            print(f"Registration failed: Username {username} already exists")
             return jsonify({'error': 'Username already exists'}), 409
         
-        # Walidacja hasła
+        # Validate password
         password_valid, password_msg = validate_password_strength(password)
         if not password_valid:
             return jsonify({'error': password_msg}), 400
         
-        # Walidacja klucza publicznego RSA
-        key_valid, key_msg = validate_rsa_public_key(public_key)
-        if not key_valid:
-            return jsonify({'error': key_msg}), 400
+        # Validate public key if provided
+        if public_key:
+            key_valid, key_msg = validate_rsa_public_key(public_key)
+            if not key_valid:
+                return jsonify({'error': key_msg}), 400
         
-        # Generuj unikalny user_id
+        # Generate unique user_id
         user_id = generate_user_id()
         
-        # Utwórz nowego użytkownika
+        # Create new user
         new_user = User(
             username=username,
             password_hash=generate_password_hash(password),
-            public_key=public_key,
+            public_key=public_key if public_key else None,
             user_id=user_id,
             is_online=False,
             is_admin=False,
             last_active=datetime.utcnow()
         )
         
-        # Zapisz do bazy danych
+        # Save to database
         db.session.add(new_user)
         db.session.commit()
         
-        print(f"✅ Registration successful: {username} (ID: {user_id})")
+        print(f"Registration successful: {username} (ID: {user_id})")
         
         return jsonify({
             'status': 'success',
@@ -263,14 +235,35 @@ def register():
         
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Registration error: {str(e)}")
+        print(f"Registration error: {str(e)}")
         return jsonify({'error': f'Registration failed: {str(e)}'}), 500
+
+@auth_bp.route('/api/check-username/<username>')
+def check_username(username):
+    """Check if username is available"""
+    try:
+        # Validate username format
+        if not re.match(r'^[a-zA-Z0-9_-]{3,20}$', username):
+            return jsonify({
+                'available': False,
+                'reason': 'Invalid username format'
+            }), 400
+        
+        # Check if username exists
+        existing_user = User.query.filter_by(username=username).first()
+        
+        return jsonify({
+            'available': existing_user is None,
+            'username': username
+        })
+        
+    except Exception as e:
+        print(f"Username check error: {str(e)}")
+        return jsonify({'error': 'Failed to check username'}), 500
 
 @auth_bp.route('/api/login', methods=['POST'])
 def login():
-    """
-    Logowanie użytkownika z opcjonalną weryfikacją podpisu RSA
-    """
+    """User login API"""
     try:
         if not request.is_json:
             return jsonify({'error': 'Content-Type must be application/json'}), 400
@@ -283,44 +276,39 @@ def login():
         password = data.get('password', '')
         signature_base64 = data.get('signature', '')
         
-        print(f"🔐 Login attempt for user: {username}")
+        print(f"Login attempt for user: {username}")
         
         if not all([username, password]):
             return jsonify({'error': 'Missing credentials: username and password required'}), 400
         
-        # Znajdź użytkownika
+        # Find user
         user = User.query.filter_by(username=username).first()
         
         if not user:
-            print(f"❌ Login failed: User not found - {username}")
+            print(f"Login failed: User not found - {username}")
             return jsonify({'error': 'Invalid credentials'}), 401
         
-        # Sprawdź hasło
+        # Check password
         if not check_password_hash(user.password_hash, password):
-            print(f"❌ Login failed: Invalid password - {username}")
+            print(f"Login failed: Invalid password - {username}")
             return jsonify({'error': 'Invalid credentials'}), 401
         
-        # Weryfikacja podpisu RSA (jeśli podano)
+        # Verify RSA signature if provided
         if signature_base64:
             if not verify_password_signature(password, signature_base64, user.public_key):
-                print(f"❌ Login failed: RSA signature verification failed - {username}")
+                print(f"Login failed: RSA signature verification failed - {username}")
                 return jsonify({'error': 'RSA signature verification failed'}), 401
-            print(f"✅ RSA signature verified for user: {username}")
-        elif RSA_AVAILABLE:
-            print(f"⚠️ Login without RSA signature for user: {username}")
-            # Uncomment the next line to require RSA signatures
-            # return jsonify({'error': 'RSA signature required for authentication'}), 400
+            print(f"RSA signature verified for user: {username}")
+        elif RSA_VERIFICATION_ENABLED:
+            print(f"Login without RSA signature for user: {username}")
         
-        # Wyczyść stare sesje użytkownika
-        cleanup_old_user_sessions(user.id)
-        
-        # Wygeneruj bezpieczny session ID
+        # Generate secure session ID
         secure_session_id = generate_secure_session_id()
         
-        # Logowanie użytkownika do Flask-Login
+        # Login user with Flask-Login
         login_user(user, remember=True)
         
-        # Ustaw bezpieczną sesję
+        # Set secure session
         session.permanent = True
         session['session_id'] = secure_session_id
         session['session_start'] = datetime.utcnow().isoformat()
@@ -331,19 +319,19 @@ def login():
         session['ip_address'] = request.remote_addr
         session['user_agent'] = request.headers.get('User-Agent', '')[:200]
         
-        # Aktualizuj status online użytkownika
+        # Update user online status
         try:
             if hasattr(user, 'is_online'):
                 user.is_online = True
             if hasattr(user, 'last_active'):
                 user.last_active = datetime.utcnow()
             db.session.commit()
-            print(f"✅ User status updated: {username} is now online")
+            print(f"User status updated: {username} is now online")
         except Exception as e:
-            print(f"⚠️ Status update failed for {username}: {e}")
+            print(f"Status update failed for {username}: {e}")
             db.session.rollback()
         
-        print(f"✅ Login successful: {username} (ID: {user.user_id})")
+        print(f"Login successful: {username} (ID: {user.user_id})")
         
         return jsonify({
             'status': 'success',
@@ -360,20 +348,21 @@ def login():
         
     except Exception as e:
         db.session.rollback()
-        print(f"❌ Login error: {str(e)}")
+        print(f"Login error: {str(e)}")
         return jsonify({'error': f'Login failed: {str(e)}'}), 500
-
-# === LOGOUT SYSTEM (FIXED) ===
-
+    
+    
+    # Logout System
 @auth_bp.route('/logout', methods=['GET'])
 def logout_page():
+    """Logout page redirect"""
     from flask import session
     
-    # BRUTAL SESSION CLEANUP
+    # Clear session data
     session.clear()
     session.permanent = False
     
-    # BRUTAL RESPONSE z force headers
+    # Create response with cache-busting headers
     response = redirect(url_for('auth.index'))
     response.headers['Clear-Site-Data'] = '"cache", "cookies", "storage"'
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -384,46 +373,40 @@ def logout_page():
 
 @auth_bp.route('/api/logout', methods=['POST'])
 def api_logout():
-    """
-    API endpoint do wylogowania (dla JavaScript/AJAX)
-    Kompatybilny z funkcją logout() z auth.js
-    """
+    """API logout endpoint"""
     try:
-        print(f"🔓 API Logout request from user: {current_user.username if current_user.is_authenticated else 'Anonymous'}")
+        print(f"API Logout request from user: {current_user.username if current_user.is_authenticated else 'Anonymous'}")
         
-        # Wyloguj użytkownika z Flask-Login
+        # Update user offline status
         if current_user.is_authenticated:
-            # Aktualizuj status online użytkownika
             try:
                 if hasattr(current_user, 'is_online'):
                     current_user.is_online = False
                 if hasattr(current_user, 'last_active'):
                     current_user.last_active = datetime.utcnow()
                 db.session.commit()
-                print(f"✅ User {current_user.username} status updated to offline")
+                print(f"User {current_user.username} status updated to offline")
             except Exception as e:
-                print(f"⚠️ Status update failed: {e}")
+                print(f"Status update failed: {e}")
                 db.session.rollback()
             
-            # Wyloguj z Flask-Login
+            # Logout from Flask-Login
             logout_user()
         
-        # BRUTAL SESSION CLEANUP (jak w logout_page)
+        # Clear session data
         session.clear()
         session.permanent = False
         
-        print("✅ API Logout successful")
+        print("API Logout successful")
         
-        # Zwróć JSON response (dla JavaScript)
+        # Return JSON response
         response = jsonify({
             'status': 'success',
             'message': 'Logout successful',
-            'code': 'logout_ok',
-           
-            
+            'code': 'logout_ok'
         })
         
-        # Dodaj te same headers jak w logout_page dla kompletnego czyszczenia
+        # Add cache-busting headers
         response.headers['Clear-Site-Data'] = '"cache", "cookies", "storage"'
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
@@ -432,22 +415,20 @@ def api_logout():
         return response
         
     except Exception as e:
-        print(f"❌ API Logout error: {e}")
+        print(f"API Logout error: {e}")
         return jsonify({
             'status': 'error',
             'message': 'Logout failed',
             'error': str(e)
         }), 500
-# === SESSION MANAGEMENT ===
 
+# Session Management
 @auth_bp.route('/api/check_auth')
 def check_auth():
-    """
-    Sprawdza czy użytkownik jest zalogowany i zwraca info o sesji
-    """
+    """Check authentication status"""
     try:
         if current_user.is_authenticated:
-            # Sprawdź czy sesja nie wygasła
+            # Check session timeout
             if 'last_activity' in session:
                 try:
                     last_activity = datetime.fromisoformat(session['last_activity'])
@@ -460,7 +441,7 @@ def check_auth():
                     session.clear()
                     return jsonify({'authenticated': False, 'reason': 'Invalid session'}), 401
             
-            # Aktualizuj ostatnią aktywność
+            # Update last activity
             session['last_activity'] = datetime.utcnow().isoformat()
             
             return jsonify({
@@ -469,6 +450,7 @@ def check_auth():
                 'username': current_user.username,
                 'id': current_user.id,
                 'is_admin': getattr(current_user, 'is_admin', False),
+                'public_key': current_user.public_key if hasattr(current_user, 'public_key') else None,
                 'session_info': {
                     'login_time': session.get('login_time'),
                     'last_activity': session.get('last_activity'),
@@ -479,16 +461,14 @@ def check_auth():
             return jsonify({'authenticated': False, 'reason': 'Not logged in'}), 401
             
     except Exception as e:
-        print(f"❌ Auth check error: {e}")
+        print(f"Auth check error: {e}")
         return jsonify({'authenticated': False, 'reason': 'Auth check failed'}), 401
 
 @auth_bp.route('/api/session/info')
 @login_required
 @validate_session_security
 def session_info():
-    """
-    Zwraca szczegółowe informacje o sesji
-    """
+    """Get detailed session information"""
     try:
         session_duration = None
         if 'session_start' in session:
@@ -515,17 +495,14 @@ def session_info():
         })
         
     except Exception as e:
-        print(f"❌ Session info error: {e}")
+        print(f"Session info error: {e}")
         return jsonify({'error': 'Failed to get session info'}), 500
 
-# === ADMIN ENDPOINTS ===
-
+# Admin Endpoints
 @auth_bp.route('/api/admin/users')
 @login_required
 def admin_users():
-    """
-    Lista użytkowników (tylko dla adminów)
-    """
+    """List users (admin only)"""
     try:
         if not getattr(current_user, 'is_admin', False):
             return jsonify({'error': 'Admin access required'}), 403
@@ -551,14 +528,13 @@ def admin_users():
         })
         
     except Exception as e:
-        print(f"❌ Admin users error: {e}")
+        print(f"Admin users error: {e}")
         return jsonify({'error': 'Failed to fetch users'}), 500
 
-# === ERROR HANDLERS ===
-
+# Error Handlers
 @auth_bp.errorhandler(401)
 def unauthorized(error):
-    """Handler dla błędów autoryzacji"""
+    """Handle authentication errors"""
     if request.path.startswith('/api/'):
         return jsonify({'error': 'Authentication required'}), 401
     else:
@@ -566,7 +542,7 @@ def unauthorized(error):
 
 @auth_bp.errorhandler(403)
 def forbidden(error):
-    """Handler dla błędów dostępu"""
+    """Handle access errors"""
     if request.path.startswith('/api/'):
         return jsonify({'error': 'Access forbidden'}), 403
     else:
@@ -574,55 +550,24 @@ def forbidden(error):
 
 @auth_bp.errorhandler(404)
 def not_found(error):
-    """Handler dla błędów 404"""
+    """Handle 404 errors"""
     if request.path.startswith('/api/'):
         return jsonify({'error': 'Endpoint not found'}), 404
     else:
         return redirect(url_for('auth.index'))
 
-# === UTILITY FUNCTIONS ===
-
+# Utility Functions
 def get_user_by_id(user_id):
-    """Pomocnicza funkcja do pobierania użytkownika po ID"""
+    """Get user by ID"""
     return User.query.filter_by(user_id=user_id).first()
 
 def get_user_by_username(username):
-    """Pomocnicza funkcja do pobierania użytkownika po username"""
+    """Get user by username"""
     return User.query.filter_by(username=username).first()
 
 def is_user_online(user_id):
-    """Sprawdza czy użytkownik jest online"""
+    """Check if user is online"""
     user = get_user_by_id(user_id)
     return getattr(user, 'is_online', False) if user else False
 
-# === DEBUG ENDPOINTS (Only in development) ===
-
-@auth_bp.route('/api/debug/session')
-@login_required
-def debug_session():
-    """Debug endpoint dla sesji (tylko w development)"""
-    try:
-        if not current_user.is_authenticated:
-            return jsonify({'error': 'Not authenticated'}), 401
-        
-        # Only return debug info in development
-        debug_info = {
-            'user_authenticated': current_user.is_authenticated,
-            'user_id': current_user.user_id,
-            'username': current_user.username,
-            'session_keys': list(session.keys()),
-            'session_permanent': session.permanent,
-            'request_method': request.method,
-            'request_path': request.path,
-            'remote_addr': request.remote_addr
-        }
-        
-        return jsonify({
-            'status': 'success',
-            'debug': debug_info
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-print("✅ auth.py loaded - Authentication system ready")
+print("Auth system loaded successfully")

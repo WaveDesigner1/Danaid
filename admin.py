@@ -320,32 +320,6 @@ def init_admin(app):
                 'message': str(e)
             }), 500
     
-    @app.route('/check_session')
-    def check_session():
-        """Sprawdzenie sesji użytkownika - NAPRAWIONE"""
-        try:
-            if current_user and current_user.is_authenticated:
-                return jsonify({
-                    'authenticated': True,
-                    'user_id': getattr(current_user, 'user_id', None) or getattr(current_user, 'id', None),
-                    'username': getattr(current_user, 'username', 'unknown'),
-                    'is_admin': getattr(current_user, 'is_admin', False),
-                    'session_valid': True
-                })
-            else:
-                return jsonify({
-                    'authenticated': False,
-                    'session_valid': False
-                })
-                
-        except Exception as e:
-            print(f"❌ Session check error: {e}")
-            traceback.print_exc()
-            return jsonify({
-                'authenticated': False,
-                'session_valid': False,
-                'error': str(e)
-            }), 200  # 200 aby nie blokować JS
     
     # === SECURITY HEADERS ===
     @app.after_request
