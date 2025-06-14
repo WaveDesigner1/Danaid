@@ -37,7 +37,7 @@ class ChatEngine {
         this.isTyping = false;
         
         // Bind methods to preserve context
-        this.handleMessage = this.handleMessage.bind(this);
+        this.handleMessageReceived = this.handleMessageReceived.bind(this);
         this.handleKeyPress = this.handleKeyPress.bind(this);
         this.handleSendMessage = this.handleSendMessage.bind(this);
     }
