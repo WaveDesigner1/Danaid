@@ -200,6 +200,39 @@ Content-Type: application/json
 ## 📁 Struktura Projektu //
 
 ```
+main/
+├── app.py                          # Główny plik Flask
+├── requirements.txt                # Zależności Python
+├── config.py                       # Konfiguracja (jeśli jest)
+├── models/                         # Modele danych
+│   ├── __init__.py
+│   ├── user.py                     # Model User  
+│   ├── message.py                  # Model Message
+│   ├── session.py                  # Model Session
+│   └── friend.py                   # Model Friend
+├── templates/                      # Szablony HTML
+│   ├── index.html                  # Strona logowania
+│   ├── chat.html                   # Chat interface (nowy)
+│   ├── register.html               # Rejestracja
+│   └── admin_dashboard.html        # Panel admina
+├── static/                         # Pliki statyczne
+│   ├── css/
+│   │   └── app.css                 # Style CSS
+│   └── js/                         # JavaScript
+│       ├── utils/
+│       │   └── EventBus.js         # Event system
+│       ├── models/
+│       │   ├── User.js             # Model User JS
+│       │   ├── Message.js          # Model Message JS
+│       │   ├── Session.js          # Model Session JS
+│       │   └── Friend.js           # Model Friend JS
+│       ├── core/
+│       │   ├── CryptoManager.js    # Szyfrowanie
+│       │   ├── SocketManager.js    # Socket.IO
+│       │   ├── UIManager.js        # Interface
+│       │   └── ChatEngine.js       # Główna logika
+│       └── chat.js                 # Entry point
+└── uploads/                        # Pliki użytkowników (jeśli są)
 
 ```
 
