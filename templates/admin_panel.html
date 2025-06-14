@@ -68,7 +68,7 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <!-- ERROR HANDLING -->
+                    <!-- Obsługa błędów -->
                     <div id="error-container" style="display: none;">
                         <div class="error-message">
                             <h4><i class="fa fa-exclamation-triangle"></i> Błąd</h4>
@@ -79,13 +79,13 @@
                         </div>
                     </div>
                     
-                    <!-- LOADING STATE -->
+                    <!-- Stan ładowania -->
                     <div id="loading-container" style="display: none; text-align: center; padding: 40px;">
                         <i class="fa fa-spinner fa-spin fa-3x" style="color: #ff9800;"></i>
                         <p style="margin-top: 20px;">Ładowanie danych...</p>
                     </div>
                     
-                    <!-- MAIN STATS GRID -->
+                    <!-- Siatka statystyk -->
                     <div class="stats-grid" id="stats-grid">
                         <div class="stat-card">
                             <div class="stat-icon">
@@ -117,13 +117,13 @@
                         </div>
                     </div>
                     
-                    <!-- SYSTEM INFO -->
+                    <!-- Informacje systemowe -->
                     <div style="margin-top: 30px;">
                         <h4><i class="fa fa-info-circle"></i> Informacje systemowe</h4>
                         <div id="system-info" style="background: #2d2d2d; padding: 15px; border-radius: 4px; margin-top: 10px;">
                             <p id="last-update">Ostatnia aktualizacja: -</p>
-                            <p id="admin-user">Administrator: Loading...</p>
-                            <p id="template-loaded">Template: admin_panel.html ✅</p>
+                            <p id="admin-user">Administrator: Ładowanie...</p>
+                            <p id="template-loaded">Template: admin_panel.html</p>
                         </div>
                     </div>
                 </div>
@@ -131,236 +131,251 @@
         </main>
     </div>
 
-    <!-- NOTIFICATIONS CONTAINER -->
+    <!-- Kontener powiadomień -->
     <div id="notifications-container"></div>
 
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        // NAPRAWIONY ADMIN PANEL JAVASCRIPT
-        let isLoading = false;
-        
-        function showLoading() {
-            isLoading = true;
-            document.getElementById('loading-container').style.display = 'block';
-            document.getElementById('stats-grid').classList.add('loading');
-            document.getElementById('error-container').style.display = 'none';
-        }
-        
-        function hideLoading() {
-            isLoading = false;
-            document.getElementById('loading-container').style.display = 'none';
-            document.getElementById('stats-grid').classList.remove('loading');
-        }
-        
-        function showError(message) {
-            document.getElementById('error-message').textContent = message;
-            document.getElementById('error-container').style.display = 'block';
-            document.getElementById('stats-grid').style.display = 'none';
-            hideLoading();
-        }
-        
-        function hideError() {
-            document.getElementById('error-container').style.display = 'none';
-            document.getElementById('stats-grid').style.display = 'grid';
-        }
-        
-        // NAPRAWIONE ŁADOWANIE STATYSTYK
-        function loadStats() {
-            if (isLoading) {
-                console.log('Already loading stats, skipping...');
-                return;
+        // Klasa AdminPanel - zoptymalizowana
+        class AdminPanel {
+            constructor() {
+                this.isLoading = false;
+                this.refreshInterval = null;
+                this.init();
             }
-            
-            showLoading();
-            hideError();
-            
-            console.log('🔄 Loading admin stats...');
-            
-            fetch('/api/admin/stats?' + new Date().getTime(), {
-                method: 'GET',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0'
-                },
-                credentials: 'same-origin'
-            })
-            .then(response => {
-                console.log(`📡 Response status: ${response.status}`);
-                
-                if (!response.ok) {
-                    if (response.status === 403) {
-                        throw new Error('Brak uprawnień administratora');
-                    } else if (response.status === 500) {
-                        throw new Error('Błąd serwera - sprawdź logi');
-                    } else {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+            init() {
+                console.log('Inicjalizacja panelu administratora');
+                this.setupEventListeners();
+                this.loadInitialData();
+                this.setupAutoRefresh();
+            }
+
+            setupEventListeners() {
+                const refreshBtn = document.getElementById('refresh-stats');
+                const debugBtn = document.getElementById('debug-btn');
+                const retryBtn = document.getElementById('retry-btn');
+
+                if (refreshBtn) {
+                    refreshBtn.addEventListener('click', () => this.loadStats());
+                }
+
+                if (debugBtn) {
+                    debugBtn.addEventListener('click', () => this.runDebug());
+                }
+
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', () => this.loadStats());
+                }
+            }
+
+            async loadInitialData() {
+                try {
+                    await Promise.all([
+                        this.loadStats(),
+                        this.loadAdminInfo()
+                    ]);
+                } catch (error) {
+                    console.error('Błąd ładowania danych:', error);
+                    this.showError('Błąd inicjalizacji panelu');
+                }
+            }
+
+            async loadStats() {
+                if (this.isLoading) return;
+
+                this.isLoading = true;
+                this.showLoading();
+                this.hideError();
+
+                try {
+                    const response = await fetch(`/api/admin/stats?${Date.now()}`, {
+                        method: 'GET',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Cache-Control': 'no-cache'
+                        },
+                        credentials: 'same-origin'
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(this.getErrorMessage(response.status));
+                    }
+
+                    const result = await response.json();
+
+                    if (result.status !== 'success') {
+                        throw new Error(result.message || 'Błąd API');
+                    }
+
+                    this.updateStats(result.data);
+                    this.showNotification('Statystyki zaktualizowane', 'success', 2000);
+
+                } catch (error) {
+                    console.error('Błąd ładowania statystyk:', error);
+                    this.showError(`Błąd ładowania statystyk: ${error.message}`);
+                    this.showNotification(`Błąd: ${error.message}`, 'error');
+                } finally {
+                    this.isLoading = false;
+                    this.hideLoading();
+                }
+            }
+
+            updateStats(stats) {
+                const updates = [
+                    { id: 'users-count', value: stats.users_count || 0 },
+                    { id: 'sessions-count', value: stats.sessions_count || 0 },
+                    { id: 'messages-count', value: stats.messages_count || 0 },
+                    { id: 'online-count', value: stats.online_users_count || 0 }
+                ];
+
+                updates.forEach(({ id, value }) => {
+                    const element = document.getElementById(id);
+                    if (element) element.textContent = value;
+                });
+
+                document.getElementById('last-update').textContent = 
+                    'Ostatnia aktualizacja: ' + new Date().toLocaleString();
+            }
+
+            async loadAdminInfo() {
+                try {
+                    const response = await fetch(`/api/check_admin?${Date.now()}`);
+                    const data = await response.json();
+
+                    const adminElement = document.getElementById('admin-user');
+                    if (adminElement) {
+                        adminElement.textContent = data.username ? 
+                            `Administrator: ${data.username} (ID: ${data.user_id || 'N/A'})` :
+                            'Administrator: Błąd pobierania danych';
+                    }
+                } catch (error) {
+                    console.error('Błąd ładowania info administratora:', error);
+                    const adminElement = document.getElementById('admin-user');
+                    if (adminElement) {
+                        adminElement.textContent = 'Administrator: Błąd pobierania danych';
                     }
                 }
-                return response.json();
-            })
-            .then(result => {
-                console.log("✅ Stats loaded:", result);
-                
-                if (result.status === 'error') {
-                    throw new Error(result.message || 'Błąd API');
-                }
-                
-                if (result.status === 'success' && result.data) {
-                    const stats = result.data;
-                    
-                    // Update stats with fallbacks
-                    document.getElementById('users-count').textContent = stats.users_count || 0;
-                    document.getElementById('sessions-count').textContent = stats.sessions_count || 0;
-                    document.getElementById('messages-count').textContent = stats.messages_count || 0;
-                    document.getElementById('online-count').textContent = stats.online_users_count || 0;
-                    
-                    // Update system info
-                    document.getElementById('last-update').textContent = 
-                        'Ostatnia aktualizacja: ' + new Date().toLocaleString();
-                    
-                    showNotification('Statystyki zaktualizowane', 'success', 2000);
-                } else {
-                    throw new Error('Nieprawidłowy format danych');
-                }
-                
-                hideLoading();
-            })
-            .catch(error => {
-                console.error('❌ Stats loading error:', error);
-                showError(`Błąd ładowania statystyk: ${error.message}`);
-                showNotification(`Błąd: ${error.message}`, 'error');
-            });
-        }
-        
-        // ADMIN USER INFO
-        function loadAdminInfo() {
-            fetch('/api/check_admin?' + new Date().getTime())
-            .then(response => response.json())
-            .then(data => {
-                if (data.username) {
-                    document.getElementById('admin-user').textContent = 
-                        `Administrator: ${data.username} (ID: ${data.user_id || 'N/A'})`;
-                } else {
-                    document.getElementById('admin-user').textContent = 
-                        'Administrator: Błąd pobierania danych';
-                }
-            })
-            .catch(error => {
-                console.error('❌ Admin info error:', error);
-                document.getElementById('admin-user').textContent = 
-                    'Administrator: Błąd pobierania danych';
-            });
-        }
-        
-        // DEBUG FUNCTION
-        function runDebug() {
-            console.log('🐛 Running admin debug...');
-            
-            Promise.all([
-                fetch('/api/admin/debug').then(r => r.json()).catch(e => ({error: e.message})),
-                fetch('/api/check_admin').then(r => r.json()).catch(e => ({error: e.message})),
-                fetch('/check_session').then(r => r.json()).catch(e => ({error: e.message}))
-            ])
-            .then(([debug, admin, session]) => {
-                console.log('🔍 Debug Results:');
-                console.log('  Admin Debug:', debug);
-                console.log('  Admin Check:', admin);
-                console.log('  Session Check:', session);
-                
-                showNotification('Debug info logged to console', 'info');
-            })
-            .catch(error => {
-                console.error('❌ Debug error:', error);
-                showNotification('Debug failed: ' + error.message, 'error');
-            });
-        }
-        
-        // NOTIFICATIONS
-        function showNotification(message, type = 'info', duration = 5000) {
-            const notification = document.createElement('div');
-            notification.className = `notification notification-${type}`;
-            notification.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>${message}</span>
-                    <button onclick="this.parentElement.parentElement.remove()" 
-                            style="background: none; border: none; color: inherit; margin-left: 10px; cursor: pointer; font-size: 18px;">×</button>
-                </div>
-            `;
-            
-            const container = document.getElementById('notifications-container');
-            container.appendChild(notification);
-            
-            // Auto remove
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.remove();
-                }
-            }, duration);
-        }
-        
-        // EVENT LISTENERS
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 Admin panel initialized (FIXED VERSION)');
-            
-            // Load initial data with error handling
-            try {
-                loadStats();
-                loadAdminInfo();
-            } catch (error) {
-                console.error('❌ Initial load error:', error);
-                showError('Błąd inicjalizacji panelu');
             }
-            
-            // Button event listeners with null checks
-            const refreshBtn = document.getElementById('refresh-stats');
-            if (refreshBtn) {
-                refreshBtn.addEventListener('click', function() {
-                    console.log('🔄 Manual refresh triggered');
-                    loadStats();
-                });
-            }
-            
-            const debugBtn = document.getElementById('debug-btn');
-            if (debugBtn) {
-                debugBtn.addEventListener('click', runDebug);
-            }
-            
-            const retryBtn = document.getElementById('retry-btn');
-            if (retryBtn) {
-                retryBtn.addEventListener('click', function() {
-                    console.log('🔄 Retry triggered');
-                    loadStats();
-                });
-            }
-            
-            // Auto-refresh every 30 seconds
-            setInterval(() => {
-                if (!isLoading) {
-                    console.log('⏰ Auto-refresh triggered');
-                    loadStats();
+
+            async runDebug() {
+                console.log('Uruchamianie debugowania administratora');
+
+                try {
+                    const endpoints = [
+                        '/api/admin/debug',
+                        '/api/check_admin', 
+                        '/check_session'
+                    ];
+
+                    const responses = await Promise.allSettled(
+                        endpoints.map(url => fetch(url).then(r => r.json()))
+                    );
+
+                    console.log('Wyniki debugowania:');
+                    responses.forEach((result, index) => {
+                        console.log(`  ${endpoints[index]}:`, 
+                            result.status === 'fulfilled' ? result.value : result.reason);
+                    });
+
+                    this.showNotification('Informacje debugowania w konsoli', 'info');
+                } catch (error) {
+                    console.error('Błąd debugowania:', error);
+                    this.showNotification('Błąd debugowania: ' + error.message, 'error');
                 }
-            }, 30000);
-            
-            console.log('✅ Admin panel ready (FIXED VERSION)');
+            }
+
+            setupAutoRefresh() {
+                this.refreshInterval = setInterval(() => {
+                    if (!this.isLoading) {
+                        console.log('Automatyczne odświeżanie');
+                        this.loadStats();
+                    }
+                }, 30000);
+            }
+
+            getErrorMessage(status) {
+                const messages = {
+                    403: 'Brak uprawnień administratora',
+                    500: 'Błąd serwera - sprawdź logi',
+                    404: 'Endpoint nie znaleziony'
+                };
+                return messages[status] || `HTTP ${status}`;
+            }
+
+            showLoading() {
+                document.getElementById('loading-container').style.display = 'block';
+                document.getElementById('stats-grid').classList.add('loading');
+                document.getElementById('error-container').style.display = 'none';
+            }
+
+            hideLoading() {
+                document.getElementById('loading-container').style.display = 'none';
+                document.getElementById('stats-grid').classList.remove('loading');
+            }
+
+            showError(message) {
+                document.getElementById('error-message').textContent = message;
+                document.getElementById('error-container').style.display = 'block';
+                document.getElementById('stats-grid').style.display = 'none';
+            }
+
+            hideError() {
+                document.getElementById('error-container').style.display = 'none';
+                document.getElementById('stats-grid').style.display = 'grid';
+            }
+
+            showNotification(message, type = 'info', duration = 5000) {
+                const notification = document.createElement('div');
+                notification.className = `notification notification-${type}`;
+                notification.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>${message}</span>
+                        <button onclick="this.parentElement.parentElement.remove()" 
+                                style="background: none; border: none; color: inherit; margin-left: 10px; cursor: pointer; font-size: 18px;">×</button>
+                    </div>
+                `;
+
+                const container = document.getElementById('notifications-container');
+                container.appendChild(notification);
+
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.remove();
+                    }
+                }, duration);
+            }
+
+            cleanup() {
+                if (this.refreshInterval) {
+                    clearInterval(this.refreshInterval);
+                }
+            }
+        }
+
+        // Inicjalizacja
+        let adminPanel;
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            adminPanel = new AdminPanel();
+            console.log('Panel administratora gotowy');
         });
-        
-        // GLOBAL ERROR HANDLER
-        window.addEventListener('error', function(e) {
-            console.error('💥 Global error:', e.error);
-            showNotification('Wystąpił nieoczekiwany błąd', 'error');
+
+        // Obsługa błędów globalnych
+        window.addEventListener('error', (e) => {
+            console.error('Błąd globalny:', e.error);
+            if (adminPanel) {
+                adminPanel.showNotification('Wystąpił nieoczekiwany błąd', 'error');
+            }
         });
-        
-        // GLOBAL FUNCTIONS
-        window.adminDebug = {
-            loadStats: loadStats,
-            loadAdminInfo: loadAdminInfo, 
-            runDebug: runDebug,
-            showNotification: showNotification
-        };
-        
-        console.log('✅ Admin panel JavaScript loaded (FIXED VERSION)');
+
+        // Czyszczenie przed zamknięciem
+        window.addEventListener('beforeunload', () => {
+            if (adminPanel) {
+                adminPanel.cleanup();
+            }
+        });
+
+        console.log('Panel administratora załadowany');
     </script>
 </body>
 </html>

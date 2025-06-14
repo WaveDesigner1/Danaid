@@ -3,23 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <title>Rejestracja - Czat szyfrowany</title>
-    <!-- ZMIANA: Zunifikowany CSS zamiast inline styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/index_styles.css') }}">
 </head>
 <body>
-    <!-- POPRAWIONY: Jeden container bez zagnieżdżonych divów -->
     <div class="login-container">
         <h1>Rejestracja</h1>
         <form id="registerForm">
             <div class="form-group">
                 <label for="username">Nazwa użytkownika:</label>
                 <input type="text" id="username" name="username" required autocomplete="username">
+                <small style="display: block; margin-top: 5px; color: #999;">
+                    3-20 znaków, tylko litery, cyfry, _ i -
+                </small>
             </div>
             <div class="form-group">
                 <label for="password">Hasło:</label>
                 <input type="password" id="password" name="password" required autocomplete="new-password">
                 <small style="display: block; margin-top: 5px; color: #CCCCCC;">
-                    Hasło musi zawierać minimum 8 znaków, dużą literę, cyfrę i znak specjalny.
+                    Minimum 8 znaków, wielka litera, mała litera, cyfra i znak specjalny
                 </small>
             </div>
             <button type="submit" class="btn btn-primary">Zarejestruj się</button>
@@ -30,9 +31,8 @@
         </div>
     </div>
 
-    <!-- ZAKTUALIZOWANE SKRYPTY -->
-    <!-- ZMIANA: Usunięto static_messages.js i register_send.js -->
-    <!-- ZMIANA: Nowy zunifikowany auth.js (login + register) -->
+    <script src="{{ url_for('static', filename='js/utils/EventBus.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/core/CryptoManager.js') }}"></script>
     <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 </body>
 </html>
