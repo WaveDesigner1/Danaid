@@ -1,4 +1,5 @@
 # 🔐 Danaid Chat
+** APLIKACJA DO JEST DO NAPRAWY, PRACE TRWAJĄ, POCZEKAJ LUB NAPRAW SAMODZIELNIE!**
 
 **Bezpieczna aplikacja czatu z szyfrowaniem end-to-end (E2EE)**
 
@@ -196,26 +197,10 @@ Content-Type: application/json
 - Brak certificate authority validation
 - Forward secrecy tylko na poziomie sesji
 
-## 📁 Struktura Projektu
+## 📁 Struktura Projektu //
 
 ```
-danaid-chat/
-├── app.py              # Główna aplikacja Flask
-├── auth.py             # Endpointy autentykacji
-├── chat.py             # API czatu
-├── admin.py            # Panel administracyjny
-├── models.py           # Modele bazy danych
-├── socketio_handler.py # Socket.IO events
-├── static/
-│   ├── js/
-│   │   ├── auth.js     # Logowanie/Rejestracja
-│   │   ├── crypto.js   # Zarządzanie kryptografią
-│   │   └── chat.js     # Interfejs czatu
-│   └── css/
-└── templates/
-    ├── index.html      # Strona logowania
-    ├── chat.html       # Główny interfejs
-    └── admin_panel.html
+
 ```
 
 ## 🧪 Testing
