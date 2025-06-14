@@ -1,5 +1,5 @@
 # 🔐 Danaid Chat
-** APLIKACJA DO JEST DO NAPRAWY, PRACE TRWAJĄ, POCZEKAJ LUB NAPRAW SAMODZIELNIE!**
+**APLIKACJA DO JEST DO NAPRAWY, PRACE TRWAJĄ, POCZEKAJ LUB NAPRAW SAMODZIELNIE!**
 
 **Bezpieczna aplikacja czatu z szyfrowaniem end-to-end (E2EE)**
 
